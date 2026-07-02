@@ -1,0 +1,39 @@
+# Build output
+target/
+
+# Maven wrapper (standard boilerplate)
+mvnw
+mvnw.cmd
+.mvn/
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.settings/
+.classpath
+.project
+.factorypath
+
+# Git internals
+.git/
+
+# Spring Boot generated help
+HELP.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Binaries
+*.jar
+*.war
+*.class
+
+# Logs
+*.log
+
+# Git config
+.gitattributes

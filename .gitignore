@@ -1,0 +1,56 @@
+# Build output
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# Maven wrapper binary (keep maven-wrapper.properties)
+.mvn/wrapper/maven-wrapper.jar
+
+# Java
+*.class
+hs_err_pid*
+replay_pid*
+*.hprof
+
+# Package files
+*.jar
+*.war
+*.ear
+!.mvn/wrapper/*.jar
+
+# IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# VS Code
+.vscode/
+
+# STS / Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings/
+.springBeans
+.sts4-cache
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Spring Boot
+HELP.md
+
+# Claude Code session files
+.claude/
