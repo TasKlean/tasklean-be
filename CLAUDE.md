@@ -26,6 +26,10 @@ docker exec tasklean-db psql -U dev -d tasklean_dev -c "\dt"  # List tables
 
 Java 21, Spring Boot 4.1.0, Maven 3.9.16.
 
+### Seed data
+
+Dev profile auto-loads seed data via Flyway repeatable migration (`src/main/resources/db/seed/R__seed_data.sql`). Runs on every startup if checksum changed. To reset to clean seeded state: `docker-compose down -v` then restart.
+
 ## Architecture
 
 Package root: `com.tasklean.api`

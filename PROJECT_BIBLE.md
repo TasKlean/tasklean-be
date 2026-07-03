@@ -151,6 +151,16 @@ Every FK column is indexed. Additional indexes on:
 
 Next available version: **V12**.
 
+### Dev seed data
+
+Dev-only seed data lives in `src/main/resources/db/seed/R__seed_data.sql` — a Flyway **repeatable migration** that runs after all versioned migrations. The dev profile adds `classpath:db/seed` to `spring.flyway.locations`; prod only has `classpath:db/migration`, so seed data never touches production.
+
+The seed creates a realistic dataset: 3 users (1 Google-linked, 2 email-based), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, and devices.
+
+All inserts use `ON CONFLICT DO NOTHING` or `NOT EXISTS` checks for idempotency. To add data, edit `R__seed_data.sql` — Flyway detects the checksum change and re-runs it on next startup.
+
+**Fresh reset**: `docker-compose down -v` + restart wipes everything and re-applies all migrations + seed.
+
 ### Hibernate strategy
 
 `ddl-auto=validate` — Hibernate validates entities against the Flyway-managed schema at startup but never modifies it. All schema changes go through migrations.
@@ -161,7 +171,7 @@ Next available version: **V12**.
 
 Every endpoint returns `ApiResponse<T>`:
 ```json
-{ "success": true, "message": null, "data": { ... } }
+{ "success": true, "message": null, "data": { ... } }:
 { "success": false, "message": "User not found", "data": null }
 ```
 
