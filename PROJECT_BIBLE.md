@@ -4,7 +4,32 @@ Deep context, architecture decisions, domain model, and patterns for the TasKlea
 
 ## What TasKlean is
 
-TasKlean is a group-based household task management app. Users form groups (households/roommates), create recurring and one-off cleaning tasks, assign them to members, and track completions with optional photo proof. The backend is a REST API consumed by a frontend client (expected at `localhost:3000` based on the OAuth redirect URI).
+TasKlean is a household task management **PWA** (Progressive Web App) for families, roommates, and couples. Tagline: **"Clean tasks, clear minds"**. Domain: **tasklean.app**.
+
+It solves the problem of household chores slipping through the cracks by providing task visibility, assignment, accountability, and notifications across group members. Users form groups (households), create recurring and one-off cleaning tasks, assign them to members, and track completions with optional photo proof.
+
+The backend is a Spring Boot REST API. The frontend will be **Next.js + TailwindCSS** in a separate repo (not started yet). Expected frontend origin is `localhost:3000` in dev (based on OAuth redirect URI).
+
+### MVP features
+
+- User registration (email/password + Google OAuth) and JWT authentication
+- Groups with invite codes — users can be in **multiple groups**
+- Two roles: GroupAdmin (create/manage group, invite/remove members) and GroupMember
+- Task creation with: name, description, photo, priority, time estimate, recurrence, tags, categories
+- Task types: recurring vs one-off
+- Task assignment to group members
+- Task completion with optional photo proof
+- Notifications and pinging members about tasks
+- Filter/search tasks by assignee, priority, status, tags, categories
+- List and calendar views
+
+### Future features (not MVP)
+
+- Task rotation and fairness dashboard
+- Reward/gamification system
+- Task templates
+- Task dependencies
+- Analytics and insights
 
 ## Domain model
 
@@ -34,7 +59,7 @@ User (1) ──── (*) Notification
 
 ### Core aggregate: Group
 
-Everything revolves around the Group. A User does nothing alone — they must be a GroupMember to create tasks, be assigned tasks, or complete tasks. The Group is the authorization boundary: users can only interact with entities belonging to groups they're members of.
+Everything revolves around the Group. A User does nothing alone — they must be a GroupMember to create tasks, be assigned tasks, or complete tasks. A user can be a member of **multiple groups** simultaneously (e.g., one for family, one for roommates). The Group is the authorization boundary: users can only interact with entities belonging to groups they're members of.
 
 ### Entity details
 
@@ -82,6 +107,8 @@ The `role` column is CHECK-constrained to `'ADMIN'` or `'MEMBER'`. Self-referent
 ### Notification types
 
 The `type` column is a free-form VARCHAR(50) — no CHECK constraint in the migration. Types are application-defined (e.g., task assigned, task completed, member joined).
+
+**Design decision**: Notifications reference `user_id` (not `group_member_id`) because some notifications — like group invites — happen before the user has a membership in that group. The `task_id` and `group_id` columns are denormalized for query performance (avoids joining through task → group).
 
 ### AuditLog design
 
@@ -178,6 +205,14 @@ SecurityConfig has a permit-all filter chain with CSRF disabled. No authenticati
 - **Auth endpoints**: `/api/auth/**` are permit-all. All other endpoints will require authentication.
 - **Password storage**: `password_hash` column on User — supports both password-based and OAuth login (OAuth users have null `password_hash`).
 
+### Authentication flows
+
+**Email registration**: validate input → check duplicate email → hash password (bcrypt) → create User → generate JWT → return token.
+
+**Google OAuth**: redirect to Google → callback with authorization code → exchange code for access token → verify `id_token` → extract email/name/`google_sub` → find existing user by `google_sub` or create new one → generate JWT → return token.
+
+**JWT payload**: `userId`, `email`, `iat`, `exp`.
+
 ### Stubs still to implement
 
 - `AuthController` — login, register, Google OAuth callback
@@ -189,9 +224,10 @@ SecurityConfig has a permit-all filter chain with CSRF disabled. No authenticati
 
 ### Authorization model (not yet built)
 
-The GroupMember role system (`ADMIN` / `MEMBER`) exists in the schema but is not enforced in the API layer. When implemented, expect:
-- ADMIN: can manage group settings, members, categories, tags
-- MEMBER: can create/complete tasks, view group data
+The GroupMember role system (`ADMIN` / `MEMBER`) exists in the schema but is not enforced in the API layer. When implemented:
+
+- **GroupAdmin** (extends GroupMember permissions): create/edit group, invite/remove members, manage categories and tags
+- **GroupMember**: join/leave group, create/edit/delete own tasks, complete tasks, view group tasks, ping task assignees
 
 ## Configuration strategy
 
@@ -232,16 +268,24 @@ Dev profile has hardcoded fallback defaults for all values so the app starts wit
 
 ### Local development
 
-```
-docker-compose up -d        # PostgreSQL 16 on port 5432 (tasklean_dev database)
-mvnw.cmd spring-boot:run    # API on port 8080
+```bash
+docker-compose up -d          # Start PostgreSQL 16 on port 5432 (tasklean_dev database)
+mvnw.cmd spring-boot:run      # Start API on port 8080 (dev profile active by default)
+
+docker-compose stop           # Stop Postgres (preserves data)
+docker-compose down -v        # Destroy Postgres container + volume (full reset)
 ```
 
-Docker Compose only runs Postgres — the app runs on the host. The Compose file reads `DB_USERNAME` and `DB_PASSWORD` from `.env` with defaults.
+Docker Compose only runs Postgres — the app runs on the host. The Compose file reads `DB_USERNAME` and `DB_PASSWORD` from `.env` with defaults. On fresh start after `down -v`, Flyway re-runs all migrations + seed data automatically.
 
 ### Production
 
-Supabase-hosted PostgreSQL. The Dockerfile builds a multi-stage image (`eclipse-temurin:21`) but does not copy the Maven wrapper (the `RUN ./mvnw` will fail — needs `COPY mvnw` and `COPY .mvn`). This is a known issue to fix before deploying.
+- **Backend hosting**: Render
+- **Database**: Supabase-hosted PostgreSQL
+- **Frontend hosting**: Vercel (for the Next.js app, when built)
+- **Image storage**: AWS S3 or Cloudflare (future — for task photos and completion photos)
+
+The Dockerfile builds a multi-stage image (`eclipse-temurin:21`) but does not copy the Maven wrapper (the `RUN ./mvnw` will fail — needs `COPY mvnw` and `COPY .mvn`). This is a known issue to fix before deploying.
 
 ## Coding patterns
 

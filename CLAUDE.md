@@ -2,19 +2,27 @@
 
 For deep context — domain model, entity relationships, database schema, API catalog, security architecture, coding patterns, and gotchas — see [PROJECT_BIBLE.md](PROJECT_BIBLE.md).
 
-## Commands
+## Quick reference
 
-Build tool is Maven via the wrapper (Windows: `mvnw.cmd`).
+```bash
+# === Everyday ===
+mvnw.cmd spring-boot:run              # Start API on :8080 (dev profile, with seed data)
+mvnw.cmd clean compile                # Compile (catches errors fast)
+mvnw.cmd test                         # Run all tests
 
+# === Database ===
+docker-compose up -d                   # Start local Postgres (port 5432)
+docker-compose stop                    # Stop Postgres (keeps data)
+docker-compose down -v                 # Wipe database completely (fresh start)
+
+# === Build & package ===
+mvnw.cmd clean package                 # Build JAR
+mvnw.cmd test -Dtest=ApiApplicationTests  # Run single test class
+
+# === Database inspection ===
+docker exec -it tasklean-db psql -U dev -d tasklean_dev    # Open psql shell
+docker exec tasklean-db psql -U dev -d tasklean_dev -c "\dt"  # List tables
 ```
-mvnw.cmd clean compile
-mvnw.cmd test
-mvnw.cmd test -Dtest=ApiApplicationTests
-mvnw.cmd spring-boot:run
-mvnw.cmd clean package
-```
-
-Local dev database: `docker-compose up -d` (PostgreSQL 16 on port 5432, credentials from `.env`).
 
 Java 21, Spring Boot 4.1.0, Maven 3.9.16.
 
