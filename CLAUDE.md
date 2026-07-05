@@ -6,18 +6,23 @@ For deep context — domain model, entity relationships, database schema, API ca
 
 ```bash
 # === Everyday ===
-mvnw.cmd spring-boot:run              # Start API on :8080 (dev profile, with seed data)
-mvnw.cmd clean compile                # Compile (catches errors fast)
-mvnw.cmd test                         # Run all tests
+./mvnw spring-boot:run              # Start API on :8080 (dev profile, with seed data)
+./mvnw clean compile                # Compile (catches errors fast)
+./mvnw test                         # Run all tests
 
 # === Database ===
 docker-compose up -d                   # Start local Postgres (port 5432)
 docker-compose stop                    # Stop Postgres (keeps data)
 docker-compose down -v                 # Wipe database completely (fresh start)
 
+# === Testing ===
+./mvnw test                              # Run all tests
+./mvnw test -Dtest=JwtServiceTest        # Run single test class
+./mvnw test -Dtest="AuthServiceTest#login_validCredentials_returnsToken"  # Single method
+./mvnw test -Dtest="com.tasklean.api.auth.**"  # Run all tests in a package
+
 # === Build & package ===
-mvnw.cmd clean package                 # Build JAR
-mvnw.cmd test -Dtest=ApiApplicationTests  # Run single test class
+./mvnw clean package                 # Build JAR
 
 # === Database inspection ===
 docker exec -it tasklean-db psql -U dev -d tasklean_dev    # Open psql shell
@@ -50,6 +55,28 @@ Package root: `com.tasklean.api`
 - **Lombok**: `@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder` on entities. Use `@Builder.Default` on fields with initializers. Use `@RequiredArgsConstructor` for constructor injection in services/controllers.
 - **Reserved words**: `user` and `group` table names are quoted (`"user"`, `"group"`) in both `@Table` annotations and migrations.
 - **API response**: all endpoints return `ApiResponse<T>` envelope. Use `ApiResponse.success(data)` or `ApiResponse.error(message)`.
+
+## Testing
+
+```bash
+mvnw.cmd test                                    # Run all tests
+mvnw.cmd test -Dtest=JwtServiceTest              # Run single test class
+mvnw.cmd test -Dtest="JwtServiceTest#testName"   # Run single test method
+```
+
+### Test structure
+
+Tests mirror `src/main/java` under `src/test/java`. Test class naming:
+- `<Class>Test.java` — unit tests (no Spring context, mocked dependencies)
+- `<Class>IntegrationTest.java` — integration tests with `@SpringBootTest` (future, needs Testcontainers)
+
+### Conventions
+
+- **Unit tests only mock direct dependencies** — use `@ExtendWith(MockitoExtension.class)` + `@Mock` + `@InjectMocks`
+- **Test method naming**: `methodName_scenario_expectedResult` (e.g., `login_wrongPassword_throwsBadCredentials`)
+- **One assertion per concept** — a test can have multiple asserts if they verify one logical outcome
+- **Test what matters**: business rules, edge cases, security boundaries. Don't test getters/setters or framework wiring.
+- **No test for the sake of coverage** — every test should prove a behaviour or guard a bug
 
 ## Environment
 

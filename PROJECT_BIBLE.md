@@ -398,6 +398,38 @@ Response DTOs flatten relationships to IDs. Nullable FKs use ternary null-checks
 - `@Valid @RequestBody` on input DTOs
 - Thin delegation — no business logic in controllers
 
+### Unit testing
+
+Tests live in `src/test/java`, mirroring the main source structure. No Spring context is loaded for unit tests — they're fast and isolated.
+
+**Approach:**
+- `@ExtendWith(MockitoExtension.class)` + `@Mock` + `@InjectMocks` for service tests
+- Direct instantiation for classes with no Spring dependencies (e.g., `JwtService`)
+- `MockHttpServletRequest` / `MockHttpServletResponse` for filter tests
+- AssertJ for assertions (`assertThat`), Mockito for mocking
+
+**Naming convention:** `methodName_scenario_expectedResult`
+
+**What gets tested:**
+- Business rules and edge cases in services (auth flows, validation logic)
+- Security boundaries (filter behavior with valid/invalid/missing tokens)
+- Pure logic (token generation, validation, claim extraction)
+- Error paths (what exceptions are thrown and when)
+
+**What does NOT get unit tested:**
+- Getters/setters, builders, or Lombok-generated code
+- Framework wiring (Spring context loading, bean registration)
+- Repository queries (these would be integration tests with a real DB)
+- Controller routing/serialization (these would be `@WebMvcTest` slice tests, not yet added)
+
+**Current test coverage:**
+
+| Class | Tests | Covers |
+|-------|-------|--------|
+| `JwtServiceTest` | 9 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction |
+| `AuthServiceTest` | 9 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only) |
+| `JwtAuthenticationFilterTest` | 8 | Valid token sets SecurityContext, no/bad/invalid token passes through, inactive/deleted user rejected, auth endpoints skipped |
+
 ### What's NOT in the codebase yet
 
 - No pagination (all list endpoints return full results)
@@ -405,7 +437,7 @@ Response DTOs flatten relationships to IDs. Nullable FKs use ternary null-checks
 - No filtering beyond `?groupId=` / `?userId=` / `?taskId=`
 - No `@OneToMany` collections on entities (all relationships are `@ManyToOne` only)
 - No cascade operations in JPA (cascades are in SQL only, for `device` and `task_tag`)
-- No tests beyond the smoke test `ApiApplicationTests.contextLoads()`
+- No `@WebMvcTest` slice tests or integration tests (only unit tests and a smoke test)
 - No role-based authorization enforcement (ADMIN/MEMBER roles exist in schema but not checked in API)
 - Google OAuth not yet implemented (`GoogleOAuthService` is a stub)
 
