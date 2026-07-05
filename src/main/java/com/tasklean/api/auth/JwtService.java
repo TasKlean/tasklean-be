@@ -13,12 +13,17 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
+/**
+ * Handles JWT token creation, validation, and claim extraction.
+ * Tokens use HMAC-SHA signing and carry the user's email (subject), internal ID, and UID.
+ */
 @Service
 @RequiredArgsConstructor
 public class JwtService {
 
     private final JwtConfig jwtConfig;
 
+    /** Creates a signed JWT containing the user's email, internal ID, and public UID. */
     public String generateToken(User user) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + jwtConfig.getExpiration());
@@ -33,6 +38,7 @@ public class JwtService {
                 .compact();
     }
 
+    /** Returns true if the token signature is valid and not expired. */
     public boolean validateToken(String token) {
         try {
             extractClaims(token);
@@ -62,6 +68,7 @@ public class JwtService {
                 .getPayload();
     }
 
+    // Secret must be >= 32 bytes (256 bits) for HMAC-SHA — enforced by jjwt at runtime
     private SecretKey getSigningKey() {
         return Keys.hmacShaKeyFor(jwtConfig.getSecret().getBytes(StandardCharsets.UTF_8));
     }
