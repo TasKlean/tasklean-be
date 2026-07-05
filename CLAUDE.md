@@ -35,9 +35,9 @@ Dev profile auto-loads seed data via Flyway repeatable migration (`src/main/reso
 Package root: `com.tasklean.api`
 
 - **`domain/<entity>`** — one package per aggregate. Each has: `Entity.java`, `Controller.java`, `Service.java`, `Repository.java`, plus `dto/EntityRequest.java` and `dto/EntityResponse.java`. Entities with uid (`user`, `group`, `task`) use uid as the external identifier in REST paths. Other entities (`category`, `tag`, `groupmember`, `device`, `taskcompletion`) use Long id. Read-only entities (`notification`, `auditlog`) have no request DTO.
-- **`auth`** — `AuthController`, `AuthService`, `JwtService`, `GoogleOAuthService`, with DTOs for `LoginRequest`, `RegisterRequest`, `AuthResponse`. All still stubs awaiting implementation.
-- **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler`).
-- **`config`** — `SecurityConfig` (basic permit-all filter chain), `JwtConfig`, `CorsConfig`. `JwtConfig` and `CorsConfig` are still stubs.
+- **`auth`** — `AuthController` (register/login endpoints), `AuthService` (credential validation, user creation), `JwtService` (token generation/validation), `JwtAuthenticationFilter` (extracts Bearer token, sets SecurityContext), `JwtAuthenticationEntryPoint` (401 JSON response). DTOs: `LoginRequest`, `RegisterRequest`, `AuthResponse`. `GoogleOAuthService` still a stub.
+- **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler` handling 400/401/404/409).
+- **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`), `CorsConfig` (configurable origins, credentials enabled).
 
 ## Conventions
 

@@ -192,9 +192,10 @@ Every endpoint returns `ApiResponse<T>`:
 
 ### HTTP status codes
 
-- `200` — success (GET, PUT, PATCH, DELETE)
-- `201` — created (POST)
+- `200` — success (GET, PUT, PATCH, DELETE, login)
+- `201` — created (POST, register)
 - `400` — validation failure (MethodArgumentNotValidException)
+- `401` — unauthorized (missing/invalid token, bad credentials, deactivated account)
 - `404` — ResourceNotFoundException
 - `409` — DuplicateResourceException
 
@@ -202,35 +203,57 @@ Every endpoint returns `ApiResponse<T>`:
 
 Entities with a `uid` field (User, Group, Task) use `/{uid}` as the path variable. All other entities use `/{id}` (the Long PK). This is intentional — UIDs are opaque external identifiers, while internal PKs are used for subordinate entities that are never referenced outside the API.
 
-## Security architecture (planned)
+## Security architecture
 
 ### Current state
 
-SecurityConfig has a permit-all filter chain with CSRF disabled. No authentication is enforced.
+Email/password authentication is fully implemented. All endpoints except `/api/auth/**` require a valid JWT Bearer token. Google OAuth is planned but not yet built.
 
-### Intended design
+### JWT authentication (implemented)
 
-- **JWT-based auth**: `JwtService` will issue and validate tokens. JWT secret and expiration configured per profile (`jwt.secret`, `jwt.expiration` = 24h).
-- **Google OAuth**: `GoogleOAuthService` for social login. Client ID/secret in env vars. Redirect URI is `localhost:3000` in dev, configurable in prod.
-- **Auth endpoints**: `/api/auth/**` are permit-all. All other endpoints will require authentication.
-- **Password storage**: `password_hash` column on User — supports both password-based and OAuth login (OAuth users have null `password_hash`).
+- **Token format**: HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `iat`, `exp`
+- **Expiration**: 24h (configurable via `jwt.expiration` in ms)
+- **Secret**: min 256 bits, configured per profile via `jwt.secret`
+- **Library**: jjwt 0.12.6
+
+### Request flow
+
+1. `JwtAuthenticationFilter` (runs before Spring's authorization check) extracts the Bearer token from the `Authorization` header
+2. If valid: looks up user by email, places `User` entity into `SecurityContextHolder`
+3. If missing/invalid: request continues as anonymous
+4. Spring's `authorizeHttpRequests` rules decide allow/deny based on whether SecurityContext has an authenticated principal
+5. Denied requests → `JwtAuthenticationEntryPoint` returns 401 JSON matching `ApiResponse` envelope
+
+### Security filter chain config
+
+- CSRF disabled (stateless API, no cookies)
+- Session policy: `STATELESS` (no server-side sessions)
+- CORS: configurable origins (`cors.allowed-origins`), credentials enabled, `Authorization` + `Content-Type` headers
+- Public paths: `/api/auth/**`, `/error`
+- All other paths: `authenticated()`
+- Password encoding: BCrypt
+
+### Auth endpoints
+
+| Endpoint | Status | Response |
+|---|---|---|
+| `POST /api/auth/register` | 201 | JWT + user info |
+| `POST /api/auth/login` | 200 | JWT + user info |
+| `POST /api/auth/google` | Not implemented | — |
 
 ### Authentication flows
 
-**Email registration**: validate input → check duplicate email → hash password (bcrypt) → create User → generate JWT → return token.
+**Email registration**: validate input (`@Email`, `@Size(min=8)` password, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate JWT → return `AuthResponse`.
 
-**Google OAuth**: redirect to Google → callback with authorization code → exchange code for access token → verify `id_token` → extract email/name/`google_sub` → find existing user by `google_sub` or create new one → generate JWT → return token.
+**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → verify password against hash (401 if mismatch) → generate JWT → return `AuthResponse`.
 
-**JWT payload**: `userId`, `email`, `iat`, `exp`.
+**Google OAuth (planned)**: redirect to Google → callback with authorization code → exchange code for access token → verify `id_token` → extract email/name/`google_sub` → find existing user by `google_sub` or create new one → generate JWT → return token.
 
-### Stubs still to implement
+### Still to implement
 
-- `AuthController` — login, register, Google OAuth callback
-- `AuthService` — credential validation, user creation, token generation
-- `JwtService` — token generation, validation, claims extraction
 - `GoogleOAuthService` — Google token verification, user upsert
-- `JwtConfig` — JWT properties binding
-- `CorsConfig` — CORS policy for frontend origin
+- `POST /api/auth/google` endpoint in AuthController
+- Role-based authorization (ADMIN/MEMBER enforcement in API layer)
 
 ### Authorization model (not yet built)
 
@@ -382,10 +405,9 @@ Response DTOs flatten relationships to IDs. Nullable FKs use ternary null-checks
 - No filtering beyond `?groupId=` / `?userId=` / `?taskId=`
 - No `@OneToMany` collections on entities (all relationships are `@ManyToOne` only)
 - No cascade operations in JPA (cascades are in SQL only, for `device` and `task_tag`)
-- No DTOs for auth flow (LoginRequest, RegisterRequest, AuthResponse are empty stubs)
 - No tests beyond the smoke test `ApiApplicationTests.contextLoads()`
-- No input validation beyond `@NotBlank` / `@NotNull` (no regex, no size, no custom validators)
-- No password hashing configuration (BCrypt bean etc.)
+- No role-based authorization enforcement (ADMIN/MEMBER roles exist in schema but not checked in API)
+- Google OAuth not yet implemented (`GoogleOAuthService` is a stub)
 
 ## Gotchas
 
