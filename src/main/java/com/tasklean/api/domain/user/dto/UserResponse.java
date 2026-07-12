@@ -19,6 +19,7 @@ public class UserResponse {
     private String middleName;
     private String lastName;
     private String photoUrl;
+    private Boolean isEmailVerified;
     private Boolean isActive;
     private LocalDateTime dateCreated;
     private LocalDateTime dateUpdated;
@@ -32,6 +33,7 @@ public class UserResponse {
                 .middleName(user.getMiddleName())
                 .lastName(user.getLastName())
                 .photoUrl(user.getPhotoUrl())
+                .isEmailVerified(user.getIsEmailVerified())
                 .isActive(user.getIsActive())
                 .dateCreated(user.getDateCreated())
                 .dateUpdated(user.getDateUpdated())

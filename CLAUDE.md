@@ -40,8 +40,8 @@ Dev profile auto-loads seed data via Flyway repeatable migration (`src/main/reso
 Package root: `com.tasklean.api`
 
 - **`domain/<entity>`** — one package per aggregate. Each has: `Entity.java`, `Controller.java`, `Service.java`, `Repository.java`, plus `dto/EntityRequest.java` and `dto/EntityResponse.java`. Entities with uid (`user`, `group`, `task`) use uid as the external identifier in REST paths. Other entities (`category`, `tag`, `groupmember`, `device`, `taskcompletion`) use Long id. Read-only entities (`notification`, `auditlog`) have no request DTO.
-- **`auth`** — `AuthController` (register/login endpoints), `AuthService` (credential validation, user creation), `JwtService` (token generation/validation), `JwtAuthenticationFilter` (extracts Bearer token, sets SecurityContext), `JwtAuthenticationEntryPoint` (401 JSON response). DTOs: `LoginRequest`, `RegisterRequest`, `AuthResponse`. `GoogleOAuthService` still a stub.
-- **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler` handling 400/401/404/409).
+- **`auth`** — `AuthController` (register/login/verify/resend endpoints), `AuthService` (credential validation, user creation), `VerificationService` (email verification code generation, validation, resend), `JwtService` (token generation/validation), `JwtAuthenticationFilter` (extracts Bearer token, sets SecurityContext), `JwtAuthenticationEntryPoint` (401 JSON response), `EmailVerification` (entity), `EmailVerificationRepository`. DTOs: `LoginRequest`, `RegisterRequest`, `AuthResponse`, `VerifyEmailRequest`, `ResendVerificationRequest`. `GoogleOAuthService` still a stub.
+- **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler` handling 400/401/404/409), `email/EmailService` (shared email infrastructure using Spring Mail + Mailtrap in dev).
 - **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`), `CorsConfig` (configurable origins, credentials enabled).
 
 ## Conventions
@@ -50,7 +50,7 @@ Package root: `com.tasklean.api`
 - **Soft deletes**: all entities use `is_active` boolean, never hard-delete rows.
 - **UIDs**: user-facing identifier (`uid` column) separate from internal PK. Present on `user`, `group`, `task`.
 - **Timestamps**: `BaseEntity` provides `date_created`/`date_updated` via Hibernate `@CreationTimestamp`/`@UpdateTimestamp`. Entities not extending `BaseEntity` (`GroupMember`, `Notification`, `AuditLog`, `TaskCompletion`, `TaskTag`) manage their own `date_created`.
-- **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V12.
+- **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V13.
 - **Profiles**: `application.properties` (base), `application-dev.properties` (local Docker Postgres), `application-prod.properties` (Supabase Postgres). Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 - **Lombok**: `@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder` on entities. Use `@Builder.Default` on fields with initializers. Use `@RequiredArgsConstructor` for constructor injection in services/controllers.
 - **Reserved words**: `user` and `group` table names are quoted (`"user"`, `"group"`) in both `@Table` annotations and migrations.
@@ -80,4 +80,4 @@ Tests mirror `src/main/java` under `src/test/java`. Test class naming:
 
 ## Environment
 
-`.env` holds `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `SPRING_PROFILES_ACTIVE`. Never commit real secrets — the checked-in `.env` has placeholder values only.
+`.env` holds `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MAILTRAP_USERNAME`, `MAILTRAP_PASSWORD`, `SPRING_PROFILES_ACTIVE`. Loaded natively via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. Never commit real secrets — the checked-in `.env` has placeholder values only.

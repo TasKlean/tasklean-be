@@ -25,8 +25,9 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final VerificationService verificationService;
 
-    /** Creates a new user account, hashes the password, and returns a JWT for immediate login. */
+    /** Creates a new user account, hashes the password, and sends a verification code. No JWT until verified. */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -43,9 +44,9 @@ public class AuthService {
                 .build();
 
         user = userRepository.save(user);
+        verificationService.createAndSendVerification(user);
 
-        String token = jwtService.generateToken(user);
-        return AuthResponse.from(user, token);
+        return AuthResponse.pendingVerification(user);
     }
 
     /** Validates credentials against stored hash and returns a JWT on success. */
@@ -60,6 +61,10 @@ public class AuthService {
         // Google OAuth users have no password — must use /api/auth/google instead
         if (user.getPasswordHash() == null || user.getGoogleSub() != null) {
             throw new BadCredentialsException("This account uses a different sign-in option");
+        }
+
+        if (!user.getIsEmailVerified()) {
+            throw new BadCredentialsException("Email not verified. Check your inbox for a verification code");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {

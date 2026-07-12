@@ -148,8 +148,9 @@ Every FK column is indexed. Additional indexes on:
 | V9 | `task_completion` | `task`, `group_member` |
 | V10 | `notification` | `user`, `task`, `group` |
 | V11 | `audit_log` | `group_member`, `group` |
+| V12 | `email_verification` + `user.is_email_verified` column | `user` |
 
-Next available version: **V12**.
+Next available version: **V13**.
 
 ### Dev seed data
 
@@ -237,15 +238,21 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 
 | Endpoint | Status | Response |
 |---|---|---|
-| `POST /api/auth/register` | 201 | JWT + user info |
-| `POST /api/auth/login` | 200 | JWT + user info |
+| `POST /api/auth/register` | 201 | User info + "Verification code sent" message (no JWT until verified) |
+| `POST /api/auth/login` | 200 | JWT + user info (rejects unverified users) |
+| `POST /api/auth/verify-email` | 200 | JWT + user info (on valid code) |
+| `POST /api/auth/resend-verification` | 200 | Generic success message (enumeration-safe, always 200) |
 | `POST /api/auth/google` | Not implemented | — |
 
 ### Authentication flows
 
-**Email registration**: validate input (`@Email`, `@Size(min=8)` password, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate JWT → return `AuthResponse`.
+**Email registration**: validate input (`@Email`, `@Size(min=8)` password, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate & send 6-digit verification code (5-min expiry) → return `AuthResponse` with message (no JWT).
 
-**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → verify password against hash (401 if mismatch) → generate JWT → return `AuthResponse`.
+**Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
+
+**Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
+
+**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified) → verify password against hash (401 if mismatch) → generate JWT → return `AuthResponse`.
 
 **Google OAuth (planned)**: redirect to Google → callback with authorization code → exchange code for access token → verify `id_token` → extract email/name/`google_sub` → find existing user by `google_sub` or create new one → generate JWT → return token.
 
@@ -254,6 +261,7 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 - `GoogleOAuthService` — Google token verification, user upsert
 - `POST /api/auth/google` endpoint in AuthController
 - Role-based authorization (ADMIN/MEMBER enforcement in API layer)
+- Rate limiting on public auth endpoints (prevent brute force / spam)
 
 ### Authorization model (not yet built)
 
@@ -285,9 +293,11 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 | `GOOGLE_CLIENT_ID` | dev, prod | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | dev, prod | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URI` | prod only | OAuth callback URL (dev hardcodes `localhost:3000`) |
+| `MAILTRAP_USERNAME` | dev | Mailtrap SMTP username (sandbox email testing) |
+| `MAILTRAP_PASSWORD` | dev | Mailtrap SMTP password |
 | `SPRING_PROFILES_ACTIVE` | base | Profile selector |
 
-Dev profile has hardcoded fallback defaults for all values so the app starts without a `.env` file.
+All secrets are loaded from `.env` at the project root via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. No external library needed — Spring Boot 4.1 reads `.env` natively as a properties source. The `.env` file is gitignored and must exist locally for the app to start (no fallback defaults for secrets).
 
 ### Key base settings
 
@@ -427,8 +437,9 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | Class | Tests | Covers |
 |-------|-------|--------|
 | `JwtServiceTest` | 9 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction |
-| `AuthServiceTest` | 9 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only) |
+| `AuthServiceTest` | 10 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email) |
 | `JwtAuthenticationFilterTest` | 8 | Valid token sets SecurityContext, no/bad/invalid token passes through, inactive/deleted user rejected, auth endpoints skipped |
+| `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
 
 ### What's NOT in the codebase yet
 

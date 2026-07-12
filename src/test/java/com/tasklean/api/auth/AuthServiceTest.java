@@ -34,6 +34,9 @@ class AuthServiceTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private VerificationService verificationService;
+
     @InjectMocks
     private AuthService authService;
 
@@ -46,13 +49,14 @@ class AuthServiceTest {
                 .name("Bob")
                 .lastName("Smith")
                 .isActive(true)
+                .isEmailVerified(true)
                 .build();
     }
 
     // --- Register ---
 
     @Test
-    void register_newEmail_createsUserAndReturnsToken() {
+    void register_newEmail_createsUserAndSendsVerification() {
         RegisterRequest request = new RegisterRequest();
         request.setEmail("new@example.com");
         request.setPassword("password123");
@@ -66,13 +70,13 @@ class AuthServiceTest {
             u.setIdUser(99L);
             return u;
         });
-        when(jwtService.generateToken(any(User.class))).thenReturn("jwt-token");
 
         AuthResponse response = authService.register(request);
 
-        assertThat(response.getToken()).isEqualTo("jwt-token");
+        assertThat(response.getToken()).isNull();
         assertThat(response.getEmail()).isEqualTo("new@example.com");
-        assertThat(response.getName()).isEqualTo("New");
+        assertThat(response.getMessage()).contains("Verification code sent");
+        verify(verificationService).createAndSendVerification(any(User.class));
     }
 
     @Test
@@ -86,7 +90,6 @@ class AuthServiceTest {
         when(userRepository.existsByEmail(any())).thenReturn(false);
         when(passwordEncoder.encode("mypassword")).thenReturn("$2a$10$hashed");
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
-        when(jwtService.generateToken(any())).thenReturn("token");
 
         authService.register(request);
 
@@ -106,7 +109,6 @@ class AuthServiceTest {
         when(userRepository.existsByEmail(any())).thenReturn(false);
         when(passwordEncoder.encode(any())).thenReturn("hash");
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
-        when(jwtService.generateToken(any())).thenReturn("token");
 
         authService.register(request);
 
@@ -130,6 +132,7 @@ class AuthServiceTest {
                 .hasMessageContaining("Email already registered");
 
         verify(userRepository, never()).save(any());
+        verify(verificationService, never()).createAndSendVerification(any());
     }
 
     // --- Login ---
@@ -171,7 +174,8 @@ class AuthServiceTest {
         request.setEmail("bob@example.com");
         request.setPassword("wrongPassword");
 
-        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(buildExistingUser()));
+        User user = buildExistingUser();
+        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrongPassword", "$2a$10$hashedpassword")).thenReturn(false);
 
         assertThatThrownBy(() -> authService.login(request))
@@ -208,5 +212,20 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("different sign-in");
+    }
+
+    @Test
+    void login_unverifiedEmail_throwsBadCredentials() {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("bob@example.com");
+        request.setPassword("correctPassword");
+
+        User unverified = buildExistingUser();
+        unverified.setIsEmailVerified(false);
+        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(unverified));
+
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("not verified");
     }
 }
