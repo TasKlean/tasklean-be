@@ -1,8 +1,11 @@
 package com.tasklean.api.auth;
 
 import com.tasklean.api.auth.dto.AuthResponse;
-import com.tasklean.api.auth.dto.ResendVerificationRequest;
-import com.tasklean.api.auth.dto.VerifyEmailRequest;
+import com.tasklean.api.auth.jwt.JwtService;
+import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.verification.*;
+import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
+import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -37,6 +40,9 @@ class VerificationServiceTest {
 
     @Mock
     private JwtService jwtService;
+
+    @Mock
+    private RefreshTokenService refreshTokenService;
 
     @InjectMocks
     private VerificationService verificationService;
@@ -92,10 +98,12 @@ class VerificationServiceTest {
                 eq(1L), eq("123456"), any(LocalDateTime.class)))
                 .thenReturn(Optional.of(verification));
         when(jwtService.generateToken(user)).thenReturn("verified-token");
+        when(refreshTokenService.createRefreshToken(user)).thenReturn("refresh-token-xyz");
 
         AuthResponse response = verificationService.verifyEmail(request);
 
         assertThat(response.getToken()).isEqualTo("verified-token");
+        assertThat(response.getRefreshToken()).isEqualTo("refresh-token-xyz");
         assertThat(user.getIsEmailVerified()).isTrue();
         verify(userRepository).save(user);
         verify(verificationRepository).deleteByUserIdUser(1L);

@@ -1,4 +1,4 @@
-package com.tasklean.api.auth;
+package com.tasklean.api.auth.verification;
 
 import com.tasklean.api.domain.user.User;
 import jakarta.persistence.*;

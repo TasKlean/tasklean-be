@@ -1,6 +1,13 @@
 package com.tasklean.api.auth;
 
-import com.tasklean.api.auth.dto.*;
+import com.tasklean.api.auth.dto.AuthResponse;
+import com.tasklean.api.auth.dto.LoginRequest;
+import com.tasklean.api.auth.dto.RegisterRequest;
+import com.tasklean.api.auth.refresh.dto.RefreshRequest;
+import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
+import com.tasklean.api.auth.verification.VerificationService;
+import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +26,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final VerificationService verificationService;
+    private final RefreshTokenService refreshTokenService;
 
     /** Registers a new user and sends a verification code. No JWT until verified. */
     @PostMapping("/register")
@@ -44,5 +52,18 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         verificationService.resendVerification(request);
         return ResponseEntity.ok(ApiResponse.success("If this email is registered, a verification code has been sent", null));
+    }
+
+    /** Issues a new access + refresh token pair using a valid refresh token. */
+    @PostMapping("/refresh")
+    public ResponseEntity<ApiResponse<AuthResponse>> refresh(@Valid @RequestBody RefreshRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(refreshTokenService.refresh(request)));
+    }
+
+    /** Revokes all refresh tokens for the authenticated user (logout). */
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody RefreshRequest request) {
+        refreshTokenService.logout(request);
+        return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
     }
 }

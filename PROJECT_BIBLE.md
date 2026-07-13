@@ -55,6 +55,7 @@ GroupMember (*) ──── (1) Group
   └──── (*) AuditLog (group_member_id)
 
 User (1) ──── (*) Notification
+User (1) ──── (*) RefreshToken
 ```
 
 ### Core aggregate: Group
@@ -76,6 +77,7 @@ Everything revolves around the Group. A User does nothing alone — they must be
 | Device | `id_device` | No | Yes | `is_active` | Push notification tokens |
 | Notification | `id_notification` | No | No | None | Has `is_read` + `read_at` |
 | AuditLog | `id_audit_log` | No | No | None | Immutable; polymorphic via `entity_type` + `entity_id` |
+| RefreshToken | `id_refresh_token` | No | No | `is_revoked` | SHA-256 hashed token; 7-day expiry; `CASCADE` on user delete |
 
 ### Ownership chain
 
@@ -87,6 +89,7 @@ Group → Tag
 Group → AuditLog
 User  → Device
 User  → Notification
+User  → RefreshToken
 ```
 
 Tasks are created by and assigned to GroupMembers, not Users directly. This is deliberate — a user's permissions within a group are mediated through their membership.
@@ -132,6 +135,7 @@ Every FK column is indexed. Additional indexes on:
 - `task`: `group_id`, `assigned_to`, `status`, `priority`, `uid`
 - `notification`: `(user_id, is_read)` composite for unread queries
 - `audit_log`: `(entity_type, entity_id)` composite, `date_created` for time-range queries
+- `refresh_token`: `token` (unique, for lookup by hashed value), `user_id` (for bulk revocation)
 
 ### Migration sequence (V1–V11)
 
@@ -149,8 +153,9 @@ Every FK column is indexed. Additional indexes on:
 | V10 | `notification` | `user`, `task`, `group` |
 | V11 | `audit_log` | `group_member`, `group` |
 | V12 | `email_verification` + `user.is_email_verified` column | `user` |
+| V13 | `refresh_token` (with indexes on `token` and `user_id`) | `user` |
 
-Next available version: **V13**.
+Next available version: **V14**.
 
 ### Dev seed data
 
@@ -210,12 +215,22 @@ Entities with a `uid` field (User, Group, Task) use `/{uid}` as the path variabl
 
 Email/password authentication is fully implemented. All endpoints except `/api/auth/**` require a valid JWT Bearer token. Google OAuth is planned but not yet built.
 
-### JWT authentication (implemented)
+### Token architecture (implemented)
 
-- **Token format**: HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `iat`, `exp`
-- **Expiration**: 24h (configurable via `jwt.expiration` in ms)
-- **Secret**: min 256 bits, configured per profile via `jwt.secret`
-- **Library**: jjwt 0.12.6
+**Access token (JWT)**:
+- HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `iat`, `exp`
+- Expiration: **15 minutes** (configurable via `jwt.expiration` in ms)
+- Secret: min 256 bits, configured per profile via `jwt.secret`
+- Library: jjwt 0.12.6
+
+**Refresh token (opaque)**:
+- 32-byte cryptographically random value (via `SecureRandom`), Base64url-encoded
+- Stored in DB **SHA-256 hashed** (not plaintext) — raw token only sent to client
+- Expiration: **7 days**
+- **Single-use with rotation**: each refresh revokes the old token and issues a new pair
+- Logout revokes **all** refresh tokens for the user
+- Scheduled cleanup (`@Scheduled`, every 6 hours) purges expired and revoked tokens from DB
+- Entity: `RefreshToken` (table `refresh_token`, V13 migration)
 
 ### Request flow
 
@@ -227,7 +242,7 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 
 ### Security filter chain config
 
-- CSRF disabled (stateless API, no cookies)
+- CSRF disabled (stateless API, tokens in JSON body — will need revisiting if refresh tokens move to httpOnly cookies)
 - Session policy: `STATELESS` (no server-side sessions)
 - CORS: configurable origins (`cors.allowed-origins`), credentials enabled, `Authorization` + `Content-Type` headers
 - Public paths: `/api/auth/**`, `/error`
@@ -238,10 +253,12 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 
 | Endpoint | Status | Response |
 |---|---|---|
-| `POST /api/auth/register` | 201 | User info + "Verification code sent" message (no JWT until verified) |
-| `POST /api/auth/login` | 200 | JWT + user info (rejects unverified users) |
-| `POST /api/auth/verify-email` | 200 | JWT + user info (on valid code) |
+| `POST /api/auth/register` | 201 | User info + "Verification code sent" message (no tokens until verified) |
+| `POST /api/auth/login` | 200 | Access JWT + refresh token + user info (rejects unverified users) |
+| `POST /api/auth/verify-email` | 200 | Access JWT + refresh token + user info (on valid code) |
 | `POST /api/auth/resend-verification` | 200 | Generic success message (enumeration-safe, always 200) |
+| `POST /api/auth/refresh` | 200 | New access JWT + new refresh token (rotates old refresh token) |
+| `POST /api/auth/logout` | 200 | "Logged out successfully" (revokes all user refresh tokens) |
 | `POST /api/auth/google` | Not implemented | — |
 
 ### Authentication flows
@@ -252,7 +269,11 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 
 **Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
 
-**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified) → verify password against hash (401 if mismatch) → generate JWT → return `AuthResponse`.
+**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified) → verify password against hash (401 if mismatch) → generate access JWT + refresh token → return `AuthResponse`.
+
+**Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → revoke old token → generate new access JWT + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401.
+
+**Logout**: hash incoming refresh token → look up non-revoked match → revoke all refresh tokens for that user. Invalid token returns 401.
 
 **Google OAuth (planned)**: redirect to Google → callback with authorization code → exchange code for access token → verify `id_token` → extract email/name/`google_sub` → find existing user by `google_sub` or create new one → generate JWT → return token.
 
@@ -262,6 +283,7 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 - `POST /api/auth/google` endpoint in AuthController
 - Role-based authorization (ADMIN/MEMBER enforcement in API layer)
 - Rate limiting on public auth endpoints (prevent brute force / spam)
+- httpOnly cookies for refresh token transport (currently sent in JSON response body)
 
 ### Authorization model (not yet built)
 
@@ -440,6 +462,9 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `AuthServiceTest` | 10 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email) |
 | `JwtAuthenticationFilterTest` | 8 | Valid token sets SecurityContext, no/bad/invalid token passes through, inactive/deleted user rejected, auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
+| `RefreshTokenServiceTest` | 7 | createRefreshToken (hashed storage); refresh (valid rotation, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
+
+Total: **42 tests** across 5 test classes.
 
 ### What's NOT in the codebase yet
 

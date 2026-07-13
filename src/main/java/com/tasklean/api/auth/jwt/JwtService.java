@@ -1,4 +1,4 @@
-package com.tasklean.api.auth;
+package com.tasklean.api.auth.jwt;
 
 import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.user.User;

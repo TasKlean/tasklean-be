@@ -1,8 +1,10 @@
-package com.tasklean.api.auth;
+package com.tasklean.api.auth.verification;
 
 import com.tasklean.api.auth.dto.AuthResponse;
-import com.tasklean.api.auth.dto.ResendVerificationRequest;
-import com.tasklean.api.auth.dto.VerifyEmailRequest;
+import com.tasklean.api.auth.jwt.JwtService;
+import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
+import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -29,6 +31,7 @@ public class VerificationService {
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final JwtService jwtService;
+    private final RefreshTokenService refreshTokenService;
 
     /** Generates a 6-digit code, persists it, and sends it to the user's email. */
     @Transactional
@@ -63,7 +66,8 @@ public class VerificationService {
         verificationRepository.deleteByUserIdUser(user.getIdUser());
 
         String token = jwtService.generateToken(user);
-        return AuthResponse.from(user, token);
+        String refreshToken = refreshTokenService.createRefreshToken(user);
+        return AuthResponse.from(user, token, refreshToken);
     }
 
     /** Resends a verification code. */

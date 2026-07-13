@@ -1,4 +1,4 @@
-package com.tasklean.api.auth;
+package com.tasklean.api.auth.verification;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;

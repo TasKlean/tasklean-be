@@ -3,6 +3,9 @@ package com.tasklean.api.auth;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.LoginRequest;
 import com.tasklean.api.auth.dto.RegisterRequest;
+import com.tasklean.api.auth.jwt.JwtService;
+import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -36,6 +39,9 @@ class AuthServiceTest {
 
     @Mock
     private VerificationService verificationService;
+
+    @Mock
+    private RefreshTokenService refreshTokenService;
 
     @InjectMocks
     private AuthService authService;
@@ -147,10 +153,12 @@ class AuthServiceTest {
         when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("correctPassword", "$2a$10$hashedpassword")).thenReturn(true);
         when(jwtService.generateToken(user)).thenReturn("login-token");
+        when(refreshTokenService.createRefreshToken(user)).thenReturn("refresh-token-abc");
 
         AuthResponse response = authService.login(request);
 
         assertThat(response.getToken()).isEqualTo("login-token");
+        assertThat(response.getRefreshToken()).isEqualTo("refresh-token-abc");
         assertThat(response.getUid()).isEqualTo("usr-existing-123");
         assertThat(response.getEmail()).isEqualTo("bob@example.com");
     }

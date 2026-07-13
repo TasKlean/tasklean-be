@@ -40,9 +40,12 @@ Dev profile auto-loads seed data via Flyway repeatable migration (`src/main/reso
 Package root: `com.tasklean.api`
 
 - **`domain/<entity>`** — one package per aggregate. Each has: `Entity.java`, `Controller.java`, `Service.java`, `Repository.java`, plus `dto/EntityRequest.java` and `dto/EntityResponse.java`. Entities with uid (`user`, `group`, `task`) use uid as the external identifier in REST paths. Other entities (`category`, `tag`, `groupmember`, `device`, `taskcompletion`) use Long id. Read-only entities (`notification`, `auditlog`) have no request DTO.
-- **`auth`** — `AuthController` (register/login/verify/resend endpoints), `AuthService` (credential validation, user creation), `VerificationService` (email verification code generation, validation, resend), `JwtService` (token generation/validation), `JwtAuthenticationFilter` (extracts Bearer token, sets SecurityContext), `JwtAuthenticationEntryPoint` (401 JSON response), `EmailVerification` (entity), `EmailVerificationRepository`. DTOs: `LoginRequest`, `RegisterRequest`, `AuthResponse`, `VerifyEmailRequest`, `ResendVerificationRequest`. `GoogleOAuthService` still a stub.
+- **`auth`** — `AuthController` (register/login/verify/resend/refresh/logout endpoints), `AuthService` (credential validation, user creation). DTOs: `LoginRequest`, `RegisterRequest`, `AuthResponse` (includes `refreshToken` field). `GoogleOAuthService` still a stub.
+  - **`auth/jwt`** — `JwtService` (token generation/validation), `JwtAuthenticationFilter` (extracts Bearer token, sets SecurityContext), `JwtAuthenticationEntryPoint` (401 JSON response).
+  - **`auth/verification`** — `VerificationService` (email verification code generation, validation, resend), `EmailVerification` (entity), `EmailVerificationRepository`. DTOs in `verification/dto`: `VerifyEmailRequest`, `ResendVerificationRequest`.
+  - **`auth/refresh`** — `RefreshTokenService` (create with SHA-256 hashing, rotate on refresh, revoke on logout, scheduled cleanup), `RefreshToken` (entity), `RefreshTokenRepository`. DTOs in `refresh/dto`: `RefreshRequest`.
 - **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler` handling 400/401/404/409), `email/EmailService` (shared email infrastructure using Spring Mail + Mailtrap in dev).
-- **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`), `CorsConfig` (configurable origins, credentials enabled).
+- **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`), `CorsConfig` (configurable origins, credentials enabled). `@EnableScheduling` on `TaskleanApiApplication` for refresh token cleanup job.
 
 ## Conventions
 
@@ -50,7 +53,7 @@ Package root: `com.tasklean.api`
 - **Soft deletes**: all entities use `is_active` boolean, never hard-delete rows.
 - **UIDs**: user-facing identifier (`uid` column) separate from internal PK. Present on `user`, `group`, `task`.
 - **Timestamps**: `BaseEntity` provides `date_created`/`date_updated` via Hibernate `@CreationTimestamp`/`@UpdateTimestamp`. Entities not extending `BaseEntity` (`GroupMember`, `Notification`, `AuditLog`, `TaskCompletion`, `TaskTag`) manage their own `date_created`.
-- **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V13.
+- **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V14.
 - **Profiles**: `application.properties` (base), `application-dev.properties` (local Docker Postgres), `application-prod.properties` (Supabase Postgres). Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 - **Lombok**: `@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder` on entities. Use `@Builder.Default` on fields with initializers. Use `@RequiredArgsConstructor` for constructor injection in services/controllers.
 - **Reserved words**: `user` and `group` table names are quoted (`"user"`, `"group"`) in both `@Table` annotations and migrations.

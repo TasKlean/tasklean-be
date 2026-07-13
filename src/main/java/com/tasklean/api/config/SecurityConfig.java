@@ -1,7 +1,7 @@
 package com.tasklean.api.config;
 
-import com.tasklean.api.auth.JwtAuthenticationEntryPoint;
-import com.tasklean.api.auth.JwtAuthenticationFilter;
+import com.tasklean.api.auth.jwt.JwtAuthenticationEntryPoint;
+import com.tasklean.api.auth.jwt.JwtAuthenticationFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -3,6 +3,9 @@ package com.tasklean.api.auth;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.LoginRequest;
 import com.tasklean.api.auth.dto.RegisterRequest;
+import com.tasklean.api.auth.jwt.JwtService;
+import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -26,6 +29,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final VerificationService verificationService;
+    private final RefreshTokenService refreshTokenService;
 
     /** Creates a new user account, hashes the password, and sends a verification code. No JWT until verified. */
     @Transactional
@@ -72,6 +76,7 @@ public class AuthService {
         }
 
         String token = jwtService.generateToken(user);
-        return AuthResponse.from(user, token);
+        String refreshToken = refreshTokenService.createRefreshToken(user);
+        return AuthResponse.from(user, token, refreshToken);
     }
 }

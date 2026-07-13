@@ -1,4 +1,4 @@
-package com.tasklean.api.auth;
+package com.tasklean.api.auth.jwt;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
