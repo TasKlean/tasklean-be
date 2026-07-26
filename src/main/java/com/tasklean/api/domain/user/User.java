@@ -43,6 +43,10 @@ public class User extends BaseEntity {
     private String googleSub;
 
     @Builder.Default
+    @Column(name = "is_email_verified", nullable = false)
+    private Boolean isEmailVerified = false;
+
+    @Builder.Default
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 }

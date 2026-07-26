@@ -7,11 +7,11 @@
 -- ============================================================================
 -- USERS (3 users: Alice is Google-linked, Bob and Charlie are email-based)
 -- ============================================================================
-INSERT INTO "user" (uid, email, password_hash, name, middle_name, last_name, photo_url, google_sub)
+INSERT INTO "user" (uid, email, password_hash, name, middle_name, last_name, photo_url, google_sub, is_email_verified)
 VALUES
-    ('usr-alice-00000001', 'alice@example.com', NULL, 'Alice', NULL, 'Johnson', NULL, 'google-sub-alice-12345'),
-    ('usr-bob-00000002', 'bob@example.com', '$2a$10$dummyhashfordevonly000000000000000000000000000000', 'Bob', 'James', 'Smith', NULL, NULL),
-    ('usr-charlie-00000003', 'charlie@example.com', '$2a$10$dummyhashfordevonly111111111111111111111111111111', 'Charlie', NULL, 'Williams', NULL, NULL)
+    ('usr-alice-00000001', 'alice@example.com', NULL, 'Alice', NULL, 'Johnson', NULL, 'google-sub-alice-12345', TRUE),
+    ('usr-bob-00000002', 'bob@example.com', '$2a$10$dummyhashfordevonly000000000000000000000000000000', 'Bob', 'James', 'Smith', NULL, NULL, TRUE),
+    ('usr-charlie-00000003', 'charlie@example.com', '$2a$10$dummyhashfordevonly111111111111111111111111111111', 'Charlie', NULL, 'Williams', NULL, NULL, TRUE)
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
