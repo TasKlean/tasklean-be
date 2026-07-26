@@ -36,6 +36,8 @@ public class VerificationService {
     /** Generates a 6-digit code, persists it, and sends it to the user's email. */
     @Transactional
     public void createAndSendVerification(User user) {
+        verificationRepository.deleteByUserIdUser(user.getIdUser());
+
         String code = generateCode();
 
         EmailVerification verification = EmailVerification.builder()

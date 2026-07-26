@@ -1,9 +1,8 @@
-package com.tasklean.api.auth;
+package com.tasklean.api.auth.verification;
 
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
-import com.tasklean.api.auth.verification.*;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.email.EmailService;
@@ -65,6 +64,8 @@ class VerificationServiceTest {
         User user = buildUnverifiedUser();
 
         verificationService.createAndSendVerification(user);
+
+        verify(verificationRepository).deleteByUserIdUser(1L);
 
         ArgumentCaptor<EmailVerification> captor = ArgumentCaptor.forClass(EmailVerification.class);
         verify(verificationRepository).save(captor.capture());
@@ -166,6 +167,7 @@ class VerificationServiceTest {
 
         verificationService.resendVerification(request);
 
+        verify(verificationRepository).deleteByUserIdUser(1L);
         verify(verificationRepository).save(any(EmailVerification.class));
         verify(emailService).sendVerificationEmail(eq("test@example.com"), any());
     }

@@ -125,7 +125,7 @@ Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). No
 - **Types**: `BIGSERIAL` for PKs, `VARCHAR(N)` for bounded strings, `TEXT` for unbounded, `TIMESTAMP` for dates (no timezone — uses JVM timezone), `BOOLEAN` for flags, `JSONB` for structured data.
 - **Defaults**: `is_active DEFAULT TRUE`, `date_created DEFAULT NOW()`, `date_updated DEFAULT NOW()`, `is_read DEFAULT FALSE`.
 - **Reserved words**: `user` and `group` are quoted as `"user"` and `"group"` everywhere — SQL, JPA `@Table`, and Spring Data queries.
-- **Cascades**: `ON DELETE CASCADE` only on `device → user` and `task_tag` FKs. All other FKs have no cascade — application handles deletion logic.
+- **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, and `refresh_token → user`. All other FKs have no cascade — application handles deletion logic.
 
 ### Indexes
 
