@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
 
@@ -26,6 +27,7 @@ public class RefreshTokenService {
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
+    private final Clock clock;
 
     @Transactional
     public String createRefreshToken(User user) {
@@ -34,7 +36,7 @@ public class RefreshTokenService {
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)
                 .token(hashToken(rawToken))
-                .expiresAt(LocalDateTime.now().plusDays(REFRESH_TOKEN_EXPIRY_DAYS))
+                .expiresAt(LocalDateTime.now(clock).plusDays(REFRESH_TOKEN_EXPIRY_DAYS))
                 .build();
 
         refreshTokenRepository.save(refreshToken);
@@ -48,7 +50,7 @@ public class RefreshTokenService {
         RefreshToken existing = refreshTokenRepository.findByTokenAndIsRevokedFalse(hashedToken)
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
 
-        if (existing.getExpiresAt().isBefore(LocalDateTime.now())) {
+        if (existing.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
             existing.setIsRevoked(true);
             refreshTokenRepository.save(existing);
             throw new BadCredentialsException("Refresh token expired");
@@ -82,7 +84,7 @@ public class RefreshTokenService {
     @Scheduled(fixedRate = 6 * 60 * 60 * 1000) // every 6 hours
     @Transactional
     public void purgeExpiredAndRevokedTokens() {
-        refreshTokenRepository.deleteExpiredAndRevoked(LocalDateTime.now());
+        refreshTokenRepository.deleteExpiredAndRevoked(LocalDateTime.now(clock));
     }
 
     private String generateToken() {

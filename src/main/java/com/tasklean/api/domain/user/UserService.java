@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.user;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
@@ -17,7 +18,7 @@ public class UserService {
 
     public UserResponse getUserByUid(String uid) {
         User user = userRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         return UserResponse.from(user);
     }
 
@@ -30,7 +31,7 @@ public class UserService {
     @Transactional
     public UserResponse updateUser(String uid, UserRequest request) {
         User user = userRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         user.setName(request.getName());
         user.setMiddleName(request.getMiddleName());
         user.setLastName(request.getLastName());
@@ -41,7 +42,7 @@ public class UserService {
     @Transactional
     public void deleteUser(String uid) {
         User user = userRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         user.setIsActive(false);
         userRepository.save(user);
     }

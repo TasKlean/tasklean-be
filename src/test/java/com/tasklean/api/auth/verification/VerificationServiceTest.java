@@ -13,10 +13,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +45,9 @@ class VerificationServiceTest {
 
     @Mock
     private RefreshTokenService refreshTokenService;
+
+    @Spy
+    private Clock clock = Clock.systemUTC();
 
     @InjectMocks
     private VerificationService verificationService;
@@ -73,7 +79,7 @@ class VerificationServiceTest {
         EmailVerification saved = captor.getValue();
         assertThat(saved.getCode()).hasSize(6);
         assertThat(saved.getCode()).matches("\\d{6}");
-        assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now());
+        assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC));
         assertThat(saved.getUser()).isEqualTo(user);
 
         verify(emailService).sendVerificationEmail(eq("test@example.com"), eq(saved.getCode()));
@@ -90,7 +96,7 @@ class VerificationServiceTest {
 
         EmailVerification verification = EmailVerification.builder()
                 .code("123456")
-                .expiresAt(LocalDateTime.now().plusMinutes(5))
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(5))
                 .user(user)
                 .build();
 

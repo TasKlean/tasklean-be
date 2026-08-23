@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.tag;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.group.Group;
@@ -21,7 +22,7 @@ public class TagService {
 
     public TagResponse getTagById(Long id) {
         Tag tag = tagRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Tag not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
         return TagResponse.from(tag);
     }
 
@@ -34,7 +35,7 @@ public class TagService {
     @Transactional
     public TagResponse createTag(TagRequest request) {
         Group group = groupRepository.findById(request.getGroupId())
-                .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
         if (tagRepository.existsByGroupIdGroupAndName(request.getGroupId(), request.getName())) {
             throw new DuplicateResourceException("Tag with this name already exists in the group");
@@ -52,7 +53,7 @@ public class TagService {
     @Transactional
     public TagResponse updateTag(Long id, TagRequest request) {
         Tag tag = tagRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Tag not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
         tag.setName(request.getName());
         tag.setColor(request.getColor());
         return TagResponse.from(tagRepository.save(tag));
@@ -61,7 +62,7 @@ public class TagService {
     @Transactional
     public void deleteTag(Long id) {
         Tag tag = tagRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Tag not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
         tag.setIsActive(false);
         tagRepository.save(tag);
     }

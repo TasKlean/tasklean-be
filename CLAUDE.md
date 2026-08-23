@@ -44,8 +44,8 @@ Package root: `com.tasklean.api`
   - **`auth/jwt`** — `JwtService` (token generation/validation), `JwtAuthenticationFilter` (extracts Bearer token, sets SecurityContext), `JwtAuthenticationEntryPoint` (401 JSON response).
   - **`auth/verification`** — `VerificationService` (email verification code generation, validation, resend), `EmailVerification` (entity), `EmailVerificationRepository`. DTOs in `verification/dto`: `VerifyEmailRequest`, `ResendVerificationRequest`.
   - **`auth/refresh`** — `RefreshTokenService` (create with SHA-256 hashing, rotate on refresh, revoke on logout, scheduled cleanup), `RefreshToken` (entity), `RefreshTokenRepository`. DTOs in `refresh/dto`: `RefreshRequest`.
-- **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler` handling 400/401/404/409), `email/EmailService` (shared email infrastructure using Spring Mail + Mailtrap in dev).
-- **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`), `CorsConfig` (configurable origins, credentials enabled). `@EnableScheduling` on `TaskleanApiApplication` for refresh token cleanup job.
+- **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `ErrorMessages` (centralized "not found" string constants), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler` handling 400/401/404/409), `email/EmailService` (shared email infrastructure using Spring Mail + Mailtrap in dev).
+- **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`), `CorsConfig` (configurable origins, credentials enabled), `ClockConfig` (UTC `Clock` bean for consistent timestamps). `@EnableScheduling` on `TaskleanApiApplication` for refresh token cleanup job.
 
 ## Conventions
 
@@ -58,6 +58,8 @@ Package root: `com.tasklean.api`
 - **Lombok**: `@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder` on entities. Use `@Builder.Default` on fields with initializers. Use `@RequiredArgsConstructor` for constructor injection in services/controllers.
 - **Reserved words**: `user` and `group` table names are quoted (`"user"`, `"group"`) in both `@Table` annotations and migrations.
 - **API response**: all endpoints return `ApiResponse<T>` envelope. Use `ApiResponse.success(data)` or `ApiResponse.error(message)`.
+- **Timestamps are UTC**: all `LocalDateTime.now()` calls use an injected `Clock` bean (`ClockConfig`) pinned to UTC. Never call `LocalDateTime.now()` without the clock — use `LocalDateTime.now(clock)`. Tests use `@Spy Clock clock = Clock.systemUTC()` and `LocalDateTime.now(ZoneOffset.UTC)` for fixture data.
+- **Error messages**: "not found" strings are centralized in `common/ErrorMessages.java`. Use constants from there instead of inline strings.
 
 ## Testing
 

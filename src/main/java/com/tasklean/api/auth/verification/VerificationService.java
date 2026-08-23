@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
+import java.time.Clock;
 import java.time.LocalDateTime;
 
 /**
@@ -32,6 +33,7 @@ public class VerificationService {
     private final EmailService emailService;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final Clock clock;
 
     /** Generates a 6-digit code, persists it, and sends it to the user's email. */
     @Transactional
@@ -43,7 +45,7 @@ public class VerificationService {
         EmailVerification verification = EmailVerification.builder()
                 .user(user)
                 .code(code)
-                .expiresAt(LocalDateTime.now().plusMinutes(CODE_EXPIRY_MINUTES))
+                .expiresAt(LocalDateTime.now(clock).plusMinutes(CODE_EXPIRY_MINUTES))
                 .build();
 
         verificationRepository.save(verification);
@@ -58,7 +60,7 @@ public class VerificationService {
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or code"));
 
         verificationRepository.findTopByUserIdUserAndCodeAndExpiresAtAfterOrderByDateCreatedDesc(
-                user.getIdUser(), request.getCode(), LocalDateTime.now()
+                user.getIdUser(), request.getCode(), LocalDateTime.now(clock)
         ).orElseThrow(() -> new BadCredentialsException("Invalid email or code"));
 
         user.setIsEmailVerified(true);

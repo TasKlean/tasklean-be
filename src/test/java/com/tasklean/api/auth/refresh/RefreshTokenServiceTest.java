@@ -9,10 +9,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,6 +32,9 @@ class RefreshTokenServiceTest {
 
     @Mock
     private JwtService jwtService;
+
+    @Spy
+    private Clock clock = Clock.systemUTC();
 
     @InjectMocks
     private RefreshTokenService refreshTokenService;
@@ -64,7 +70,7 @@ class RefreshTokenServiceTest {
         assertThat(saved.getToken()).isNotEqualTo(rawToken);
         assertThat(saved.getToken()).isNotBlank();
         assertThat(saved.getUser()).isEqualTo(user);
-        assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now().plusDays(6));
+        assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC).plusDays(6));
         assertThat(saved.getIsRevoked()).isFalse();
     }
 
@@ -77,7 +83,7 @@ class RefreshTokenServiceTest {
                 .idRefreshToken(1L)
                 .user(user)
                 .token("hashed-value")
-                .expiresAt(LocalDateTime.now().plusDays(3))
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(3))
                 .isRevoked(false)
                 .build();
 
@@ -104,7 +110,7 @@ class RefreshTokenServiceTest {
                 .idRefreshToken(1L)
                 .user(user)
                 .token("hashed-value")
-                .expiresAt(LocalDateTime.now().minusHours(1))
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).minusHours(1))
                 .isRevoked(false)
                 .build();
 
@@ -157,7 +163,7 @@ class RefreshTokenServiceTest {
                 .idRefreshToken(1L)
                 .user(user)
                 .token("hashed-value")
-                .expiresAt(LocalDateTime.now().plusDays(3))
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(3))
                 .isRevoked(false)
                 .build();
 

@@ -122,7 +122,7 @@ Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). No
 ### Schema conventions
 
 - **Column naming**: `snake_case` throughout. PK is `id_<entity>`, FKs are `<referenced_entity>_id` or descriptive (`created_by`, `assigned_to`, `added_by`).
-- **Types**: `BIGSERIAL` for PKs, `VARCHAR(N)` for bounded strings, `TEXT` for unbounded, `TIMESTAMP` for dates (no timezone — uses JVM timezone), `BOOLEAN` for flags, `JSONB` for structured data.
+- **Types**: `BIGSERIAL` for PKs, `VARCHAR(N)` for bounded strings, `TEXT` for unbounded, `TIMESTAMP` for dates (no timezone in column — application enforces UTC via injected `Clock` bean), `BOOLEAN` for flags, `JSONB` for structured data.
 - **Defaults**: `is_active DEFAULT TRUE`, `date_created DEFAULT NOW()`, `date_updated DEFAULT NOW()`, `is_read DEFAULT FALSE`.
 - **Reserved words**: `user` and `group` are quoted as `"user"` and `"group"` everywhere — SQL, JPA `@Table`, and Spring Data queries.
 - **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, and `refresh_token → user`. All other FKs have no cascade — application handles deletion logic.
@@ -326,7 +326,7 @@ All secrets are loaded from `.env` at the project root via `spring.config.import
 - `server.port=8080`
 - `spring.jpa.hibernate.ddl-auto=validate` (Flyway owns schema)
 - `spring.flyway.baseline-on-migrate=true` (safe for first run)
-- `spring.servlet.multipart.max-file-size=5MB` / `max-request-size=10MB` (task photos)
+- `spring.servlet.multipart.max-file-size=5MB` / `max-request-size=8MB` (task photos)
 - `spring.flyway.clean-disabled=false` in dev, `true` in prod
 
 ## Infrastructure
@@ -489,7 +489,7 @@ Total: **42 tests** across 5 test classes.
 
 5. **Dockerfile is broken for production** — it runs `./mvnw` but doesn't copy the Maven wrapper files (`mvnw`, `.mvn/`). Needs fixing before any Docker-based deployment.
 
-6. **No timezone in timestamps.** All `TIMESTAMP` columns are without timezone. The JVM's default timezone is used. This works if all instances run in the same timezone but will cause issues in a distributed setup.
+6. **Timestamps are UTC but columns have no timezone.** All `TIMESTAMP` columns are `WITHOUT TIME ZONE`. The application enforces UTC via an injected `Clock` bean (`ClockConfig`). All services use `LocalDateTime.now(clock)`, never bare `LocalDateTime.now()`. The frontend must convert UTC to local time for display.
 
 7. **String-typed enums.** Priority, status, recurrence type, and role are all `VARCHAR` + CHECK constraints in SQL, stored as plain `String` in Java. There are no Java enums — consider adding them for type safety when the domain stabilizes.
 
