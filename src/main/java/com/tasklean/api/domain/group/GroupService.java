@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.group;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
@@ -18,7 +19,7 @@ public class GroupService {
 
     public GroupResponse getGroupByUid(String uid) {
         Group group = groupRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
         return GroupResponse.from(group);
     }
 
@@ -44,7 +45,7 @@ public class GroupService {
     @Transactional
     public GroupResponse updateGroup(String uid, GroupRequest request) {
         Group group = groupRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
         group.setName(request.getName());
         group.setDescription(request.getDescription());
         group.setPhotoUrl(request.getPhotoUrl());
@@ -54,7 +55,7 @@ public class GroupService {
     @Transactional
     public void deleteGroup(String uid) {
         Group group = groupRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
         group.setIsActive(false);
         groupRepository.save(group);
     }

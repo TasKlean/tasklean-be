@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.device;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.device.dto.DeviceRequest;
@@ -10,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -19,10 +21,11 @@ public class DeviceService {
 
     private final DeviceRepository deviceRepository;
     private final UserRepository userRepository;
+    private final Clock clock;
 
     public DeviceResponse getDeviceById(Long id) {
         Device device = deviceRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Device not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.DEVICE_NOT_FOUND));
         return DeviceResponse.from(device);
     }
 
@@ -39,7 +42,7 @@ public class DeviceService {
         }
 
         User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
 
         Device device = Device.builder()
                 .deviceToken(request.getDeviceToken())
@@ -49,7 +52,7 @@ public class DeviceService {
                 .osVersion(request.getOsVersion())
                 .appVersion(request.getAppVersion())
                 .isActive(true)
-                .lastUsed(LocalDateTime.now())
+                .lastUsed(LocalDateTime.now(clock))
                 .user(user)
                 .build();
         return DeviceResponse.from(deviceRepository.save(device));
@@ -58,19 +61,19 @@ public class DeviceService {
     @Transactional
     public DeviceResponse updateDevice(Long id, DeviceRequest request) {
         Device device = deviceRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Device not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.DEVICE_NOT_FOUND));
         device.setDeviceName(request.getDeviceName());
         device.setBrowserInfo(request.getBrowserInfo());
         device.setOsVersion(request.getOsVersion());
         device.setAppVersion(request.getAppVersion());
-        device.setLastUsed(LocalDateTime.now());
+        device.setLastUsed(LocalDateTime.now(clock));
         return DeviceResponse.from(deviceRepository.save(device));
     }
 
     @Transactional
     public void deactivateDevice(Long id) {
         Device device = deviceRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Device not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.DEVICE_NOT_FOUND));
         device.setIsActive(false);
         deviceRepository.save(device);
     }

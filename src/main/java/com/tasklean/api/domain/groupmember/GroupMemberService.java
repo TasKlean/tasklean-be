@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.groupmember;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.group.Group;
@@ -12,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -22,10 +24,11 @@ public class GroupMemberService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
+    private final Clock clock;
 
     public GroupMemberResponse getMemberById(Long id) {
         GroupMember member = groupMemberRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Group member not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
         return GroupMemberResponse.from(member);
     }
 
@@ -48,16 +51,16 @@ public class GroupMemberService {
         }
 
         User user = userRepository.findById(request.getUserId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         Group group = groupRepository.findById(request.getGroupId())
-                .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
         GroupMember member = GroupMember.builder()
                 .user(user)
                 .group(group)
                 .role(request.getRole())
                 .isActive(true)
-                .dateJoined(LocalDateTime.now())
+                .dateJoined(LocalDateTime.now(clock))
                 .build();
         return GroupMemberResponse.from(groupMemberRepository.save(member));
     }
@@ -65,7 +68,7 @@ public class GroupMemberService {
     @Transactional
     public GroupMemberResponse updateMemberRole(Long id, String role) {
         GroupMember member = groupMemberRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Group member not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
         member.setRole(role);
         return GroupMemberResponse.from(groupMemberRepository.save(member));
     }
@@ -73,9 +76,9 @@ public class GroupMemberService {
     @Transactional
     public void removeMember(Long id) {
         GroupMember member = groupMemberRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Group member not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
         member.setIsActive(false);
-        member.setDateLeft(LocalDateTime.now());
+        member.setDateLeft(LocalDateTime.now(clock));
         groupMemberRepository.save(member);
     }
 }

@@ -1,11 +1,13 @@
 package com.tasklean.api.domain.notification;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.notification.dto.NotificationResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -14,6 +16,7 @@ import java.util.List;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final Clock clock;
 
     public List<NotificationResponse> getNotificationsByUser(Long userId) {
         return notificationRepository.findByUserIdUserOrderByDateCreatedDesc(userId).stream()
@@ -34,9 +37,9 @@ public class NotificationService {
     @Transactional
     public NotificationResponse markAsRead(Long id) {
         Notification notification = notificationRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Notification not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.NOTIFICATION_NOT_FOUND));
         notification.setIsRead(true);
-        notification.setReadAt(LocalDateTime.now());
+        notification.setReadAt(LocalDateTime.now(clock));
         return NotificationResponse.from(notificationRepository.save(notification));
     }
 }

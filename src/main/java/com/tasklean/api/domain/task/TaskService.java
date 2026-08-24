@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.task;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.category.Category;
 import com.tasklean.api.domain.category.CategoryRepository;
@@ -27,7 +28,7 @@ public class TaskService {
 
     public TaskResponse getTaskByUid(String uid) {
         Task task = taskRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("Task not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         return TaskResponse.from(task);
     }
 
@@ -40,9 +41,9 @@ public class TaskService {
     @Transactional
     public TaskResponse createTask(TaskRequest request) {
         Group group = groupRepository.findById(request.getGroupId())
-                .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
         GroupMember createdBy = groupMemberRepository.findById(request.getCreatedById())
-                .orElseThrow(() -> new ResourceNotFoundException("Group member not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
 
         Task task = Task.builder()
                 .uid(UUID.randomUUID().toString())
@@ -63,11 +64,11 @@ public class TaskService {
 
         if (request.getAssignedToId() != null) {
             task.setAssignedTo(groupMemberRepository.findById(request.getAssignedToId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Assigned member not found")));
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.ASSIGNED_MEMBER_NOT_FOUND)));
         }
         if (request.getCategoryId() != null) {
             task.setCategory(categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Category not found")));
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)));
         }
 
         return TaskResponse.from(taskRepository.save(task));
@@ -76,7 +77,7 @@ public class TaskService {
     @Transactional
     public TaskResponse updateTask(String uid, TaskRequest request) {
         Task task = taskRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("Task not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
 
         task.setName(request.getName());
         task.setDescription(request.getDescription());
@@ -91,14 +92,14 @@ public class TaskService {
 
         if (request.getAssignedToId() != null) {
             task.setAssignedTo(groupMemberRepository.findById(request.getAssignedToId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Assigned member not found")));
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.ASSIGNED_MEMBER_NOT_FOUND)));
         } else {
             task.setAssignedTo(null);
         }
 
         if (request.getCategoryId() != null) {
             task.setCategory(categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Category not found")));
+                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)));
         } else {
             task.setCategory(null);
         }
@@ -109,7 +110,7 @@ public class TaskService {
     @Transactional
     public void deleteTask(String uid) {
         Task task = taskRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException("Task not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         task.setIsActive(false);
         taskRepository.save(task);
     }

@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.category;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.category.dto.CategoryRequest;
@@ -21,7 +22,7 @@ public class CategoryService {
 
     public CategoryResponse getCategoryById(Long id) {
         Category category = categoryRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
         return CategoryResponse.from(category);
     }
 
@@ -34,7 +35,7 @@ public class CategoryService {
     @Transactional
     public CategoryResponse createCategory(CategoryRequest request) {
         Group group = groupRepository.findById(request.getGroupId())
-                .orElseThrow(() -> new ResourceNotFoundException("Group not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
         if (categoryRepository.existsByGroupIdGroupAndName(request.getGroupId(), request.getName())) {
             throw new DuplicateResourceException("Category with this name already exists in the group");
@@ -53,7 +54,7 @@ public class CategoryService {
     @Transactional
     public CategoryResponse updateCategory(Long id, CategoryRequest request) {
         Category category = categoryRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
         category.setName(request.getName());
         category.setColor(request.getColor());
         category.setIcon(request.getIcon());
@@ -63,7 +64,7 @@ public class CategoryService {
     @Transactional
     public void deleteCategory(Long id) {
         Category category = categoryRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Category not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
         category.setIsActive(false);
         categoryRepository.save(category);
     }
