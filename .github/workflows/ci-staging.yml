@@ -1,15 +1,16 @@
 name: CI Staging
 
 on:
+  workflow_dispatch: # only triggers compile, test and sonarcloud
   push:
     branches: [main]
-    paths-ignore:
+    paths-ignore: #dont retrigger on documentation change
       - '**.md'
       - 'docs/**'
       - 'LICENSE'
   pull_request:
     branches: [main]
-    paths-ignore:
+    paths-ignore: #dont retrigger on documentation change
       - '**.md'
       - 'docs/**'
       - 'LICENSE'
