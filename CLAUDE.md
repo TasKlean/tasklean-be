@@ -85,4 +85,4 @@ Tests mirror `src/main/java` under `src/test/java`. Test class naming:
 
 ## Environment
 
-`.env` holds `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MAILTRAP_USERNAME`, `MAILTRAP_PASSWORD`, `SPRING_PROFILES_ACTIVE`. Loaded natively via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. The `.env` file is gitignored — create it locally from the variable list above. Never commit real secrets.
+`.env` holds `DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `SPRING_PROFILES_ACTIVE`. Loaded natively via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. The `.env` file is gitignored — create it locally from `.env.example`. Never commit real secrets.

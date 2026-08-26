@@ -3,6 +3,7 @@ package com.tasklean.api.auth.refresh;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
+import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -11,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
@@ -22,11 +24,11 @@ import java.util.Base64;
 @RequiredArgsConstructor
 public class RefreshTokenService {
 
-    private static final int REFRESH_TOKEN_EXPIRY_DAYS = 7;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
+    private final JwtConfig jwtConfig;
     private final Clock clock;
 
     @Transactional
@@ -36,7 +38,7 @@ public class RefreshTokenService {
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)
                 .token(hashToken(rawToken))
-                .expiresAt(LocalDateTime.now(clock).plusDays(REFRESH_TOKEN_EXPIRY_DAYS))
+                .expiresAt(LocalDateTime.now(clock).plus(Duration.ofMillis(jwtConfig.getRefreshExpiration())))
                 .build();
 
         refreshTokenRepository.save(refreshToken);
