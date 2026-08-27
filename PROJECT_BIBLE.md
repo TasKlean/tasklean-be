@@ -77,7 +77,7 @@ Everything revolves around the Group. A User does nothing alone — they must be
 | Device | `id_device` | No | Yes | `is_active` | Push notification tokens |
 | Notification | `id_notification` | No | No | None | Has `is_read` + `read_at` |
 | AuditLog | `id_audit_log` | No | No | None | Immutable; polymorphic via `entity_type` + `entity_id` |
-| RefreshToken | `id_refresh_token` | No | No | `is_revoked` | SHA-256 hashed token; 7-day expiry; `CASCADE` on user delete |
+| RefreshToken | `id_refresh_token` | No | No | `is_revoked` | SHA-256 hashed token; 14-day expiry (configurable via `jwt.refresh-expiration`); `CASCADE` on user delete |
 
 ### Ownership chain
 
@@ -226,7 +226,7 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 **Refresh token (opaque)**:
 - 32-byte cryptographically random value (via `SecureRandom`), Base64url-encoded
 - Stored in DB **SHA-256 hashed** (not plaintext) — raw token only sent to client
-- Expiration: **7 days**
+- Expiration: **14 days** (configurable via `jwt.refresh-expiration` in ms)
 - **Single-use with rotation**: each refresh revokes the old token and issues a new pair
 - Logout revokes **all** refresh tokens for the user
 - Scheduled cleanup (`@Scheduled`, every 6 hours) purges expired and revoked tokens from DB
@@ -297,9 +297,9 @@ The GroupMember role system (`ADMIN` / `MEMBER`) exists in the schema but is not
 ### Profile hierarchy
 
 ```
-application.properties          ← base (shared across all profiles)
-  └── application-dev.properties   ← local Docker Postgres, verbose logging
-  └── application-prod.properties  ← Supabase Postgres, minimal logging
+application.properties          ← base (database, JWT, mail, OAuth — all via env vars)
+  └── application-dev.properties   ← verbose logging, seed data, Flyway clean enabled
+  └── application-prod.properties  ← minimal logging, Flyway clean disabled
 ```
 
 Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
@@ -308,18 +308,20 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 
 | Variable | Used in | Purpose |
 |---|---|---|
-| `DB_USERNAME` | dev, prod | Database user |
-| `DB_PASSWORD` | dev, prod | Database password |
-| `DATABASE_URL` | prod only | Full JDBC URL (Supabase) |
-| `JWT_SECRET` | dev, prod | HMAC signing key (min 256 bits) |
-| `GOOGLE_CLIENT_ID` | dev, prod | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | dev, prod | Google OAuth client secret |
+| `DATABASE_URL` | base (all profiles) | Full JDBC URL |
+| `DB_USERNAME` | base (all profiles) | Database user |
+| `DB_PASSWORD` | base (all profiles) | Database password |
+| `JWT_SECRET` | base (all profiles) | HMAC signing key (min 256 bits) |
+| `GOOGLE_CLIENT_ID` | base (all profiles) | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | base (all profiles) | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URI` | prod only | OAuth callback URL (dev hardcodes `localhost:3000`) |
-| `MAILTRAP_USERNAME` | dev | Mailtrap SMTP username (sandbox email testing) |
-| `MAILTRAP_PASSWORD` | dev | Mailtrap SMTP password |
-| `SPRING_PROFILES_ACTIVE` | base | Profile selector |
+| `MAIL_HOST` | base (all profiles) | SMTP host (Mailtrap sandbox in dev) |
+| `MAIL_PORT` | base (all profiles) | SMTP port |
+| `MAIL_USERNAME` | base (all profiles) | SMTP username |
+| `MAIL_PASSWORD` | base (all profiles) | SMTP password |
+| `SPRING_PROFILES_ACTIVE` | base | Profile selector (defaults to `dev`) |
 
-All secrets are loaded from `.env` at the project root via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. No external library needed — Spring Boot 4.1 reads `.env` natively as a properties source. The `.env` file is gitignored and must exist locally for the app to start (no fallback defaults for secrets).
+All secrets are loaded from `.env` at the project root via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. No external library needed — Spring Boot 4.1 reads `.env` natively as a properties source. The `.env` file is gitignored — create it locally from `.env.example`. On Render (prod), these are set as environment variables directly.
 
 ### Key base settings
 
@@ -327,6 +329,8 @@ All secrets are loaded from `.env` at the project root via `spring.config.import
 - `spring.jpa.hibernate.ddl-auto=validate` (Flyway owns schema)
 - `spring.flyway.baseline-on-migrate=true` (safe for first run)
 - `spring.servlet.multipart.max-file-size=5MB` / `max-request-size=8MB` (task photos)
+- `jwt.expiration=900000` (15 min access token)
+- `jwt.refresh-expiration=1209600000` (14 day refresh token)
 - `spring.flyway.clean-disabled=false` in dev, `true` in prod
 
 ## Infrastructure
@@ -350,7 +354,7 @@ Docker Compose only runs Postgres — the app runs on the host. The Compose file
 - **Frontend hosting**: Vercel (for the Next.js app, when built)
 - **Image storage**: AWS S3 or Cloudflare (future — for task photos and completion photos)
 
-The Dockerfile builds a multi-stage image (`eclipse-temurin:21`) but does not copy the Maven wrapper (the `RUN ./mvnw` will fail — needs `COPY mvnw` and `COPY .mvn`). This is a known issue to fix before deploying.
+The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`). Deployed on Render with `JAVA_TOOL_OPTIONS=-Xmx384m` to fit within the 512MB free-tier container.
 
 ## Coding patterns
 
@@ -481,13 +485,13 @@ Total: **42 tests** across 5 test classes.
 
 1. **`"user"` and `"group"` are reserved words** in PostgreSQL. Always quote them in raw SQL. JPA entities handle this via `@Table(name = "\"user\"")`.
 
-2. **User creation has no REST endpoint.** The `UserController` has GET/PUT/DELETE but no POST. Users are created through the auth flow (register or Google OAuth), which is not yet implemented.
+2. **User creation has no REST endpoint.** The `UserController` has GET/PUT/DELETE but no POST. Users are created through the auth flow (`POST /api/auth/register` or Google OAuth).
 
 3. **GroupMember is the actor, not User.** Tasks reference `GroupMember` for `created_by`, `assigned_to`, and `TaskCompletion.completed_by`. Any authorization logic must resolve the current user to their GroupMember within the relevant group.
 
 4. **TaskTag is in the `tag` package**, not `task`. It was placed there because it's the junction entity for the tag side of the many-to-many. It has its own repository (`TaskTagRepository`) but no controller/service — tag assignment is expected to go through the task or tag service.
 
-5. **Dockerfile is broken for production** — it runs `./mvnw` but doesn't copy the Maven wrapper files (`mvnw`, `.mvn/`). Needs fixing before any Docker-based deployment.
+5. **Render free tier constraints** — 512MB RAM, IPv4 only. The app needs `JAVA_TOOL_OPTIONS=-Xmx384m` and Supabase connection pooler (port 6543) with `?prepareThreshold=0` since the pooler doesn't support prepared statements.
 
 6. **Timestamps are UTC but columns have no timezone.** All `TIMESTAMP` columns are `WITHOUT TIME ZONE`. The application enforces UTC via an injected `Clock` bean (`ClockConfig`). All services use `LocalDateTime.now(clock)`, never bare `LocalDateTime.now()`. The frontend must convert UTC to local time for display.
 
