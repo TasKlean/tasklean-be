@@ -45,7 +45,7 @@ Package root: `com.tasklean.api`
   - **`auth/verification`** — `VerificationService` (email verification code generation, validation, resend), `EmailVerification` (entity), `EmailVerificationRepository`. DTOs in `verification/dto`: `VerifyEmailRequest`, `ResendVerificationRequest`.
   - **`auth/refresh`** — `RefreshTokenService` (create with SHA-256 hashing, rotate on refresh, revoke on logout, scheduled cleanup), `RefreshToken` (entity), `RefreshTokenRepository`. DTOs in `refresh/dto`: `RefreshRequest`.
 - **`common`** — `BaseEntity` (mapped superclass with `dateCreated`/`dateUpdated`), `ApiResponse<T>` (response envelope with `success`/`error` factory methods), `ErrorMessages` (centralized "not found" string constants), `exception/` (`ResourceNotFoundException`, `DuplicateResourceException`, `GlobalExceptionHandler` handling 400/401/404/409), `email/EmailService` (shared email infrastructure using Spring Mail + Mailtrap in dev).
-- **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`), `CorsConfig` (configurable origins, credentials enabled), `ClockConfig` (UTC `Clock` bean for consistent timestamps). `@EnableScheduling` on `TaskleanApiApplication` for refresh token cleanup job.
+- **`config`** — `SecurityConfig` (stateless JWT filter chain, BCrypt encoder), `JwtConfig` (`@ConfigurationProperties` for `jwt.secret`/`jwt.expiration`/`jwt.refresh-expiration`), `CorsConfig` (configurable origins, credentials enabled), `ClockConfig` (UTC `Clock` bean for consistent timestamps). `@EnableScheduling` on `TaskleanApiApplication` for refresh token cleanup job.
 
 ## Conventions
 
@@ -54,7 +54,7 @@ Package root: `com.tasklean.api`
 - **UIDs**: user-facing identifier (`uid` column) separate from internal PK. Present on `user`, `group`, `task`.
 - **Timestamps**: `BaseEntity` provides `date_created`/`date_updated` via Hibernate `@CreationTimestamp`/`@UpdateTimestamp`. Entities not extending `BaseEntity` (`GroupMember`, `Notification`, `AuditLog`, `TaskCompletion`, `TaskTag`) manage their own `date_created`.
 - **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V14.
-- **Profiles**: `application.properties` (base), `application-dev.properties` (local Docker Postgres), `application-prod.properties` (Supabase Postgres). Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
+- **Profiles**: `application.properties` (base — shared config including database, JWT, mail via env vars), `application-dev.properties` (verbose logging, seed data, Flyway clean enabled), `application-prod.properties` (minimal logging, Flyway clean disabled). Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 - **Lombok**: `@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder` on entities. Use `@Builder.Default` on fields with initializers. Use `@RequiredArgsConstructor` for constructor injection in services/controllers.
 - **Reserved words**: `user` and `group` table names are quoted (`"user"`, `"group"`) in both `@Table` annotations and migrations.
 - **API response**: all endpoints return `ApiResponse<T>` envelope. Use `ApiResponse.success(data)` or `ApiResponse.error(message)`.
@@ -85,4 +85,4 @@ Tests mirror `src/main/java` under `src/test/java`. Test class naming:
 
 ## Environment
 
-`.env` holds `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MAILTRAP_USERNAME`, `MAILTRAP_PASSWORD`, `SPRING_PROFILES_ACTIVE`. Loaded natively via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. The `.env` file is gitignored — create it locally from the variable list above. Never commit real secrets.
+`.env` holds `DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`, `SPRING_PROFILES_ACTIVE`. Loaded natively via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. The `.env` file is gitignored — create it locally from `.env.example`. Never commit real secrets.

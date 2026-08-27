@@ -3,6 +3,7 @@ package com.tasklean.api.auth.refresh;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
+import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,9 @@ class RefreshTokenServiceTest {
     @Mock
     private JwtService jwtService;
 
+    @Mock
+    private JwtConfig jwtConfig;
+
     @Spy
     private Clock clock = Clock.systemUTC();
 
@@ -56,6 +60,7 @@ class RefreshTokenServiceTest {
     void createRefreshToken_generatesAndPersistsHashedToken() {
         User user = buildUser();
 
+        when(jwtConfig.getRefreshExpiration()).thenReturn(1209600000L);
         when(refreshTokenRepository.save(any(RefreshToken.class)))
                 .thenAnswer(i -> i.getArgument(0));
 
@@ -70,7 +75,7 @@ class RefreshTokenServiceTest {
         assertThat(saved.getToken()).isNotEqualTo(rawToken);
         assertThat(saved.getToken()).isNotBlank();
         assertThat(saved.getUser()).isEqualTo(user);
-        assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC).plusDays(6));
+        assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC).plusDays(13));
         assertThat(saved.getIsRevoked()).isFalse();
     }
 
@@ -92,6 +97,7 @@ class RefreshTokenServiceTest {
 
         when(refreshTokenRepository.findByTokenAndIsRevokedFalse(anyString()))
                 .thenReturn(Optional.of(existing));
+        when(jwtConfig.getRefreshExpiration()).thenReturn(1209600000L);
         when(jwtService.generateToken(user)).thenReturn("new-access-token");
         when(refreshTokenRepository.save(any(RefreshToken.class)))
                 .thenAnswer(i -> i.getArgument(0));
