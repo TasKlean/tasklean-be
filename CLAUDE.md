@@ -60,6 +60,7 @@ Package root: `com.tasklean.api`
 - **API response**: all endpoints return `ApiResponse<T>` envelope. Use `ApiResponse.success(data)` or `ApiResponse.error(message)`.
 - **Timestamps are UTC**: all `LocalDateTime.now()` calls use an injected `Clock` bean (`ClockConfig`) pinned to UTC. Never call `LocalDateTime.now()` without the clock — use `LocalDateTime.now(clock)`. Tests use `@Spy Clock clock = Clock.systemUTC()` and `LocalDateTime.now(ZoneOffset.UTC)` for fixture data.
 - **Error messages**: "not found" strings are centralized in `common/ErrorMessages.java`. Use constants from there instead of inline strings.
+- **Commit message prefixes**: used for auto-versioning on production releases. `fix:` → patch bump, `feat:` → minor bump, `BREAKING CHANGE:` → major bump. No prefix defaults to patch.
 
 ## Testing
 

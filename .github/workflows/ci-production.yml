@@ -3,7 +3,6 @@ name: CI Production
 on:
   push:
     branches: [production]
-    tags: ['v*']
     paths-ignore:
       - '**.md'
       - 'docs/**'
@@ -14,6 +13,9 @@ on:
       - '**.md'
       - 'docs/**'
       - 'LICENSE'
+
+permissions:
+  contents: write
 
 concurrency:
   group: production-${{ github.ref }}
@@ -113,13 +115,30 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
-  build-and-push:
-    name: Build & Push Docker Image
+  version:
+    name: Create Version Tag
     runs-on: ubuntu-latest
     needs: sonarcloud
     if: github.event_name == 'push'
     outputs:
-      image-tag: ${{ steps.meta.outputs.version }}
+      new_tag: ${{ steps.tag.outputs.new_tag }}
+    steps:
+      - name: Checkout code (full history)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Bump version and create tag
+        id: tag
+        uses: mathieudutour/github-tag-action@a22cf08638b34d5badda920f9346fc2c2ca4b5e8 # v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+
+  build-and-push:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: version
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -139,7 +158,7 @@ jobs:
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/tasklean-api
           tags: |
-            type=semver,pattern=v{{version}}
+            type=raw,value=${{ needs.version.outputs.new_tag }}
             type=sha,prefix=sha-
             type=raw,value=latest
 
@@ -157,12 +176,39 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: build-and-push
-    if: github.event_name == 'push'
+    environment: Production
     steps:
       - name: Trigger Render deploy
-        uses: gh-actions-workflows/deploy-docker-render@124d2613c0495a73f9f136a7978b498fb8dbfdb9 # v1.1
+        run: curl -s "${{ secrets.RENDER_DEPLOY_HOOK }}"
+
+      - name: Wait for deploy to go live
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+        run: |
+          for i in $(seq 1 30); do
+            sleep 20
+            status=$(curl -s -H "Authorization: Bearer $RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys?limit=1" \
+              | jq -r '.[0].deploy.status')
+            echo "Deploy status: $status"
+            if [ "$status" = "live" ]; then echo "Deploy succeeded!"; exit 0; fi
+            if [ "$status" = "build_failed" ] || [ "$status" = "update_failed" ] || [ "$status" = "deactivated" ]; then
+              echo "Deploy failed with status: $status"; exit 1
+            fi
+          done
+          echo "Timed out waiting for deploy (10 min)"; exit 1
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [version, deploy]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
         with:
-          deploy-hook: ${{ secrets.RENDER_DEPLOY_HOOK_PRODUCTION }}
-          image-url: ${{ secrets.DOCKERHUB_USERNAME }}/tasklean-api:${{ needs.build-and-push.outputs.image-tag }}
-          render-api-key: ${{ secrets.RENDER_API_KEY }}
-          wait-for-deployment: true
+          tag_name: ${{ needs.version.outputs.new_tag }}
+          generate_release_notes: true
