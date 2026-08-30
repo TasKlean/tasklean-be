@@ -44,6 +44,8 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        // Public health check for uptime monitors / Render (no internal details exposed)
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         // Spring forwards to /error on controller exceptions; without this, the forward gets a 401
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()

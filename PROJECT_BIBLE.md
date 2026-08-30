@@ -202,7 +202,7 @@ Every endpoint returns `ApiResponse<T>`:
 - `201` — created (POST, register)
 - `400` — validation failure (MethodArgumentNotValidException)
 - `401` — unauthorized (missing/invalid token, bad credentials, deactivated account)
-- `404` — ResourceNotFoundException
+- `404` — ResourceNotFoundException, or an unknown route (NoResourceFoundException → JSON envelope, not the Whitelabel HTML page)
 - `409` — DuplicateResourceException
 
 ### Identifiers in URLs
@@ -219,7 +219,7 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 
 **Access token (JWT)**:
 - HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `iat`, `exp`
-- Expiration: **15 minutes** (configurable via `jwt.expiration` in ms)
+- Expiration: **15 minutes** (configurable via `jwt.expiration` in ms; dev profile overrides to 1 year for easier local testing)
 - Secret: min 256 bits, configured per profile via `jwt.secret`
 - Library: jjwt 0.12.6
 
@@ -245,7 +245,7 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 - CSRF disabled (stateless API, tokens in JSON body — will need revisiting if refresh tokens move to httpOnly cookies)
 - Session policy: `STATELESS` (no server-side sessions)
 - CORS: configurable origins (`cors.allowed-origins`), credentials enabled, `Authorization` + `Content-Type` headers
-- Public paths: `/api/auth/**`, `/error`
+- Public paths: `/api/auth/**`, `/actuator/health`, `/error`
 - All other paths: `authenticated()`
 - Password encoding: BCrypt
 
@@ -298,7 +298,7 @@ The GroupMember role system (`ADMIN` / `MEMBER`) exists in the schema but is not
 
 ```
 application.properties          ← base (database, JWT, mail, OAuth — all via env vars)
-  └── application-dev.properties   ← verbose logging, seed data, Flyway clean enabled
+  └── application-dev.properties   ← verbose logging, seed data, Flyway clean enabled, 1-year JWT
   └── application-prod.properties  ← minimal logging, Flyway clean disabled
 ```
 
@@ -355,6 +355,8 @@ Docker Compose only runs Postgres — the app runs on the host. The Compose file
 - **Image storage**: AWS S3 or Cloudflare (future — for task photos and completion photos)
 
 The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`). Deployed on Render with `JAVA_TOOL_OPTIONS=-Xmx384m` to fit within the 512MB free-tier container.
+
+**Health check**: Spring Boot Actuator exposes a public `/actuator/health` endpoint (whitelisted in `SecurityConfig`). Only the `health` endpoint is exposed and details are hidden (`show-details=never`), so it returns just `{"status":"UP"}` or `503` with `{"status":"DOWN"}`. The aggregate status includes a DB-connectivity check, so it doubles as a readiness probe — point Render's health check and uptime monitors at it.
 
 ### CI/CD
 
