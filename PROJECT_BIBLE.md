@@ -349,12 +349,45 @@ Docker Compose only runs Postgres — the app runs on the host. The Compose file
 
 ### Production
 
-- **Backend hosting**: Render
-- **Database**: Supabase-hosted PostgreSQL
+- **Backend hosting**: Render (staging + production as separate services)
+- **Database**: Supabase-hosted PostgreSQL (transaction pooler on port 6543, `?prepareThreshold=0`)
 - **Frontend hosting**: Vercel (for the Next.js app, when built)
 - **Image storage**: AWS S3 or Cloudflare (future — for task photos and completion photos)
 
 The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`). Deployed on Render with `JAVA_TOOL_OPTIONS=-Xmx384m` to fit within the 512MB free-tier container.
+
+### CI/CD
+
+Two GitHub Actions workflows in `.github/workflows/`:
+
+**Staging** (`ci-staging.yml`) — triggers on push to `main` and PRs to `main`:
+```
+compile → test → sonarcloud → build & push Docker image → deploy to Render
+```
+Build/push/deploy only run on push (not PRs). Uses GitHub environment `Staging` for deploy secrets.
+
+**Production** (`ci-production.yml`) — triggers on push to `production` and PRs to `production`:
+```
+compile → test → sonarcloud → auto-version tag → build & push Docker image → deploy to Render → create GitHub Release
+```
+Version/build/deploy/release only run on push (not PRs). Uses GitHub environment `Production` (requires manual approval).
+
+**Auto-versioning**: the `version` job uses `mathieudutour/github-tag-action` to bump the version tag automatically based on commit message prefixes:
+- `fix:` → patch bump (e.g., `v1.0.0` → `v1.0.1`)
+- `feat:` → minor bump (e.g., `v1.0.0` → `v1.1.0`)
+- `BREAKING CHANGE:` → major bump (e.g., `v1.0.0` → `v2.0.0`)
+- No prefix → defaults to patch
+
+Docker images are tagged with the version (`v1.0.1`), commit sha (`sha-abc123`), and `latest`.
+
+**Release flow**: merge `main` → `production` via PR → pipeline runs → auto-tags, builds, deploys, and creates a GitHub Release with auto-generated notes from merged PRs.
+
+**GitHub secrets**:
+- Repo-level (shared): `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `RENDER_API_KEY`, `SONAR_TOKEN`
+- Staging environment: `RENDER_DEPLOY_HOOK`, `RENDER_SERVICE_ID`
+- Production environment: `RENDER_DEPLOY_HOOK`, `RENDER_SERVICE_ID`
+
+**Branch protection**: `main` and `production` branches require PRs, status checks (compile, test, sonar), and block force pushes.
 
 ## Coding patterns
 
