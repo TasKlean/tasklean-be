@@ -9,6 +9,7 @@ import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ import java.time.LocalDateTime;
  * Handles email verification code generation, sending, and validation.
  * Codes are 6-digit numeric strings with 5-minute expiry.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class VerificationService {
@@ -50,6 +52,8 @@ public class VerificationService {
 
         verificationRepository.save(verification);
         emailService.sendVerificationEmail(user.getEmail(), code);
+        // Never log the code itself.
+        log.info("Verification code sent: uid={}", user.getUid());
     }
 
     /** Validates the code, marks the user as verified, cleans all user codes and returns a JWT. */
@@ -68,6 +72,7 @@ public class VerificationService {
 
         // Clean up all codes for this user
         verificationRepository.deleteByUserIdUser(user.getIdUser());
+        log.info("Email verified: uid={}", user.getUid());
 
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);

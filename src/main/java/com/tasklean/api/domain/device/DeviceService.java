@@ -8,6 +8,7 @@ import com.tasklean.api.domain.device.dto.DeviceResponse;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +16,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class DeviceService {
@@ -55,7 +57,9 @@ public class DeviceService {
                 .lastUsed(LocalDateTime.now(clock))
                 .user(user)
                 .build();
-        return DeviceResponse.from(deviceRepository.save(device));
+        Device saved = deviceRepository.save(device);
+        log.info("Device registered: id={} user={}", saved.getIdDevice(), user.getIdUser());
+        return DeviceResponse.from(saved);
     }
 
     @Transactional
@@ -76,5 +80,6 @@ public class DeviceService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.DEVICE_NOT_FOUND));
         device.setIsActive(false);
         deviceRepository.save(device);
+        log.info("Device deactivated: id={}", id);
     }
 }

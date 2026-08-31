@@ -9,6 +9,7 @@ import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionRequest;
 import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +17,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TaskCompletionService {
@@ -51,6 +53,8 @@ public class TaskCompletionService {
                 .completionNote(request.getCompletionNote())
                 .dateCompleted(LocalDateTime.now(clock))
                 .build();
-        return TaskCompletionResponse.from(taskCompletionRepository.save(completion));
+        TaskCompletion saved = taskCompletionRepository.save(completion);
+        log.info("Task completion recorded: id={} task={} member={}", saved.getIdTaskCompletion(), task.getIdTask(), member.getIdGroupMember());
+        return TaskCompletionResponse.from(saved);
     }
 }

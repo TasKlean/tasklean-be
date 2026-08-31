@@ -10,6 +10,7 @@ import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import java.util.UUID;
  * Handles user registration and login. Creates new accounts with hashed passwords
  * and issues JWT tokens on successful authentication.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -48,6 +50,8 @@ public class AuthService {
                 .build();
 
         user = userRepository.save(user);
+        // Log the uid, never the email (PII).
+        log.info("User registered: uid={}", user.getUid());
         verificationService.createAndSendVerification(user);
 
         return AuthResponse.pendingVerification(user);
@@ -77,6 +81,7 @@ public class AuthService {
 
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);
+        log.info("User logged in: uid={}", user.getUid());
         return AuthResponse.from(user, token, refreshToken);
     }
 }

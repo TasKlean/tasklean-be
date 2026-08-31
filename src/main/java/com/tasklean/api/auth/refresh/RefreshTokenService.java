@@ -6,6 +6,7 @@ import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.user.User;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
@@ -66,6 +68,8 @@ public class RefreshTokenService {
         String newAccessToken = jwtService.generateToken(user);
         String newRefreshToken = createRefreshToken(user);
 
+        // High-frequency (every ~15 min per active user) → DEBUG, not INFO.
+        log.debug("Refresh token rotated: uid={}", user.getUid());
         return AuthResponse.from(user, newAccessToken, newRefreshToken);
     }
 
@@ -76,6 +80,7 @@ public class RefreshTokenService {
         RefreshToken token = refreshTokenRepository.findByTokenAndIsRevokedFalse(hashedToken)
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
         refreshTokenRepository.revokeAllByUserId(token.getUser().getIdUser());
+        log.info("User logged out: uid={}", token.getUser().getUid());
     }
 
     @Transactional
