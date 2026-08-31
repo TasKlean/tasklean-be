@@ -11,12 +11,14 @@ import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.task.dto.TaskRequest;
 import com.tasklean.api.domain.task.dto.TaskResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TaskService {
@@ -71,7 +73,10 @@ public class TaskService {
                     .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)));
         }
 
-        return TaskResponse.from(taskRepository.save(task));
+        Task saved = taskRepository.save(task);
+        // Significant business event → INFO. Log the business identifier (uid), never full entities or PII.
+        log.info("Task created: uid={} group={}", saved.getUid(), group.getIdGroup());
+        return TaskResponse.from(saved);
     }
 
     @Transactional
@@ -113,5 +118,6 @@ public class TaskService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         task.setIsActive(false);
         taskRepository.save(task);
+        log.info("Task soft-deleted: uid={}", uid);
     }
 }

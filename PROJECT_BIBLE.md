@@ -204,6 +204,7 @@ Every endpoint returns `ApiResponse<T>`:
 - `401` — unauthorized (missing/invalid token, bad credentials, deactivated account)
 - `404` — ResourceNotFoundException, or an unknown route (NoResourceFoundException → JSON envelope, not the Whitelabel HTML page)
 - `409` — DuplicateResourceException
+- `500` — catch-all `@ExceptionHandler(Exception.class)` for anything unhandled; logs the stack trace (with requestId/userId) and returns a generic message — never leaks internal details
 
 ### Identifiers in URLs
 
@@ -234,6 +235,7 @@ Email/password authentication is fully implemented. All endpoints except `/api/a
 
 ### Request flow
 
+0. `RequestLoggingFilter` (highest precedence, runs before the Spring Security chain) mints/adopts a `requestId`, puts request context into MDC, and logs a summary line on completion — so even 401s are logged and correlated
 1. `JwtAuthenticationFilter` (runs before Spring's authorization check) extracts the Bearer token from the `Authorization` header
 2. If valid: looks up user by email, places `User` entity into `SecurityContextHolder`
 3. If missing/invalid: request continues as anonymous
@@ -357,6 +359,18 @@ Docker Compose only runs Postgres — the app runs on the host. The Compose file
 The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`). Deployed on Render with `JAVA_TOOL_OPTIONS=-Xmx384m` to fit within the 512MB free-tier container.
 
 **Health check**: Spring Boot Actuator exposes a public `/actuator/health` endpoint (whitelisted in `SecurityConfig`). Only the `health` endpoint is exposed and details are hidden (`show-details=never`), so it returns just `{"status":"UP"}` or `503` with `{"status":"DOWN"}`. The aggregate status includes a DB-connectivity check, so it doubles as a readiness probe — point Render's health check and uptime monitors at it.
+
+### Observability (logging)
+
+Logs are **operational telemetry** — separate from the DB-persisted **audit trail** (domain history). Don't conflate them; logs are ephemeral and for ops/debugging.
+
+**Design** (see the Logging convention in `CLAUDE.md` for the level policy and rules):
+- **Emit → ship → store.** The app only emits to **stdout** (12-factor); a drain on the infra side ships it to a store/UI. No file appenders.
+- **Structured JSON in prod, human-readable in dev.** Prod sets `logging.structured.format.console=ecs` (Spring Boot 4 native structured logging — Elastic Common Schema, no extra dependency). ECS JSON is ingest-ready for Kibana and parseable by Grafana/Loki. Dev keeps the default console pattern.
+- **Correlation via MDC.** `RequestLoggingFilter` (highest precedence) assigns each request a `requestId` (adopting an inbound `X-Request-Id` if present, and echoing it back in the response header) and puts `method`/`path` into MDC; `JwtAuthenticationFilter` adds `userId` once authenticated. In ECS output these become top-level fields, so logs are queryable by request or user. MDC is cleared per request to avoid leaking across pooled threads.
+- **Automatic baseline.** Every request gets a summary line (method, path, status, durationMs — `/actuator/**` excluded to avoid uptime-monitor noise) and every unhandled exception is logged once (stack trace) by the `GlobalExceptionHandler` catch-all. New endpoints/services inherit this for free.
+
+**Integrating a monitoring stack later** (not built yet): because the app already emits ECS JSON to stdout, wiring it up is an infra-side config change with zero code change — e.g. point Render's Log Stream (or a sidecar shipper like Promtail/Fluent Bit/Vector) at Grafana-Loki or Elasticsearch+Kibana. For metrics (as opposed to logs), add `micrometer-registry-prometheus` to expose `/actuator/prometheus` for Grafana to scrape.
 
 ### CI/CD
 
