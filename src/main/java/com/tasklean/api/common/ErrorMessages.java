@@ -15,4 +15,5 @@ public final class ErrorMessages {
     public static final String DEVICE_NOT_FOUND = "Device not found";
     public static final String NOTIFICATION_NOT_FOUND = "Notification not found";
     public static final String ASSIGNED_MEMBER_NOT_FOUND = "Assigned member not found";
+    public static final String ENDPOINT_NOT_FOUND = "Endpoint not found";
 }
