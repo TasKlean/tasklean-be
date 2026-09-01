@@ -8,11 +8,13 @@ import com.tasklean.api.domain.category.dto.CategoryResponse;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
@@ -48,7 +50,9 @@ public class CategoryService {
                 .isActive(true)
                 .group(group)
                 .build();
-        return CategoryResponse.from(categoryRepository.save(category));
+        Category saved = categoryRepository.save(category);
+        log.info("Category created: id={} group={}", saved.getIdCategory(), group.getIdGroup());
+        return CategoryResponse.from(saved);
     }
 
     @Transactional
@@ -67,5 +71,6 @@ public class CategoryService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
         category.setIsActive(false);
         categoryRepository.save(category);
+        log.info("Category soft-deleted: id={}", id);
     }
 }

@@ -8,11 +8,13 @@ import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.tag.dto.TagRequest;
 import com.tasklean.api.domain.tag.dto.TagResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TagService {
@@ -47,7 +49,9 @@ public class TagService {
                 .isActive(true)
                 .group(group)
                 .build();
-        return TagResponse.from(tagRepository.save(tag));
+        Tag saved = tagRepository.save(tag);
+        log.info("Tag created: id={} group={}", saved.getIdTag(), group.getIdGroup());
+        return TagResponse.from(saved);
     }
 
     @Transactional
@@ -65,5 +69,6 @@ public class TagService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
         tag.setIsActive(false);
         tagRepository.save(tag);
+        log.info("Tag soft-deleted: id={}", id);
     }
 }

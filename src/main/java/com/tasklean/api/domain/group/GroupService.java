@@ -5,12 +5,14 @@ import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GroupService {
@@ -39,7 +41,9 @@ public class GroupService {
                 .inviteCode(generateInviteCode())
                 .isActive(true)
                 .build();
-        return GroupResponse.from(groupRepository.save(group));
+        Group saved = groupRepository.save(group);
+        log.info("Group created: uid={}", saved.getUid());
+        return GroupResponse.from(saved);
     }
 
     @Transactional
@@ -58,6 +62,7 @@ public class GroupService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
         group.setIsActive(false);
         groupRepository.save(group);
+        log.info("Group soft-deleted: uid={}", uid);
     }
 
     private String generateInviteCode() {

@@ -10,6 +10,7 @@ import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class GroupMemberService {
@@ -62,7 +64,9 @@ public class GroupMemberService {
                 .isActive(true)
                 .dateJoined(LocalDateTime.now(clock))
                 .build();
-        return GroupMemberResponse.from(groupMemberRepository.save(member));
+        GroupMember saved = groupMemberRepository.save(member);
+        log.info("Group member added: id={} user={} group={}", saved.getIdGroupMember(), user.getIdUser(), group.getIdGroup());
+        return GroupMemberResponse.from(saved);
     }
 
     @Transactional
@@ -70,6 +74,8 @@ public class GroupMemberService {
         GroupMember member = groupMemberRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
         member.setRole(role);
+        // Authorization-relevant state change → INFO.
+        log.info("Group member role changed: id={} role={}", id, role);
         return GroupMemberResponse.from(groupMemberRepository.save(member));
     }
 
@@ -80,5 +86,6 @@ public class GroupMemberService {
         member.setIsActive(false);
         member.setDateLeft(LocalDateTime.now(clock));
         groupMemberRepository.save(member);
+        log.info("Group member removed: id={}", id);
     }
 }
