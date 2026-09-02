@@ -53,7 +53,8 @@ Package root: `com.tasklean.api`
 - **Soft deletes**: all entities use `is_active` boolean, never hard-delete rows.
 - **UIDs**: user-facing identifier (`uid` column) separate from internal PK. Present on `user`, `group`, `task`.
 - **Timestamps**: `BaseEntity` provides `date_created`/`date_updated` via Hibernate `@CreationTimestamp`/`@UpdateTimestamp`. Entities not extending `BaseEntity` (`GroupMember`, `Notification`, `AuditLog`, `TaskCompletion`, `TaskTag`) manage their own `date_created`.
-- **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V14.
+- **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V15.
+- **Row Level Security**: every table has RLS enabled (V14) to close Supabase's PostgREST/anon-key access path; the backend connects as the table owner and bypasses it. **Any migration that creates a new table must end with `ALTER TABLE <name> ENABLE ROW LEVEL SECURITY;`** — no policies (deny-all through the API is the goal), and never `FORCE ROW LEVEL SECURITY` (it would make the owner obey policies too).
 - **Profiles**: `application.properties` (base — shared config including database, JWT, mail via env vars), `application-dev.properties` (verbose logging, seed data, Flyway clean enabled, 1-year JWT), `application-prod.properties` (minimal logging, ECS JSON structured logging, Flyway clean disabled). Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 - **Lombok**: `@Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder` on entities. Use `@Builder.Default` on fields with initializers. Use `@RequiredArgsConstructor` for constructor injection in services/controllers.
 - **Reserved words**: `user` and `group` table names are quoted (`"user"`, `"group"`) in both `@Table` annotations and migrations.
