@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
+/** Data access for groups, including UID and invite-code lookups. */
 @Repository
 public interface GroupRepository extends JpaRepository<Group, Long> {
 

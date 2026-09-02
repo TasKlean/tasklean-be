@@ -33,7 +33,14 @@ public class AuthService {
     private final VerificationService verificationService;
     private final RefreshTokenService refreshTokenService;
 
-    /** Creates a new user account, hashes the password, and sends a verification code. No JWT until verified. */
+    /**
+     * Creates a new user account, hashes the password, and sends a verification code.
+     * No JWT is issued until the email is verified.
+     *
+     * @param request the registration details (email, password, name)
+     * @return a pending-verification auth response
+     * @throws DuplicateResourceException if the email is already registered
+     */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
@@ -57,7 +64,14 @@ public class AuthService {
         return AuthResponse.pendingVerification(user);
     }
 
-    /** Validates credentials against stored hash and returns a JWT on success. */
+    /**
+     * Validates credentials against the stored hash and returns a JWT on success.
+     *
+     * @param request the login credentials (email, password)
+     * @return the auth response with access and refresh tokens
+     * @throws BadCredentialsException if the account is unknown, deactivated, unverified,
+     *                                 uses a different sign-in option, or the password is wrong
+     */
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));

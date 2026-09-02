@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+/** Data access for user notifications, including unread queries and counts. */
 @Repository
 public interface NotificationRepository extends JpaRepository<Notification, Long> {
 

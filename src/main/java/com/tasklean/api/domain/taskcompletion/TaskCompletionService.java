@@ -17,6 +17,10 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * Records and queries task completions — the history of who completed which task
+ * and when, with optional photo proof and notes.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -27,18 +31,37 @@ public class TaskCompletionService {
     private final GroupMemberRepository groupMemberRepository;
     private final Clock clock;
 
+    /**
+     * Returns the completion history for a task, newest first.
+     *
+     * @param taskId the task id
+     * @return the task's completions
+     */
     public List<TaskCompletionResponse> getCompletionsByTask(Long taskId) {
         return taskCompletionRepository.findByTaskIdTaskOrderByDateCompletedDesc(taskId).stream()
                 .map(TaskCompletionResponse::from)
                 .toList();
     }
 
+    /**
+     * Returns the completions recorded by a group member, newest first.
+     *
+     * @param groupMemberId the group member id
+     * @return the member's completions
+     */
     public List<TaskCompletionResponse> getCompletionsByMember(Long groupMemberId) {
         return taskCompletionRepository.findByCompletedByIdGroupMemberOrderByDateCompletedDesc(groupMemberId).stream()
                 .map(TaskCompletionResponse::from)
                 .toList();
     }
 
+    /**
+     * Records a completion of a task by a group member.
+     *
+     * @param request the completion details (task, member, optional photo/note)
+     * @return the recorded completion
+     * @throws ResourceNotFoundException if the task or group member does not exist
+     */
     @Transactional
     public TaskCompletionResponse createCompletion(TaskCompletionRequest request) {
         Task task = taskRepository.findById(request.getTaskId())

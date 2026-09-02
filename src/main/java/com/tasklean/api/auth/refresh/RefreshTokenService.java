@@ -21,6 +21,11 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Base64;
 
+/**
+ * Manages refresh tokens — issuing, rotating on refresh, revoking on logout, and
+ * scheduled cleanup. Tokens are persisted SHA-256 hashed; the raw value is returned
+ * only to the caller and is never stored or logged.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -33,6 +38,12 @@ public class RefreshTokenService {
     private final JwtConfig jwtConfig;
     private final Clock clock;
 
+    /**
+     * Issues a new refresh token for the user.
+     *
+     * @param user the user to issue the token for
+     * @return the raw (unhashed) token value to return to the caller
+     */
     @Transactional
     public String createRefreshToken(User user) {
         String rawToken = generateToken();
@@ -47,6 +58,14 @@ public class RefreshTokenService {
         return rawToken;
     }
 
+    /**
+     * Rotates a valid refresh token: revokes the presented one and issues a fresh
+     * access + refresh pair.
+     *
+     * @param request the current refresh token
+     * @return the refreshed auth response
+     * @throws BadCredentialsException if the token is unknown, revoked, or expired
+     */
     @Transactional
     public AuthResponse refresh(RefreshRequest request) {
         String hashedToken = hashToken(request.getRefreshToken());
@@ -73,6 +92,12 @@ public class RefreshTokenService {
         return AuthResponse.from(user, newAccessToken, newRefreshToken);
     }
 
+    /**
+     * Revokes all of the user's refresh tokens, identified via the presented token (logout).
+     *
+     * @param request the refresh token identifying the user
+     * @throws BadCredentialsException if the token is unknown or already revoked
+     */
     @Transactional
     public void logout(RefreshRequest request) {
         String hashedToken = hashToken(request.getRefreshToken());
@@ -83,23 +108,40 @@ public class RefreshTokenService {
         log.info("User logged out: uid={}", token.getUser().getUid());
     }
 
+    /**
+     * Revokes every refresh token belonging to the given user.
+     *
+     * @param user the user whose tokens should be revoked
+     */
     @Transactional
     public void revokeAllUserTokens(User user) {
         refreshTokenRepository.revokeAllByUserId(user.getIdUser());
     }
 
+    /** Scheduled cleanup — deletes expired and revoked tokens every 6 hours. */
     @Scheduled(fixedRate = 6 * 60 * 60 * 1000) // every 6 hours
     @Transactional
     public void purgeExpiredAndRevokedTokens() {
         refreshTokenRepository.deleteExpiredAndRevoked(LocalDateTime.now(clock));
     }
 
+    /**
+     * Generates a 256-bit URL-safe random token string.
+     *
+     * @return the raw token
+     */
     private String generateToken() {
         byte[] bytes = new byte[32];
         RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
+    /**
+     * SHA-256 hashes a raw token so only the hash is ever persisted or compared.
+     *
+     * @param rawToken the raw token
+     * @return the Base64 URL-encoded hash
+     */
     private String hashToken(String rawToken) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

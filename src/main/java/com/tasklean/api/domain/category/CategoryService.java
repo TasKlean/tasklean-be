@@ -14,6 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * Manages task categories within a group — lookup, listing, creation, updates,
+ * and soft-deletion. Category names are unique per group.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -22,18 +26,39 @@ public class CategoryService {
     private final CategoryRepository categoryRepository;
     private final GroupRepository groupRepository;
 
+    /**
+     * Returns a category by its id.
+     *
+     * @param id the category id
+     * @return the category
+     * @throws ResourceNotFoundException if no category has that id
+     */
     public CategoryResponse getCategoryById(Long id) {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
         return CategoryResponse.from(category);
     }
 
+    /**
+     * Returns all active categories for a group.
+     *
+     * @param groupId the group id
+     * @return the group's active categories
+     */
     public List<CategoryResponse> getCategoriesByGroup(Long groupId) {
         return categoryRepository.findByGroupIdGroupAndIsActiveTrue(groupId).stream()
                 .map(CategoryResponse::from)
                 .toList();
     }
 
+    /**
+     * Creates a category in a group.
+     *
+     * @param request the category details (name, color, icon, group)
+     * @return the created category
+     * @throws ResourceNotFoundException  if the group does not exist
+     * @throws DuplicateResourceException if the name is already used in that group
+     */
     @Transactional
     public CategoryResponse createCategory(CategoryRequest request) {
         Group group = groupRepository.findById(request.getGroupId())
@@ -55,6 +80,14 @@ public class CategoryService {
         return CategoryResponse.from(saved);
     }
 
+    /**
+     * Updates a category's name, color, and icon.
+     *
+     * @param id      the category id
+     * @param request the new category details
+     * @return the updated category
+     * @throws ResourceNotFoundException if no category has that id
+     */
     @Transactional
     public CategoryResponse updateCategory(Long id, CategoryRequest request) {
         Category category = categoryRepository.findById(id)
@@ -65,6 +98,12 @@ public class CategoryService {
         return CategoryResponse.from(categoryRepository.save(category));
     }
 
+    /**
+     * Soft-deletes a category (sets it inactive).
+     *
+     * @param id the category id
+     * @throws ResourceNotFoundException if no category has that id
+     */
     @Transactional
     public void deleteCategory(Long id) {
         Category category = categoryRepository.findById(id)

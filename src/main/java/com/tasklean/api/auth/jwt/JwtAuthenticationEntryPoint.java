@@ -17,7 +17,14 @@ import java.io.IOException;
 @Component
 public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
 
-    /** Writes a 401 JSON response matching our ApiResponse envelope format. */
+    /**
+     * Writes a 401 JSON response matching our ApiResponse envelope format.
+     *
+     * @param request       the request that failed authentication
+     * @param response      the response to write the 401 body into
+     * @param authException the authentication failure
+     * @throws IOException if writing the response body fails
+     */
     @Override
     public void commence(HttpServletRequest request, HttpServletResponse response,
                          AuthenticationException authException) throws IOException {

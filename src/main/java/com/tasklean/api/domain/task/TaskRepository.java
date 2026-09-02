@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/** Data access for tasks, including UID lookup and group/assignee/status filters. */
 @Repository
 public interface TaskRepository extends JpaRepository<Task, Long> {
 

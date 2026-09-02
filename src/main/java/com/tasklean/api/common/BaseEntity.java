@@ -8,6 +8,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 
+/**
+ * Mapped superclass providing audit timestamps — {@code dateCreated} and {@code dateUpdated} —
+ * managed automatically by Hibernate. Entities that need these extend this class.
+ */
 @Getter
 @Setter
 @MappedSuperclass

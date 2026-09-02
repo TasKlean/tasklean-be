@@ -14,6 +14,12 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
 
+    /**
+     * Sends a 6-digit email-verification code to the given address.
+     *
+     * @param to   the recipient email address
+     * @param code the verification code to send
+     */
     public void sendVerificationEmail(String to, String code) {
         send(to, "TasKlean - Verify your email",
                 "Your verification code is: " + code + "\n\nThis code expires in 5 minutes.");

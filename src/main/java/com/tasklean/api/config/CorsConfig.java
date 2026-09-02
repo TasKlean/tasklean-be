@@ -9,12 +9,21 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
+/**
+ * CORS configuration for the API. Allows the configured front-end origin(s) — from the
+ * {@code cors.allowed-origins} property — to call {@code /api/**} with credentials.
+ */
 @Configuration
 public class CorsConfig {
 
     @Value("${cors.allowed-origins:http://localhost:3000}")
     private String allowedOrigins;
 
+    /**
+     * Builds the CORS configuration source applied to {@code /api/**}.
+     *
+     * @return the CORS configuration source
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();

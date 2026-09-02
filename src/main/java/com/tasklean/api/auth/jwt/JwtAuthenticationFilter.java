@@ -35,6 +35,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * Extracts the Bearer token, validates it, and places the corresponding User
      * into SecurityContextHolder. If the token is missing or invalid, the request
      * continues anonymously (no rejection here).
+     *
+     * @param request     the incoming request
+     * @param response    the response, passed along the chain
+     * @param filterChain the remaining filter chain to continue
+     * @throws ServletException if the downstream chain fails
+     * @throws IOException      if an I/O error occurs during filtering
      */
     @Override
     protected void doFilterInternal(HttpServletRequest request, @NonNull HttpServletResponse response,
@@ -72,7 +78,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /** Skips public auth endpoints — no point parsing tokens on login/register. */
+    /**
+     * Skips public auth endpoints — no point parsing tokens on login/register.
+     *
+     * @param request the incoming request
+     * @return {@code true} for {@code /api/auth/} paths, which bypass this filter
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return request.getRequestURI().startsWith("/api/auth/");

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+/** Data access for email verification codes. */
 @Repository
 public interface EmailVerificationRepository extends JpaRepository<EmailVerification, Long> {
 

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+/** Data access for task completions, ordered newest-first by completion date. */
 @Repository
 public interface TaskCompletionRepository extends JpaRepository<TaskCompletion, Long> {
 

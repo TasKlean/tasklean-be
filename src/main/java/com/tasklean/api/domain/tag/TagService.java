@@ -14,6 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * Manages tags within a group — lookup, listing, creation, updates, and
+ * soft-deletion. Tag names are unique per group.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -22,18 +26,39 @@ public class TagService {
     private final TagRepository tagRepository;
     private final GroupRepository groupRepository;
 
+    /**
+     * Returns a tag by its id.
+     *
+     * @param id the tag id
+     * @return the tag
+     * @throws ResourceNotFoundException if no tag has that id
+     */
     public TagResponse getTagById(Long id) {
         Tag tag = tagRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
         return TagResponse.from(tag);
     }
 
+    /**
+     * Returns all active tags for a group.
+     *
+     * @param groupId the group id
+     * @return the group's active tags
+     */
     public List<TagResponse> getTagsByGroup(Long groupId) {
         return tagRepository.findByGroupIdGroupAndIsActiveTrue(groupId).stream()
                 .map(TagResponse::from)
                 .toList();
     }
 
+    /**
+     * Creates a tag in a group.
+     *
+     * @param request the tag details (name, color, group)
+     * @return the created tag
+     * @throws ResourceNotFoundException  if the group does not exist
+     * @throws DuplicateResourceException if the name is already used in that group
+     */
     @Transactional
     public TagResponse createTag(TagRequest request) {
         Group group = groupRepository.findById(request.getGroupId())
@@ -54,6 +79,14 @@ public class TagService {
         return TagResponse.from(saved);
     }
 
+    /**
+     * Updates a tag's name and color.
+     *
+     * @param id      the tag id
+     * @param request the new tag details
+     * @return the updated tag
+     * @throws ResourceNotFoundException if no tag has that id
+     */
     @Transactional
     public TagResponse updateTag(Long id, TagRequest request) {
         Tag tag = tagRepository.findById(id)
@@ -63,6 +96,12 @@ public class TagService {
         return TagResponse.from(tagRepository.save(tag));
     }
 
+    /**
+     * Soft-deletes a tag (sets it inactive).
+     *
+     * @param id the tag id
+     * @throws ResourceNotFoundException if no tag has that id
+     */
     @Transactional
     public void deleteTag(Long id) {
         Tag tag = tagRepository.findById(id)

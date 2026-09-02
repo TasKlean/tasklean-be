@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/** Data access for group memberships (the user↔group join with role). */
 @Repository
 public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> {
 

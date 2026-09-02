@@ -407,6 +407,15 @@ Docker images are tagged with the version (`v1.0.1`), commit sha (`sha-abc123`),
 
 ## Coding patterns
 
+### Comment conventions
+
+Three kinds of comment, each with a job (full rules in [CLAUDE.md](CLAUDE.md#conventions)):
+- **File header** — a Javadoc block atop every logic-bearing class (service, controller, filter, config, exception, component) summarising its responsibility.
+- **Method-level** — Javadoc on `public`/`protected` methods with `@param` for every parameter, `@return` for non-`void` returns, and `@throws` for exceptions the caller should anticipate.
+- **Inline** — `//` on its own line above complex or unconventional logic, explaining the *why* (never restating the code).
+
+Entities and DTOs are exempt as data carriers. Repository interfaces get a file header only — their derived-query method names are self-documenting; only custom `@Query` methods get method Javadoc.
+
 ### Package layout per domain entity
 
 ```

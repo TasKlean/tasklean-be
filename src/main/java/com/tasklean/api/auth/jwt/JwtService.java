@@ -23,7 +23,12 @@ public class JwtService {
 
     private final JwtConfig jwtConfig;
 
-    /** Creates a signed JWT containing the user's email, internal ID, and public UID. */
+    /**
+     * Creates a signed JWT containing the user's email, internal ID, and public UID.
+     *
+     * @param user the user to issue the token for
+     * @return the compact signed JWT
+     */
     public String generateToken(User user) {
         Date now = new Date();
         Date expiration = new Date(now.getTime() + jwtConfig.getExpiration());
@@ -38,7 +43,12 @@ public class JwtService {
                 .compact();
     }
 
-    /** Returns true if the token signature is valid and not expired. */
+    /**
+     * Checks whether a token's signature is valid and it has not expired.
+     *
+     * @param token the JWT to validate
+     * @return {@code true} if the token is valid and unexpired, {@code false} otherwise
+     */
     public boolean validateToken(String token) {
         try {
             extractClaims(token);
@@ -48,14 +58,32 @@ public class JwtService {
         }
     }
 
+    /**
+     * Extracts the user's email (JWT subject) from a valid token.
+     *
+     * @param token the JWT
+     * @return the email claim
+     */
     public String extractEmail(String token) {
         return extractClaims(token).getSubject();
     }
 
+    /**
+     * Extracts the internal user ID claim from a valid token.
+     *
+     * @param token the JWT
+     * @return the internal user ID
+     */
     public Long extractUserId(String token) {
         return extractClaims(token).get("userId", Long.class);
     }
 
+    /**
+     * Extracts the public UID claim from a valid token.
+     *
+     * @param token the JWT
+     * @return the public UID
+     */
     public String extractUid(String token) {
         return extractClaims(token).get("uid", String.class);
     }

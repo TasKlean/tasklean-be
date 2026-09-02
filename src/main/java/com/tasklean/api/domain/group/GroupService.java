@@ -12,6 +12,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Manages groups (households) — lookup by UID, listing, creation, updates, and
+ * soft-deletion. Each group is issued a unique invite code on creation.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -19,18 +23,36 @@ public class GroupService {
 
     private final GroupRepository groupRepository;
 
+    /**
+     * Returns a group by its public UID.
+     *
+     * @param uid the group's public UID
+     * @return the group
+     * @throws ResourceNotFoundException if no group has that UID
+     */
     public GroupResponse getGroupByUid(String uid) {
         Group group = groupRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
         return GroupResponse.from(group);
     }
 
+    /**
+     * Returns all groups.
+     *
+     * @return all groups
+     */
     public List<GroupResponse> getAllGroups() {
         return groupRepository.findAll().stream()
                 .map(GroupResponse::from)
                 .toList();
     }
 
+    /**
+     * Creates a group with a generated UID and a unique invite code.
+     *
+     * @param request the group details (name, description, photo)
+     * @return the created group
+     */
     @Transactional
     public GroupResponse createGroup(GroupRequest request) {
         Group group = Group.builder()
@@ -46,6 +68,14 @@ public class GroupService {
         return GroupResponse.from(saved);
     }
 
+    /**
+     * Updates a group's name, description, and photo.
+     *
+     * @param uid     the group's public UID
+     * @param request the new group details
+     * @return the updated group
+     * @throws ResourceNotFoundException if no group has that UID
+     */
     @Transactional
     public GroupResponse updateGroup(String uid, GroupRequest request) {
         Group group = groupRepository.findByUid(uid)
@@ -56,6 +86,12 @@ public class GroupService {
         return GroupResponse.from(groupRepository.save(group));
     }
 
+    /**
+     * Soft-deletes a group (sets it inactive).
+     *
+     * @param uid the group's public UID
+     * @throws ResourceNotFoundException if no group has that UID
+     */
     @Transactional
     public void deleteGroup(String uid) {
         Group group = groupRepository.findByUid(uid)
@@ -67,6 +103,7 @@ public class GroupService {
 
     private String generateInviteCode() {
         String code;
+        // Retry until the random 8-char code is unique across existing groups.
         do {
             code = UUID.randomUUID().toString().substring(0, 8).toUpperCase();
         } while (groupRepository.existsByInviteCode(code));
