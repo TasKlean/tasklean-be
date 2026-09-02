@@ -154,8 +154,9 @@ Every FK column is indexed. Additional indexes on:
 | V11 | `audit_log` | `group_member`, `group` |
 | V12 | `email_verification` + `user.is_email_verified` column | `user` |
 | V13 | `refresh_token` (with indexes on `token` and `user_id`) | `user` |
+| V14 | Enables Row Level Security on all tables (no new table) | all tables |
 
-Next available version: **V14**.
+Next available version: **V15**.
 
 ### Dev seed data
 
@@ -215,6 +216,10 @@ Entities with a `uid` field (User, Group, Task) use `/{uid}` as the path variabl
 ### Current state
 
 Email/password authentication is fully implemented. All endpoints except `/api/auth/**` require a valid JWT Bearer token. Google OAuth is planned but not yet built.
+
+### Row Level Security (Supabase)
+
+Supabase auto-exposes every `public`-schema table through its PostgREST API using the public `anon` key. To close that path, **RLS is enabled on all tables** (V14 migration) with **no policies** — which denies all access to the `anon`/`authenticated` API roles. The Spring backend is unaffected because it connects as the table **owner**, and owners bypass RLS (we deliberately do *not* use `FORCE ROW LEVEL SECURITY`). All authorization stays in the service layer with our own JWT; we do not use Supabase Auth, so `auth.uid()` policies aren't applicable. **Every new table's migration must enable RLS** (see CLAUDE.md conventions).
 
 ### Token architecture (implemented)
 
