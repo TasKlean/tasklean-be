@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 
+/** Data access for user devices, keyed by user and unique device token. */
 @Repository
 public interface DeviceRepository extends JpaRepository<Device, Long> {
 

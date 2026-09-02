@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+/** Data access for task categories. */
 @Repository
 public interface CategoryRepository extends JpaRepository<Category, Long> {
 

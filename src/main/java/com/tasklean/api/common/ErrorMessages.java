@@ -3,6 +3,10 @@ package com.tasklean.api.common;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
+/**
+ * Centralized user-facing error message constants — "not found" strings plus the generic
+ * endpoint-not-found and internal-error messages. Reference these instead of inlining strings.
+ */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ErrorMessages {
 

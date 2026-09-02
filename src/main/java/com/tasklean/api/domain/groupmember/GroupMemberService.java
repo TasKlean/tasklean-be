@@ -18,6 +18,10 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * Manages group membership — adding members, role changes, lookups, and removal.
+ * A user can belong to a given group only once.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,24 +32,51 @@ public class GroupMemberService {
     private final GroupRepository groupRepository;
     private final Clock clock;
 
+    /**
+     * Returns a group membership by its id.
+     *
+     * @param id the membership id
+     * @return the membership
+     * @throws ResourceNotFoundException if no membership has that id
+     */
     public GroupMemberResponse getMemberById(Long id) {
         GroupMember member = groupMemberRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
         return GroupMemberResponse.from(member);
     }
 
+    /**
+     * Returns the active members of a group.
+     *
+     * @param groupId the group id
+     * @return the group's active members
+     */
     public List<GroupMemberResponse> getMembersByGroup(Long groupId) {
         return groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(groupId).stream()
                 .map(GroupMemberResponse::from)
                 .toList();
     }
 
+    /**
+     * Returns a user's active memberships (the groups they belong to).
+     *
+     * @param userId the user id
+     * @return the user's active memberships
+     */
     public List<GroupMemberResponse> getGroupsByUser(Long userId) {
         return groupMemberRepository.findByUserIdUserAndIsActiveTrue(userId).stream()
                 .map(GroupMemberResponse::from)
                 .toList();
     }
 
+    /**
+     * Adds a user to a group with the requested role.
+     *
+     * @param request the membership details (user, group, role)
+     * @return the created membership
+     * @throws DuplicateResourceException if the user is already a member of the group
+     * @throws ResourceNotFoundException  if the user or group does not exist
+     */
     @Transactional
     public GroupMemberResponse addMember(GroupMemberRequest request) {
         if (groupMemberRepository.existsByUserIdUserAndGroupIdGroup(request.getUserId(), request.getGroupId())) {
@@ -69,6 +100,14 @@ public class GroupMemberService {
         return GroupMemberResponse.from(saved);
     }
 
+    /**
+     * Changes a member's role (an authorization-relevant change).
+     *
+     * @param id   the membership id
+     * @param role the new role
+     * @return the updated membership
+     * @throws ResourceNotFoundException if no membership has that id
+     */
     @Transactional
     public GroupMemberResponse updateMemberRole(Long id, String role) {
         GroupMember member = groupMemberRepository.findById(id)
@@ -79,6 +118,12 @@ public class GroupMemberService {
         return GroupMemberResponse.from(groupMemberRepository.save(member));
     }
 
+    /**
+     * Soft-removes a member from a group and stamps their leave time.
+     *
+     * @param id the membership id
+     * @throws ResourceNotFoundException if no membership has that id
+     */
     @Transactional
     public void removeMember(Long id) {
         GroupMember member = groupMemberRepository.findById(id)

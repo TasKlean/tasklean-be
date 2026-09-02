@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
+/** Data access for users, including email, UID, and Google-sub lookups. */
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
 

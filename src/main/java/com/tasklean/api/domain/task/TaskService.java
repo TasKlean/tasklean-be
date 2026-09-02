@@ -18,6 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Manages tasks within a group — lookup by UID, listing, creation, updates, and
+ * soft-deletion, including optional assignee and category resolution.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,18 +32,38 @@ public class TaskService {
     private final GroupMemberRepository groupMemberRepository;
     private final CategoryRepository categoryRepository;
 
+    /**
+     * Returns a task by its public UID.
+     *
+     * @param uid the task's public UID
+     * @return the task
+     * @throws ResourceNotFoundException if no task has that UID
+     */
     public TaskResponse getTaskByUid(String uid) {
         Task task = taskRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         return TaskResponse.from(task);
     }
 
+    /**
+     * Returns the active tasks for a group.
+     *
+     * @param groupId the group id
+     * @return the group's active tasks
+     */
     public List<TaskResponse> getTasksByGroup(Long groupId) {
         return taskRepository.findByGroupIdGroupAndIsActiveTrue(groupId).stream()
                 .map(TaskResponse::from)
                 .toList();
     }
 
+    /**
+     * Creates a task in a group, resolving its creator and optional assignee/category.
+     *
+     * @param request the task details
+     * @return the created task
+     * @throws ResourceNotFoundException if the group, creator, assignee, or category does not exist
+     */
     @Transactional
     public TaskResponse createTask(TaskRequest request) {
         Group group = groupRepository.findById(request.getGroupId())
@@ -79,6 +103,14 @@ public class TaskService {
         return TaskResponse.from(saved);
     }
 
+    /**
+     * Updates a task's fields, re-resolving or clearing its assignee and category.
+     *
+     * @param uid     the task's public UID
+     * @param request the new task details
+     * @return the updated task
+     * @throws ResourceNotFoundException if the task, assignee, or category does not exist
+     */
     @Transactional
     public TaskResponse updateTask(String uid, TaskRequest request) {
         Task task = taskRepository.findByUid(uid)
@@ -112,6 +144,12 @@ public class TaskService {
         return TaskResponse.from(taskRepository.save(task));
     }
 
+    /**
+     * Soft-deletes a task (sets it inactive).
+     *
+     * @param uid the task's public UID
+     * @throws ResourceNotFoundException if no task has that UID
+     */
     @Transactional
     public void deleteTask(String uid) {
         Task task = taskRepository.findByUid(uid)

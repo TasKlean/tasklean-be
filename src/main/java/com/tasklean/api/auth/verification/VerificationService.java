@@ -37,7 +37,12 @@ public class VerificationService {
     private final RefreshTokenService refreshTokenService;
     private final Clock clock;
 
-    /** Generates a 6-digit code, persists it, and sends it to the user's email. */
+    /**
+     * Generates a 6-digit code, persists it, and sends it to the user's email.
+     * Any existing codes for the user are cleared first.
+     *
+     * @param user the user to verify
+     */
     @Transactional
     public void createAndSendVerification(User user) {
         verificationRepository.deleteByUserIdUser(user.getIdUser());
@@ -56,7 +61,13 @@ public class VerificationService {
         log.info("Verification code sent: uid={}", user.getUid());
     }
 
-    /** Validates the code, marks the user as verified, cleans all user codes and returns a JWT. */
+    /**
+     * Validates the code, marks the user verified, clears all their codes, and returns a JWT.
+     *
+     * @param request the email and verification code
+     * @return the auth response with access and refresh tokens
+     * @throws BadCredentialsException if the email is unknown/already verified or the code is invalid/expired
+     */
     @Transactional
     public AuthResponse verifyEmail(VerifyEmailRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
@@ -79,7 +90,11 @@ public class VerificationService {
         return AuthResponse.from(user, token, refreshToken);
     }
 
-    /** Resends a verification code. */
+    /**
+     * Resends a verification code to an unverified user. No-op if the email is unknown or already verified.
+     *
+     * @param request the email to resend the code to
+     */
     @Transactional
     public void resendVerification(ResendVerificationRequest request) {
         userRepository.findByEmail(request.getEmail())

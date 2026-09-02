@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+/** Data access for tags. */
 @Repository
 public interface TagRepository extends JpaRepository<Tag, Long> {
 

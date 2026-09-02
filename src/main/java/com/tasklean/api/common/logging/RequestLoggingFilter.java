@@ -30,6 +30,16 @@ import java.util.UUID;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestLoggingFilter extends OncePerRequestFilter {
 
+    /**
+     * Assigns or propagates a correlation id, populates the MDC for the request, and logs a single
+     * summary line (method, path, status, duration) once the chain completes. MDC is always cleared afterwards.
+     *
+     * @param request     the incoming request
+     * @param response    the response, whose status and duration are logged on completion
+     * @param filterChain the remaining filter chain to continue
+     * @throws ServletException if the downstream chain fails
+     * @throws IOException      if an I/O error occurs during filtering
+     */
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
@@ -58,7 +68,12 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         return (incoming != null && !incoming.isBlank()) ? incoming : UUID.randomUUID().toString();
     }
 
-    /** Health checks are hit constantly by uptime monitors; logging them would drown the signal. */
+    /**
+     * Skips actuator endpoints — uptime monitors hit them constantly and would drown the signal.
+     *
+     * @param request the incoming request
+     * @return {@code true} for {@code /actuator/} paths, which are not logged
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return request.getRequestURI().startsWith("/actuator/");

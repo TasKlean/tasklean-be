@@ -11,6 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
+/**
+ * Manages user profiles — lookup by UID, listing, profile updates, and account
+ * soft-deletion. Account creation lives in {@link com.tasklean.api.auth.AuthService}.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -18,18 +22,38 @@ public class UserService {
 
     private final UserRepository userRepository;
 
+    /**
+     * Returns a user by their public UID.
+     *
+     * @param uid the user's public UID
+     * @return the user
+     * @throws ResourceNotFoundException if no user has that UID
+     */
     public UserResponse getUserByUid(String uid) {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         return UserResponse.from(user);
     }
 
+    /**
+     * Returns all users.
+     *
+     * @return all users
+     */
     public List<UserResponse> getAllUsers() {
         return userRepository.findAll().stream()
                 .map(UserResponse::from)
                 .toList();
     }
 
+    /**
+     * Updates a user's profile fields (name parts and photo).
+     *
+     * @param uid     the user's public UID
+     * @param request the new profile details
+     * @return the updated user
+     * @throws ResourceNotFoundException if no user has that UID
+     */
     @Transactional
     public UserResponse updateUser(String uid, UserRequest request) {
         User user = userRepository.findByUid(uid)
@@ -41,6 +65,12 @@ public class UserService {
         return UserResponse.from(userRepository.save(user));
     }
 
+    /**
+     * Soft-deletes a user account (sets it inactive).
+     *
+     * @param uid the user's public UID
+     * @throws ResourceNotFoundException if no user has that UID
+     */
     @Transactional
     public void deleteUser(String uid) {
         User user = userRepository.findByUid(uid)

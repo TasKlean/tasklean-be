@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 
+/** Data access for the task–tag join table. */
 @Repository
 public interface TaskTagRepository extends JpaRepository<TaskTag, Long> {
 

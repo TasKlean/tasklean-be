@@ -11,6 +11,9 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
 
+/**
+ * Manages user notifications — read queries, unread counts, and marking notifications read.
+ */
 @Service
 @RequiredArgsConstructor
 public class NotificationService {
@@ -18,22 +21,47 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final Clock clock;
 
+    /**
+     * Returns all notifications for a user, newest first.
+     *
+     * @param userId the user id
+     * @return the user's notifications
+     */
     public List<NotificationResponse> getNotificationsByUser(Long userId) {
         return notificationRepository.findByUserIdUserOrderByDateCreatedDesc(userId).stream()
                 .map(NotificationResponse::from)
                 .toList();
     }
 
+    /**
+     * Returns a user's unread notifications, newest first.
+     *
+     * @param userId the user id
+     * @return the user's unread notifications
+     */
     public List<NotificationResponse> getUnreadNotificationsByUser(Long userId) {
         return notificationRepository.findByUserIdUserAndIsReadFalseOrderByDateCreatedDesc(userId).stream()
                 .map(NotificationResponse::from)
                 .toList();
     }
 
+    /**
+     * Returns the count of a user's unread notifications.
+     *
+     * @param userId the user id
+     * @return the unread count
+     */
     public long getUnreadCount(Long userId) {
         return notificationRepository.countByUserIdUserAndIsReadFalse(userId);
     }
 
+    /**
+     * Marks a notification as read and stamps the read time.
+     *
+     * @param id the notification id
+     * @return the updated notification
+     * @throws ResourceNotFoundException if no notification has that id
+     */
     @Transactional
     public NotificationResponse markAsRead(Long id) {
         Notification notification = notificationRepository.findById(id)
