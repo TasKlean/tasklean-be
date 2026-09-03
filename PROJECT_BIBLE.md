@@ -117,6 +117,10 @@ The `type` column is a free-form VARCHAR(50) — no CHECK constraint in the migr
 
 Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). Not a JPA `@Inheritance` — just string-based type discrimination. Scoped to both a group and optionally a group member.
 
+**Writing entries** — `AuditLogService.record(entityType, entityId, action, message, group)` is the single write path. It runs in the caller's transaction (an entry is persisted only if the operation commits) and resolves the actor and IP from the request context via the `AuditContext` helper. Actions are the `AuditAction` enum; entity types are `AuditEntityType` constants (both uppercase, e.g. `TASK`/`CREATE`). Pass a `null` group for group-less events (authentication/account), which the schema allows.
+
+**Actor attribution** — `actor_user_id` (nullable, V15) records the authenticated caller from the security context, so the actor is captured even for group-less events and when actor ≠ subject (e.g. one user deleting another's account). `group_member_id` still records the actor's membership/role context for group-scoped events. Public `/api/auth/**` routes have no authenticated caller, so `actor_user_id` is null there and the user is identified by `entity_id` instead.
+
 ## Database design
 
 ### Schema conventions
@@ -134,7 +138,7 @@ Every FK column is indexed. Additional indexes on:
 - `group`: `uid`, `invite_code`
 - `task`: `group_id`, `assigned_to`, `status`, `priority`, `uid`
 - `notification`: `(user_id, is_read)` composite for unread queries
-- `audit_log`: `(entity_type, entity_id)` composite, `date_created` for time-range queries
+- `audit_log`: `(entity_type, entity_id)` composite, `date_created` for time-range queries, `actor_user_id` for by-user activity queries
 - `refresh_token`: `token` (unique, for lookup by hashed value), `user_id` (for bulk revocation)
 
 ### Migration sequence (V1–V11)
@@ -155,8 +159,9 @@ Every FK column is indexed. Additional indexes on:
 | V12 | `email_verification` + `user.is_email_verified` column | `user` |
 | V13 | `refresh_token` (with indexes on `token` and `user_id`) | `user` |
 | V14 | Enables Row Level Security on all tables (no new table) | all tables |
+| V15 | Adds `audit_log.actor_user_id` column + index (no new table) | `user` |
 
-Next available version: **V15**.
+Next available version: **V16**.
 
 ### Dev seed data
 

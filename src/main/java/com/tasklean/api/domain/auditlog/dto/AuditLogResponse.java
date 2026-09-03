@@ -19,6 +19,7 @@ public class AuditLogResponse {
     private String actionMessage;
     private String ipAddress;
     private LocalDateTime dateCreated;
+    private Long actorUserId;
     private Long groupMemberId;
     private Long groupId;
 
@@ -31,6 +32,7 @@ public class AuditLogResponse {
                 .actionMessage(auditLog.getActionMessage())
                 .ipAddress(auditLog.getIpAddress())
                 .dateCreated(auditLog.getDateCreated())
+                .actorUserId(auditLog.getActorUser() != null ? auditLog.getActorUser().getIdUser() : null)
                 .groupMemberId(auditLog.getGroupMember() != null ? auditLog.getGroupMember().getIdGroupMember() : null)
                 .groupId(auditLog.getGroup() != null ? auditLog.getGroup().getIdGroup() : null)
                 .build();
