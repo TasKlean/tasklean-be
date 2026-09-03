@@ -67,7 +67,7 @@ public class UserService {
         user.setLastName(request.getLastName());
         user.setPhotoUrl(request.getPhotoUrl());
         User saved = userRepository.save(user);
-        auditLogService.record(AuditEntityType.USER, saved.getIdUser(), AuditAction.UPDATE, "Profile updated", null);
+        auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.UPDATE, "Profile updated", null);
         return UserResponse.from(saved);
     }
 
@@ -84,6 +84,6 @@ public class UserService {
         user.setIsActive(false);
         userRepository.save(user);
         log.info("User soft-deleted: uid={}", uid);
-        auditLogService.record(AuditEntityType.USER, user.getIdUser(), AuditAction.ACCOUNT_DELETED, "Account deleted", null);
+        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.ACCOUNT_DELETED, "Account deleted", null);
     }
 }

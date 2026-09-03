@@ -82,7 +82,7 @@ public class TaskCompletionService {
                 .build();
         TaskCompletion saved = taskCompletionRepository.save(completion);
         log.info("Task completion recorded: id={} task={} member={}", saved.getIdTaskCompletion(), task.getIdTask(), member.getIdGroupMember());
-        auditLogService.record(AuditEntityType.TASK_COMPLETION, saved.getIdTaskCompletion(), AuditAction.COMPLETE,
+        auditLogService.recordEvent(AuditEntityType.TASK_COMPLETION, saved.getIdTaskCompletion(), AuditAction.COMPLETE,
                 "Task \"" + task.getName() + "\" completed", task.getGroup());
         return TaskCompletionResponse.from(saved);
     }

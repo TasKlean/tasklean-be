@@ -56,7 +56,7 @@ class AuthServiceTest {
     private AuthService authService;
 
     private void verifyLoginFailedRecordedFor(long userId) {
-        verify(auditLogService).record(eq(AuditEntityType.USER), eq(userId),
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(userId),
                 eq(AuditAction.LOGIN_FAILED), anyString(), isNull());
     }
 
@@ -97,7 +97,7 @@ class AuthServiceTest {
         assertThat(response.getEmail()).isEqualTo("new@example.com");
         assertThat(response.getMessage()).contains("Verification code sent");
         verify(verificationService).createAndSendVerification(any(User.class));
-        verify(auditLogService).record(eq(AuditEntityType.USER), eq(99L),
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(99L),
                 eq(AuditAction.REGISTER), anyString(), isNull());
     }
 
@@ -177,7 +177,7 @@ class AuthServiceTest {
         assertThat(response.getRefreshToken()).isEqualTo("refresh-token-abc");
         assertThat(response.getUid()).isEqualTo("usr-existing-123");
         assertThat(response.getEmail()).isEqualTo("bob@example.com");
-        verify(auditLogService).record(eq(AuditEntityType.USER), eq(1L),
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L),
                 eq(AuditAction.LOGIN), anyString(), isNull());
     }
 
@@ -194,7 +194,7 @@ class AuthServiceTest {
                 .hasMessageContaining("Invalid email or password");
 
         // Unknown email cannot be audited: there is no user id to attribute the entry to.
-        verify(auditLogService, never()).record(any(), any(), any(), anyString(), any());
+        verify(auditLogService, never()).recordEvent(any(), any(), any(), anyString(), any());
     }
 
     @Test

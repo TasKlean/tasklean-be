@@ -31,7 +31,7 @@ class AuditLogServiceTest {
     // --- record ---
 
     @Test
-    void record_withGroup_resolvesAndStampsActingMember() {
+    void recordEvent_withGroup_resolvesAndStampsActingMember() {
         Group group = Group.builder().idGroup(10L).build();
         User actorUser = User.builder().idUser(1L).build();
         GroupMember actor = GroupMember.builder().idGroupMember(5L).build();
@@ -40,7 +40,7 @@ class AuditLogServiceTest {
         when(auditContext.currentActor(10L)).thenReturn(actor);
         when(auditContext.currentIpAddress()).thenReturn("203.0.113.7");
 
-        auditLogService.record(AuditEntityType.TASK, 42L, AuditAction.CREATE, "Task created", group);
+        auditLogService.recordEvent(AuditEntityType.TASK, 42L, AuditAction.CREATE, "Task created", group);
 
         AuditLog saved = captureSaved();
         assertThat(saved.getEntityType()).isEqualTo(AuditEntityType.TASK);
@@ -54,11 +54,11 @@ class AuditLogServiceTest {
     }
 
     @Test
-    void record_nullGroup_leavesGroupAndMemberUnset() {
+    void recordEvent_nullGroup_leavesGroupAndMemberUnset() {
         User actorUser = User.builder().idUser(1L).build();
         when(auditContext.currentUser()).thenReturn(actorUser);
 
-        auditLogService.record(AuditEntityType.USER, 1L, AuditAction.LOGIN, "User logged in", null);
+        auditLogService.recordEvent(AuditEntityType.USER, 1L, AuditAction.LOGIN, "User logged in", null);
 
         AuditLog saved = captureSaved();
         assertThat(saved.getGroup()).isNull();
@@ -68,8 +68,8 @@ class AuditLogServiceTest {
     }
 
     @Test
-    void record_nullGroup_doesNotResolveActingMember() {
-        auditLogService.record(AuditEntityType.USER, 1L, AuditAction.LOGOUT, "User logged out", null);
+    void recordEvent_nullGroup_doesNotResolveActingMember() {
+        auditLogService.recordEvent(AuditEntityType.USER, 1L, AuditAction.LOGOUT, "User logged out", null);
 
         // group-less events must never hit the membership lookup
         verify(auditContext, never()).currentActor(any());

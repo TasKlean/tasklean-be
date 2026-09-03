@@ -101,7 +101,7 @@ public class GroupMemberService {
                 .build();
         GroupMember saved = groupMemberRepository.save(member);
         log.info("Group member added: id={} user={} group={}", saved.getIdGroupMember(), user.getIdUser(), group.getIdGroup());
-        auditLogService.record(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.MEMBER_ADDED,
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.MEMBER_ADDED,
                 "Member added with role " + saved.getRole(), group);
         return GroupMemberResponse.from(saved);
     }
@@ -122,7 +122,7 @@ public class GroupMemberService {
         // Authorization-relevant state change → INFO.
         log.info("Group member role changed: id={} role={}", id, role);
         GroupMember saved = groupMemberRepository.save(member);
-        auditLogService.record(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.ROLE_CHANGED,
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.ROLE_CHANGED,
                 "Role changed to " + role, saved.getGroup());
         return GroupMemberResponse.from(saved);
     }
@@ -141,7 +141,7 @@ public class GroupMemberService {
         member.setDateLeft(LocalDateTime.now(clock));
         groupMemberRepository.save(member);
         log.info("Group member removed: id={}", id);
-        auditLogService.record(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(), AuditAction.MEMBER_REMOVED,
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(), AuditAction.MEMBER_REMOVED,
                 "Member removed from group", member.getGroup());
     }
 }

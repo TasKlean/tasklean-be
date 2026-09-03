@@ -81,8 +81,8 @@ public class CategoryService {
                 .build();
         Category saved = categoryRepository.save(category);
         log.info("Category created: id={} group={}", saved.getIdCategory(), group.getIdGroup());
-        auditLogService.record(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.CREATE,
-                "Category \"" + saved.getName() + "\" created", group);
+        auditLogService.recordEvent(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.CREATE,
+                auditMessage(saved.getName(), "created"), group);
         return CategoryResponse.from(saved);
     }
 
@@ -102,8 +102,8 @@ public class CategoryService {
         category.setColor(request.getColor());
         category.setIcon(request.getIcon());
         Category saved = categoryRepository.save(category);
-        auditLogService.record(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.UPDATE,
-                "Category \"" + saved.getName() + "\" updated", saved.getGroup());
+        auditLogService.recordEvent(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.UPDATE,
+                auditMessage(saved.getName(), "updated"), saved.getGroup());
         return CategoryResponse.from(saved);
     }
 
@@ -120,7 +120,11 @@ public class CategoryService {
         category.setIsActive(false);
         categoryRepository.save(category);
         log.info("Category soft-deleted: id={}", id);
-        auditLogService.record(AuditEntityType.CATEGORY, category.getIdCategory(), AuditAction.DELETE,
-                "Category \"" + category.getName() + "\" deleted", category.getGroup());
+        auditLogService.recordEvent(AuditEntityType.CATEGORY, category.getIdCategory(), AuditAction.DELETE,
+                auditMessage(category.getName(), "deleted"), category.getGroup());
+    }
+
+    private static String auditMessage(String name, String verb) {
+        return "Category \"" + name + "\" " + verb;
     }
 }

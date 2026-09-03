@@ -63,7 +63,7 @@ public class AuthService {
         user = userRepository.save(user);
         // Log the uid, never the email (PII).
         log.info("User registered: uid={}", user.getUid());
-        auditLogService.record(AuditEntityType.USER, user.getIdUser(), AuditAction.REGISTER, "Account created", null);
+        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.REGISTER, "Account created", null);
         verificationService.createAndSendVerification(user);
 
         return AuthResponse.pendingVerification(user);
@@ -81,7 +81,7 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
-        if (!user.getIsActive()) {
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
             recordFailedLogin(user, "account deactivated");
             throw new BadCredentialsException("Account is deactivated");
         }
@@ -92,7 +92,7 @@ public class AuthService {
             throw new BadCredentialsException("This account uses a different sign-in option");
         }
 
-        if (!user.getIsEmailVerified()) {
+        if (!Boolean.TRUE.equals(user.getIsEmailVerified())) {
             recordFailedLogin(user, "email not verified");
             throw new BadCredentialsException("Email not verified. Check your inbox for a verification code");
         }
@@ -105,14 +105,14 @@ public class AuthService {
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);
         log.info("User logged in: uid={}", user.getUid());
-        auditLogService.record(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN, "User logged in", null);
+        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN, "User logged in", null);
         return AuthResponse.from(user, token, refreshToken);
     }
 
     // login() is not transactional, so each failed-login entry commits in its own
     // transaction and survives the BadCredentialsException thrown immediately after.
     private void recordFailedLogin(User user, String reason) {
-        auditLogService.record(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN_FAILED,
+        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN_FAILED,
                 "Failed login attempt: " + reason, null);
     }
 }

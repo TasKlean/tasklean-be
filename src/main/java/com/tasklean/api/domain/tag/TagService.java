@@ -80,8 +80,8 @@ public class TagService {
                 .build();
         Tag saved = tagRepository.save(tag);
         log.info("Tag created: id={} group={}", saved.getIdTag(), group.getIdGroup());
-        auditLogService.record(AuditEntityType.TAG, saved.getIdTag(), AuditAction.CREATE,
-                "Tag \"" + saved.getName() + "\" created", group);
+        auditLogService.recordEvent(AuditEntityType.TAG, saved.getIdTag(), AuditAction.CREATE,
+                auditMessage(saved.getName(), "created"), group);
         return TagResponse.from(saved);
     }
 
@@ -100,8 +100,8 @@ public class TagService {
         tag.setName(request.getName());
         tag.setColor(request.getColor());
         Tag saved = tagRepository.save(tag);
-        auditLogService.record(AuditEntityType.TAG, saved.getIdTag(), AuditAction.UPDATE,
-                "Tag \"" + saved.getName() + "\" updated", saved.getGroup());
+        auditLogService.recordEvent(AuditEntityType.TAG, saved.getIdTag(), AuditAction.UPDATE,
+                auditMessage(saved.getName(), "updated"), saved.getGroup());
         return TagResponse.from(saved);
     }
 
@@ -118,7 +118,11 @@ public class TagService {
         tag.setIsActive(false);
         tagRepository.save(tag);
         log.info("Tag soft-deleted: id={}", id);
-        auditLogService.record(AuditEntityType.TAG, tag.getIdTag(), AuditAction.DELETE,
-                "Tag \"" + tag.getName() + "\" deleted", tag.getGroup());
+        auditLogService.recordEvent(AuditEntityType.TAG, tag.getIdTag(), AuditAction.DELETE,
+                auditMessage(tag.getName(), "deleted"), tag.getGroup());
+    }
+
+    private static String auditMessage(String name, String verb) {
+        return "Tag \"" + name + "\" " + verb;
     }
 }

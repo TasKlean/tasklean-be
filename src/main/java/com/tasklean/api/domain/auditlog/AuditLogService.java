@@ -34,7 +34,7 @@ public class AuditLogService {
      *                   (e.g. authentication), which leaves both group and group member unset.
      */
     @Transactional
-    public void record(String entityType, Long entityId, AuditAction action, String message, Group group) {
+    public void recordEvent(String entityType, Long entityId, AuditAction action, String message, Group group) {
         GroupMember actor = group != null ? auditContext.currentActor(group.getIdGroup()) : null;
 
         AuditLog entry = AuditLog.builder()

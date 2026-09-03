@@ -69,8 +69,8 @@ public class GroupService {
                 .build();
         Group saved = groupRepository.save(group);
         log.info("Group created: uid={}", saved.getUid());
-        auditLogService.record(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.CREATE,
-                "Group \"" + saved.getName() + "\" created", saved);
+        auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.CREATE,
+                auditMessage(saved.getName(), "created"), saved);
         return GroupResponse.from(saved);
     }
 
@@ -90,8 +90,8 @@ public class GroupService {
         group.setDescription(request.getDescription());
         group.setPhotoUrl(request.getPhotoUrl());
         Group saved = groupRepository.save(group);
-        auditLogService.record(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
-                "Group \"" + saved.getName() + "\" updated", saved);
+        auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
+                auditMessage(saved.getName(), "updated"), saved);
         return GroupResponse.from(saved);
     }
 
@@ -108,8 +108,12 @@ public class GroupService {
         group.setIsActive(false);
         groupRepository.save(group);
         log.info("Group soft-deleted: uid={}", uid);
-        auditLogService.record(AuditEntityType.GROUP, group.getIdGroup(), AuditAction.DELETE,
-                "Group \"" + group.getName() + "\" deleted", group);
+        auditLogService.recordEvent(AuditEntityType.GROUP, group.getIdGroup(), AuditAction.DELETE,
+                auditMessage(group.getName(), "deleted"), group);
+    }
+
+    private static String auditMessage(String name, String verb) {
+        return "Group \"" + name + "\" " + verb;
     }
 
     private String generateInviteCode() {

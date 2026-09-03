@@ -110,7 +110,7 @@ public class RefreshTokenService {
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
         refreshTokenRepository.revokeAllByUserId(token.getUser().getIdUser());
         log.info("User logged out: uid={}", token.getUser().getUid());
-        auditLogService.record(AuditEntityType.USER, token.getUser().getIdUser(), AuditAction.LOGOUT, "User logged out", null);
+        auditLogService.recordEvent(AuditEntityType.USER, token.getUser().getIdUser(), AuditAction.LOGOUT, "User logged out", null);
     }
 
     /**

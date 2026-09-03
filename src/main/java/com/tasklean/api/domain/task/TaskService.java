@@ -104,8 +104,8 @@ public class TaskService {
         Task saved = taskRepository.save(task);
         // Significant business event → INFO. Log the business identifier (uid), never full entities or PII.
         log.info("Task created: uid={} group={}", saved.getUid(), group.getIdGroup());
-        auditLogService.record(AuditEntityType.TASK, saved.getIdTask(), AuditAction.CREATE,
-                "Task \"" + saved.getName() + "\" created", group);
+        auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.CREATE,
+                auditMessage(saved.getName(), "created"), group);
         return TaskResponse.from(saved);
     }
 
@@ -148,8 +148,8 @@ public class TaskService {
         }
 
         Task saved = taskRepository.save(task);
-        auditLogService.record(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
-                "Task \"" + saved.getName() + "\" updated", saved.getGroup());
+        auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
+                auditMessage(saved.getName(), "updated"), saved.getGroup());
         return TaskResponse.from(saved);
     }
 
@@ -166,7 +166,11 @@ public class TaskService {
         task.setIsActive(false);
         taskRepository.save(task);
         log.info("Task soft-deleted: uid={}", uid);
-        auditLogService.record(AuditEntityType.TASK, task.getIdTask(), AuditAction.DELETE,
-                "Task \"" + task.getName() + "\" deleted", task.getGroup());
+        auditLogService.recordEvent(AuditEntityType.TASK, task.getIdTask(), AuditAction.DELETE,
+                auditMessage(task.getName(), "deleted"), task.getGroup());
+    }
+
+    private static String auditMessage(String name, String verb) {
+        return "Task \"" + name + "\" " + verb;
     }
 }
