@@ -117,6 +117,14 @@ The `type` column is a free-form VARCHAR(50) — no CHECK constraint in the migr
 
 Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). Not a JPA `@Inheritance` — just string-based type discrimination. Scoped to both a group and optionally a group member.
 
+**Writing entries** — `AuditLogService.recordEvent(entityType, entityId, action, message, group)` is the single write path. It runs in the caller's transaction (an entry is persisted only if the operation commits) and resolves the actor and IP from the request context via the `AuditContext` helper. Actions are the `AuditAction` enum; entity types are `AuditEntityType` constants (both uppercase, e.g. `TASK`/`CREATE`). Pass a `null` group for group-less events (authentication/account), which the schema allows.
+
+**Actor attribution** — `actor_user_id` (nullable, V15) records the authenticated caller from the security context, so the actor is captured even for group-less events and when actor ≠ subject (e.g. one user deleting another's account). `group_member_id` still records the actor's membership/role context for group-scoped events. Public `/api/auth/**` routes have no authenticated caller, so `actor_user_id` is null there and the user is identified by `entity_id` instead.
+
+**What's audited** — the mutating service methods call `recordEvent(...)`:
+- Domain (group-scoped): `Task`, `Group`, `Category`, `Tag` CREATE/UPDATE/DELETE; `GroupMember` MEMBER_ADDED/ROLE_CHANGED/MEMBER_REMOVED; `TaskCompletion` COMPLETE.
+- Auth/account (group-less): REGISTER, LOGIN, LOGOUT, ACCOUNT_DELETED, user profile UPDATE, and LOGIN_FAILED on every credential rejection where the user is known. A login attempt for an **unknown email** is not audited — `entity_id` is `NOT NULL` and there is no user id to record (it stays a WARN in the ops log only).
+
 ## Database design
 
 ### Schema conventions
@@ -134,7 +142,7 @@ Every FK column is indexed. Additional indexes on:
 - `group`: `uid`, `invite_code`
 - `task`: `group_id`, `assigned_to`, `status`, `priority`, `uid`
 - `notification`: `(user_id, is_read)` composite for unread queries
-- `audit_log`: `(entity_type, entity_id)` composite, `date_created` for time-range queries
+- `audit_log`: `(entity_type, entity_id)` composite, `date_created` for time-range queries, `actor_user_id` for by-user activity queries
 - `refresh_token`: `token` (unique, for lookup by hashed value), `user_id` (for bulk revocation)
 
 ### Migration sequence (V1–V11)
@@ -155,8 +163,9 @@ Every FK column is indexed. Additional indexes on:
 | V12 | `email_verification` + `user.is_email_verified` column | `user` |
 | V13 | `refresh_token` (with indexes on `token` and `user_id`) | `user` |
 | V14 | Enables Row Level Security on all tables (no new table) | all tables |
+| V15 | Adds `audit_log.actor_user_id` column + index (no new table) | `user` |
 
-Next available version: **V15**.
+Next available version: **V16**.
 
 ### Dev seed data
 
@@ -530,8 +539,12 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `JwtAuthenticationFilterTest` | 8 | Valid token sets SecurityContext, no/bad/invalid token passes through, inactive/deleted user rejected, auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
 | `RefreshTokenServiceTest` | 7 | createRefreshToken (hashed storage); refresh (valid rotation, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
+| `AuditLogServiceTest` | 3 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup |
+| `AuditContextTest` | 9 | Actor/user resolution from `SecurityContextHolder` (User principal / anonymous / non-User); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 
-Total: **42 tests** across 5 test classes.
+`AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
+
+Total: **54 tests** across 7 test classes.
 
 ### What's NOT in the codebase yet
 

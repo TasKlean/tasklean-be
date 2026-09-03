@@ -3,6 +3,9 @@ package com.tasklean.api.domain.tag;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.tag.dto.TagRequest;
@@ -25,6 +28,7 @@ public class TagService {
 
     private final TagRepository tagRepository;
     private final GroupRepository groupRepository;
+    private final AuditLogService auditLogService;
 
     /**
      * Returns a tag by its id.
@@ -76,6 +80,8 @@ public class TagService {
                 .build();
         Tag saved = tagRepository.save(tag);
         log.info("Tag created: id={} group={}", saved.getIdTag(), group.getIdGroup());
+        auditLogService.recordEvent(AuditEntityType.TAG, saved.getIdTag(), AuditAction.CREATE,
+                auditMessage(saved.getName(), "created"), group);
         return TagResponse.from(saved);
     }
 
@@ -93,7 +99,10 @@ public class TagService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
         tag.setName(request.getName());
         tag.setColor(request.getColor());
-        return TagResponse.from(tagRepository.save(tag));
+        Tag saved = tagRepository.save(tag);
+        auditLogService.recordEvent(AuditEntityType.TAG, saved.getIdTag(), AuditAction.UPDATE,
+                auditMessage(saved.getName(), "updated"), saved.getGroup());
+        return TagResponse.from(saved);
     }
 
     /**
@@ -109,5 +118,11 @@ public class TagService {
         tag.setIsActive(false);
         tagRepository.save(tag);
         log.info("Tag soft-deleted: id={}", id);
+        auditLogService.recordEvent(AuditEntityType.TAG, tag.getIdTag(), AuditAction.DELETE,
+                auditMessage(tag.getName(), "deleted"), tag.getGroup());
+    }
+
+    private static String auditMessage(String name, String verb) {
+        return "Tag \"" + name + "\" " + verb;
     }
 }

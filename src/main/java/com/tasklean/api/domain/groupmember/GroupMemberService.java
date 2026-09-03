@@ -3,6 +3,9 @@ package com.tasklean.api.domain.groupmember;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberRequest;
@@ -30,6 +33,7 @@ public class GroupMemberService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     /**
@@ -97,6 +101,8 @@ public class GroupMemberService {
                 .build();
         GroupMember saved = groupMemberRepository.save(member);
         log.info("Group member added: id={} user={} group={}", saved.getIdGroupMember(), user.getIdUser(), group.getIdGroup());
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.MEMBER_ADDED,
+                "Member added with role " + saved.getRole(), group);
         return GroupMemberResponse.from(saved);
     }
 
@@ -115,7 +121,10 @@ public class GroupMemberService {
         member.setRole(role);
         // Authorization-relevant state change → INFO.
         log.info("Group member role changed: id={} role={}", id, role);
-        return GroupMemberResponse.from(groupMemberRepository.save(member));
+        GroupMember saved = groupMemberRepository.save(member);
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.ROLE_CHANGED,
+                "Role changed to " + role, saved.getGroup());
+        return GroupMemberResponse.from(saved);
     }
 
     /**
@@ -132,5 +141,7 @@ public class GroupMemberService {
         member.setDateLeft(LocalDateTime.now(clock));
         groupMemberRepository.save(member);
         log.info("Group member removed: id={}", id);
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(), AuditAction.MEMBER_REMOVED,
+                "Member removed from group", member.getGroup());
     }
 }

@@ -2,6 +2,7 @@ package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.group.Group;
+import com.tasklean.api.domain.user.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -48,4 +49,8 @@ public class AuditLog {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "group_id")
     private Group group;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "actor_user_id")
+    private User actorUser;
 }

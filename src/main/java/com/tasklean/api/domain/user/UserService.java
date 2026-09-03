@@ -2,6 +2,9 @@ package com.tasklean.api.domain.user;
 
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ import java.util.List;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     /**
      * Returns a user by their public UID.
@@ -62,7 +66,9 @@ public class UserService {
         user.setMiddleName(request.getMiddleName());
         user.setLastName(request.getLastName());
         user.setPhotoUrl(request.getPhotoUrl());
-        return UserResponse.from(userRepository.save(user));
+        User saved = userRepository.save(user);
+        auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.UPDATE, "Profile updated", null);
+        return UserResponse.from(saved);
     }
 
     /**
@@ -78,5 +84,6 @@ public class UserService {
         user.setIsActive(false);
         userRepository.save(user);
         log.info("User soft-deleted: uid={}", uid);
+        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.ACCOUNT_DELETED, "Account deleted", null);
     }
 }
