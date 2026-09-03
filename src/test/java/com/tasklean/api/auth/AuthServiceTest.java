@@ -7,6 +7,7 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.exception.DuplicateResourceException;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,9 @@ class AuthServiceTest {
 
     @Mock
     private RefreshTokenService refreshTokenService;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @InjectMocks
     private AuthService authService;

@@ -3,6 +3,9 @@ package com.tasklean.api.domain.category;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.category.dto.CategoryRequest;
 import com.tasklean.api.domain.category.dto.CategoryResponse;
 import com.tasklean.api.domain.group.Group;
@@ -25,6 +28,7 @@ public class CategoryService {
 
     private final CategoryRepository categoryRepository;
     private final GroupRepository groupRepository;
+    private final AuditLogService auditLogService;
 
     /**
      * Returns a category by its id.
@@ -77,6 +81,8 @@ public class CategoryService {
                 .build();
         Category saved = categoryRepository.save(category);
         log.info("Category created: id={} group={}", saved.getIdCategory(), group.getIdGroup());
+        auditLogService.record(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.CREATE,
+                "Category \"" + saved.getName() + "\" created", group);
         return CategoryResponse.from(saved);
     }
 
@@ -95,7 +101,10 @@ public class CategoryService {
         category.setName(request.getName());
         category.setColor(request.getColor());
         category.setIcon(request.getIcon());
-        return CategoryResponse.from(categoryRepository.save(category));
+        Category saved = categoryRepository.save(category);
+        auditLogService.record(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.UPDATE,
+                "Category \"" + saved.getName() + "\" updated", saved.getGroup());
+        return CategoryResponse.from(saved);
     }
 
     /**
@@ -111,5 +120,7 @@ public class CategoryService {
         category.setIsActive(false);
         categoryRepository.save(category);
         log.info("Category soft-deleted: id={}", id);
+        auditLogService.record(AuditEntityType.CATEGORY, category.getIdCategory(), AuditAction.DELETE,
+                "Category \"" + category.getName() + "\" deleted", category.getGroup());
     }
 }

@@ -2,6 +2,9 @@ package com.tasklean.api.domain.taskcompletion;
 
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.task.Task;
@@ -29,6 +32,7 @@ public class TaskCompletionService {
     private final TaskCompletionRepository taskCompletionRepository;
     private final TaskRepository taskRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     /**
@@ -78,6 +82,8 @@ public class TaskCompletionService {
                 .build();
         TaskCompletion saved = taskCompletionRepository.save(completion);
         log.info("Task completion recorded: id={} task={} member={}", saved.getIdTaskCompletion(), task.getIdTask(), member.getIdGroupMember());
+        auditLogService.record(AuditEntityType.TASK_COMPLETION, saved.getIdTaskCompletion(), AuditAction.COMPLETE,
+                "Task \"" + task.getName() + "\" completed", task.getGroup());
         return TaskCompletionResponse.from(saved);
     }
 }

@@ -2,6 +2,9 @@ package com.tasklean.api.domain.group;
 
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,7 @@ import java.util.UUID;
 public class GroupService {
 
     private final GroupRepository groupRepository;
+    private final AuditLogService auditLogService;
 
     /**
      * Returns a group by its public UID.
@@ -65,6 +69,8 @@ public class GroupService {
                 .build();
         Group saved = groupRepository.save(group);
         log.info("Group created: uid={}", saved.getUid());
+        auditLogService.record(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.CREATE,
+                "Group \"" + saved.getName() + "\" created", saved);
         return GroupResponse.from(saved);
     }
 
@@ -83,7 +89,10 @@ public class GroupService {
         group.setName(request.getName());
         group.setDescription(request.getDescription());
         group.setPhotoUrl(request.getPhotoUrl());
-        return GroupResponse.from(groupRepository.save(group));
+        Group saved = groupRepository.save(group);
+        auditLogService.record(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
+                "Group \"" + saved.getName() + "\" updated", saved);
+        return GroupResponse.from(saved);
     }
 
     /**
@@ -99,6 +108,8 @@ public class GroupService {
         group.setIsActive(false);
         groupRepository.save(group);
         log.info("Group soft-deleted: uid={}", uid);
+        auditLogService.record(AuditEntityType.GROUP, group.getIdGroup(), AuditAction.DELETE,
+                "Group \"" + group.getName() + "\" deleted", group);
     }
 
     private String generateInviteCode() {

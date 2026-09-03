@@ -121,6 +121,10 @@ Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). No
 
 **Actor attribution** — `actor_user_id` (nullable, V15) records the authenticated caller from the security context, so the actor is captured even for group-less events and when actor ≠ subject (e.g. one user deleting another's account). `group_member_id` still records the actor's membership/role context for group-scoped events. Public `/api/auth/**` routes have no authenticated caller, so `actor_user_id` is null there and the user is identified by `entity_id` instead.
 
+**What's audited** — the mutating service methods call `record(...)`:
+- Domain (group-scoped): `Task`, `Group`, `Category`, `Tag` CREATE/UPDATE/DELETE; `GroupMember` MEMBER_ADDED/ROLE_CHANGED/MEMBER_REMOVED; `TaskCompletion` COMPLETE.
+- Auth/account (group-less): REGISTER, LOGIN, LOGOUT, ACCOUNT_DELETED, user profile UPDATE, and LOGIN_FAILED on every credential rejection where the user is known. A login attempt for an **unknown email** is not audited — `entity_id` is `NOT NULL` and there is no user id to record (it stays a WARN in the ops log only).
+
 ## Database design
 
 ### Schema conventions

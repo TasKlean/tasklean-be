@@ -4,6 +4,7 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.config.JwtConfig;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +37,9 @@ class RefreshTokenServiceTest {
 
     @Mock
     private JwtConfig jwtConfig;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @Spy
     private Clock clock = Clock.systemUTC();

@@ -4,6 +4,9 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.config.JwtConfig;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +39,7 @@ public class RefreshTokenService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
     private final JwtConfig jwtConfig;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     /**
@@ -106,6 +110,7 @@ public class RefreshTokenService {
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
         refreshTokenRepository.revokeAllByUserId(token.getUser().getIdUser());
         log.info("User logged out: uid={}", token.getUser().getUid());
+        auditLogService.record(AuditEntityType.USER, token.getUser().getIdUser(), AuditAction.LOGOUT, "User logged out", null);
     }
 
     /**

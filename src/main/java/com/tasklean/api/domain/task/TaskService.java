@@ -2,6 +2,9 @@ package com.tasklean.api.domain.task;
 
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.category.Category;
 import com.tasklean.api.domain.category.CategoryRepository;
 import com.tasklean.api.domain.group.Group;
@@ -31,6 +34,7 @@ public class TaskService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final CategoryRepository categoryRepository;
+    private final AuditLogService auditLogService;
 
     /**
      * Returns a task by its public UID.
@@ -100,6 +104,8 @@ public class TaskService {
         Task saved = taskRepository.save(task);
         // Significant business event → INFO. Log the business identifier (uid), never full entities or PII.
         log.info("Task created: uid={} group={}", saved.getUid(), group.getIdGroup());
+        auditLogService.record(AuditEntityType.TASK, saved.getIdTask(), AuditAction.CREATE,
+                "Task \"" + saved.getName() + "\" created", group);
         return TaskResponse.from(saved);
     }
 
@@ -141,7 +147,10 @@ public class TaskService {
             task.setCategory(null);
         }
 
-        return TaskResponse.from(taskRepository.save(task));
+        Task saved = taskRepository.save(task);
+        auditLogService.record(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
+                "Task \"" + saved.getName() + "\" updated", saved.getGroup());
+        return TaskResponse.from(saved);
     }
 
     /**
@@ -157,5 +166,7 @@ public class TaskService {
         task.setIsActive(false);
         taskRepository.save(task);
         log.info("Task soft-deleted: uid={}", uid);
+        auditLogService.record(AuditEntityType.TASK, task.getIdTask(), AuditAction.DELETE,
+                "Task \"" + task.getName() + "\" deleted", task.getGroup());
     }
 }
