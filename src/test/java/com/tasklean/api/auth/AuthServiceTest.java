@@ -7,6 +7,8 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.exception.DuplicateResourceException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -24,6 +26,9 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -49,6 +54,11 @@ class AuthServiceTest {
 
     @InjectMocks
     private AuthService authService;
+
+    private void verifyLoginFailedRecordedFor(long userId) {
+        verify(auditLogService).record(eq(AuditEntityType.USER), eq(userId),
+                eq(AuditAction.LOGIN_FAILED), anyString(), isNull());
+    }
 
     private User buildExistingUser() {
         return User.builder()
@@ -87,6 +97,8 @@ class AuthServiceTest {
         assertThat(response.getEmail()).isEqualTo("new@example.com");
         assertThat(response.getMessage()).contains("Verification code sent");
         verify(verificationService).createAndSendVerification(any(User.class));
+        verify(auditLogService).record(eq(AuditEntityType.USER), eq(99L),
+                eq(AuditAction.REGISTER), anyString(), isNull());
     }
 
     @Test
@@ -165,6 +177,8 @@ class AuthServiceTest {
         assertThat(response.getRefreshToken()).isEqualTo("refresh-token-abc");
         assertThat(response.getUid()).isEqualTo("usr-existing-123");
         assertThat(response.getEmail()).isEqualTo("bob@example.com");
+        verify(auditLogService).record(eq(AuditEntityType.USER), eq(1L),
+                eq(AuditAction.LOGIN), anyString(), isNull());
     }
 
     @Test
@@ -178,6 +192,9 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("Invalid email or password");
+
+        // Unknown email cannot be audited: there is no user id to attribute the entry to.
+        verify(auditLogService, never()).record(any(), any(), any(), anyString(), any());
     }
 
     @Test
@@ -193,6 +210,8 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("Invalid email or password");
+
+        verifyLoginFailedRecordedFor(1L);
     }
 
     @Test
@@ -208,6 +227,8 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("deactivated");
+
+        verifyLoginFailedRecordedFor(1L);
     }
 
     @Test
@@ -224,6 +245,8 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("different sign-in");
+
+        verifyLoginFailedRecordedFor(1L);
     }
 
     @Test
@@ -239,5 +262,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("not verified");
+
+        verifyLoginFailedRecordedFor(1L);
     }
 }

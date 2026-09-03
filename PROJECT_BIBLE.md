@@ -539,8 +539,12 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `JwtAuthenticationFilterTest` | 8 | Valid token sets SecurityContext, no/bad/invalid token passes through, inactive/deleted user rejected, auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
 | `RefreshTokenServiceTest` | 7 | createRefreshToken (hashed storage); refresh (valid rotation, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
+| `AuditLogServiceTest` | 3 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup |
+| `AuditContextTest` | 9 | Actor/user resolution from `SecurityContextHolder` (User principal / anonymous / non-User); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 
-Total: **42 tests** across 5 test classes.
+`AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
+
+Total: **54 tests** across 7 test classes.
 
 ### What's NOT in the codebase yet
 

@@ -273,36 +273,36 @@ WHERE NOT EXISTS (SELECT 1 FROM notification WHERE title = 'New member' AND user
 -- ============================================================================
 -- AUDIT LOG (sample entries)
 -- ============================================================================
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id)
+INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
 SELECT 'GROUP', g.id_group, 'CREATE', 'Group "Apartment 4B" created', '127.0.0.1',
-       gm.id_group_member, g.id_group
+       gm.id_group_member, g.id_group, gm.user_id
 FROM "group" g
 JOIN group_member gm ON gm.group_id = g.id_group
     AND gm.user_id = (SELECT id_user FROM "user" WHERE uid = 'usr-alice-00000001')
 WHERE g.uid = 'grp-apt4b-00000001'
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'CREATE' AND entity_type = 'GROUP' AND entity_id = g.id_group);
 
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id)
+INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
 SELECT 'TASK', t.id_task, 'CREATE', 'Task "Clean kitchen counters" created', '127.0.0.1',
-       gm.id_group_member, (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001')
+       gm.id_group_member, (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001'), gm.user_id
 FROM task t
 JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE uid = 'usr-alice-00000001')
     AND gm.group_id = (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001')
 WHERE t.uid = 'tsk-00000001'
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'CREATE' AND entity_type = 'TASK' AND entity_id = t.id_task);
 
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id)
+INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
 SELECT 'TASK', t.id_task, 'UPDATE', 'Task "Fix leaky faucet" marked as COMPLETED', '127.0.0.1',
-       gm.id_group_member, (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001')
+       gm.id_group_member, (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001'), gm.user_id
 FROM task t
 JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE uid = 'usr-bob-00000002')
     AND gm.group_id = (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001')
 WHERE t.uid = 'tsk-00000004'
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'UPDATE' AND entity_type = 'TASK' AND entity_id = t.id_task);
 
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id)
+INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
 SELECT 'GROUP_MEMBER', gm_alice.id_group_member, 'CREATE', 'Alice joined "Family Home"', '127.0.0.1',
-       gm_charlie.id_group_member, (SELECT id_group FROM "group" WHERE uid = 'grp-family-00000002')
+       gm_charlie.id_group_member, (SELECT id_group FROM "group" WHERE uid = 'grp-family-00000002'), gm_charlie.user_id
 FROM group_member gm_alice
 JOIN group_member gm_charlie ON gm_charlie.user_id = (SELECT id_user FROM "user" WHERE uid = 'usr-charlie-00000003')
     AND gm_charlie.group_id = (SELECT id_group FROM "group" WHERE uid = 'grp-family-00000002')
