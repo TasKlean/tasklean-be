@@ -66,7 +66,7 @@ Everything revolves around the Group. A User does nothing alone — they must be
 
 | Entity | PK | Has UID | Extends BaseEntity | Soft-delete | Notes |
 |---|---|---|---|---|---|
-| User | `id_user` | Yes (`uid`, 100 chars) | Yes | `is_active` | Also has `google_sub` for OAuth |
+| User | `id_user` | Yes (`uid`, 100 chars) | Yes | `is_active` | Also has `google_sub` for OAuth; `role` (platform role: `SUPER_ADMIN`/`ADMIN`/`USER`) |
 | Group | `id_group` | Yes (`uid`, 500 chars) | Yes | `is_active` | Has `invite_code` for joining |
 | GroupMember | `id_group_member` | No | No | `is_active` + `date_left` | Junction with role; unique on `(user_id, group_id)` |
 | Task | `id_task` | Yes (`uid`, 500 chars) | Yes | `is_active` | Central domain object |
@@ -164,8 +164,9 @@ Every FK column is indexed. Additional indexes on:
 | V13 | `refresh_token` (with indexes on `token` and `user_id`) | `user` |
 | V14 | Enables Row Level Security on all tables (no new table) | all tables |
 | V15 | Adds `audit_log.actor_user_id` column + index (no new table) | `user` |
+| V16 | Adds `user.role` column (platform role, CHECK-constrained; no new table) | `user` |
 
-Next available version: **V16**.
+Next available version: **V17**.
 
 ### Dev seed data
 
