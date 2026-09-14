@@ -83,6 +83,7 @@ mvnw.cmd test -Dtest="JwtServiceTest#testName"   # Run single test method
 
 Tests mirror `src/main/java` under `src/test/java`. Test class naming:
 - `<Class>Test.java` — unit tests (no Spring context, mocked dependencies)
+- `<Controller>SecurityTest.java` — `@WebMvcTest` slices asserting endpoint `@PreAuthorize` (no DB; caller injected per-request, method security via `MethodSecuritySliceConfig`, service layer `@MockitoBean`)
 - `<Class>IntegrationTest.java` — integration tests with `@SpringBootTest` (future, needs Testcontainers)
 
 ### Conventions

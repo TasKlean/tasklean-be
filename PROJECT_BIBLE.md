@@ -557,10 +557,17 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
 | `AuditLogServiceTest` | 3 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup |
 | `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
+| `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
+| `GroupSecurityTest` | 12 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); `canManageMember`/`canViewMember`/`isSelfMember` by membership id |
+| `GroupServiceTest` | 1 | `createGroup` makes the creator the first `GROUP_ADMIN` |
+| `GroupMemberServiceTest` | 7 | addMember (success / duplicate); role change and removal with last-admin protection (blocked when last, allowed with another admin); promote member |
+| `UserServiceTest` | 2 | `updateUserRole` (changes role + audits; unknown uid throws) |
+| `UserControllerSecurityTest` | 7 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
+| `GroupControllerSecurityTest` | 5 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **57 tests** across 7 test classes.
+Total: **95 tests** across 14 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
