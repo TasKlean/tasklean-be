@@ -7,11 +7,17 @@ import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.groupmember.GroupMember;
+import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.groupmember.GroupRole;
+import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,7 +31,10 @@ import java.util.UUID;
 public class GroupService {
 
     private final GroupRepository groupRepository;
+    private final GroupMemberRepository groupMemberRepository;
+    private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final Clock clock;
 
     /**
      * Returns a group by its public UID.
@@ -52,13 +61,15 @@ public class GroupService {
     }
 
     /**
-     * Creates a group with a generated UID and a unique invite code.
+     * Creates a group with a generated UID and a unique invite code, and adds the creator as
+     * its first {@code GROUP_ADMIN}.
      *
-     * @param request the group details (name, description, photo)
+     * @param request       the group details (name, description, photo)
+     * @param creatorUserId the id of the authenticated user creating the group
      * @return the created group
      */
     @Transactional
-    public GroupResponse createGroup(GroupRequest request) {
+    public GroupResponse createGroup(GroupRequest request, Long creatorUserId) {
         Group group = Group.builder()
                 .uid(UUID.randomUUID().toString())
                 .name(request.getName())
@@ -71,6 +82,20 @@ public class GroupService {
         log.info("Group created: uid={}", saved.getUid());
         auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.CREATE,
                 auditMessage(saved.getName(), "created"), saved);
+
+        // The creator is the group's first admin.
+        GroupMember creator = GroupMember.builder()
+                .user(userRepository.getReferenceById(creatorUserId))
+                .group(saved)
+                .role(GroupRole.GROUP_ADMIN)
+                .isActive(true)
+                .dateJoined(LocalDateTime.now(clock))
+                .build();
+        GroupMember savedMember = groupMemberRepository.save(creator);
+
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, savedMember.getIdGroupMember(),
+                AuditAction.MEMBER_ADDED, "Creator added as group admin", saved);
+
         return GroupResponse.from(saved);
     }
 

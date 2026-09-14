@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.groupmember;
 
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -113,11 +114,18 @@ public class GroupMemberService {
      * @param role the new role
      * @return the updated membership
      * @throws ResourceNotFoundException if no membership has that id
+     * @throws BusinessRuleException     if this would demote the group's last admin
      */
     @Transactional
-    public GroupMemberResponse updateMemberRole(Long id, String role) {
+    public GroupMemberResponse updateMemberRole(Long id, GroupRole role) {
         GroupMember member = groupMemberRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
+
+        if (member.getRole() == GroupRole.GROUP_ADMIN && role != GroupRole.GROUP_ADMIN
+                && Boolean.TRUE.equals(member.getIsActive()) && isLastAdmin(member)) {
+            throw new BusinessRuleException("A group must have at least one admin");
+        }
+
         member.setRole(role);
         // Authorization-relevant state change → INFO.
         log.info("Group member role changed: id={} role={}", id, role);
@@ -132,16 +140,29 @@ public class GroupMemberService {
      *
      * @param id the membership id
      * @throws ResourceNotFoundException if no membership has that id
+     * @throws BusinessRuleException     if this would remove the group's last admin
      */
     @Transactional
     public void removeMember(Long id) {
         GroupMember member = groupMemberRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
+
+        if (member.getRole() == GroupRole.GROUP_ADMIN && Boolean.TRUE.equals(member.getIsActive())
+                && isLastAdmin(member)) {
+            throw new BusinessRuleException("A group must have at least one admin");
+        }
+
         member.setIsActive(false);
         member.setDateLeft(LocalDateTime.now(clock));
         groupMemberRepository.save(member);
         log.info("Group member removed: id={}", id);
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(), AuditAction.MEMBER_REMOVED,
                 "Member removed from group", member.getGroup());
+    }
+
+    // Whether the given member is the only remaining active admin of their group.
+    private boolean isLastAdmin(GroupMember member) {
+        return groupMemberRepository.countByGroupIdGroupAndRoleAndIsActiveTrue(
+                member.getGroup().getIdGroup(), GroupRole.GROUP_ADMIN) <= 1;
     }
 }

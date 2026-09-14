@@ -38,25 +38,25 @@ ON CONFLICT DO NOTHING;
 
 -- ============================================================================
 -- GROUP MEMBERS
--- Alice = ADMIN of Apartment 4B, MEMBER of Family Home (multi-group user)
--- Bob   = MEMBER of Apartment 4B
--- Charlie = ADMIN of Family Home, MEMBER of Apartment 4B
+-- Alice = GROUP_ADMIN of Apartment 4B, GROUP_MEMBER of Family Home (multi-group user)
+-- Bob   = GROUP_MEMBER of Apartment 4B
+-- Charlie = GROUP_ADMIN of Family Home, GROUP_MEMBER of Apartment 4B
 -- ============================================================================
 INSERT INTO group_member (role, user_id, group_id)
 VALUES
-    ('ADMIN',
+    ('GROUP_ADMIN',
      (SELECT id_user FROM "user" WHERE uid = 'usr-alice-00000001'),
      (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001')),
-    ('MEMBER',
+    ('GROUP_MEMBER',
      (SELECT id_user FROM "user" WHERE uid = 'usr-bob-00000002'),
      (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001')),
-    ('MEMBER',
+    ('GROUP_MEMBER',
      (SELECT id_user FROM "user" WHERE uid = 'usr-charlie-00000003'),
      (SELECT id_group FROM "group" WHERE uid = 'grp-apt4b-00000001')),
-    ('ADMIN',
+    ('GROUP_ADMIN',
      (SELECT id_user FROM "user" WHERE uid = 'usr-charlie-00000003'),
      (SELECT id_group FROM "group" WHERE uid = 'grp-family-00000002')),
-    ('MEMBER',
+    ('GROUP_MEMBER',
      (SELECT id_user FROM "user" WHERE uid = 'usr-alice-00000001'),
      (SELECT id_group FROM "group" WHERE uid = 'grp-family-00000002'))
 ON CONFLICT DO NOTHING;

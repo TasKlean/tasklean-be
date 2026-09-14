@@ -68,7 +68,7 @@ Everything revolves around the Group. A User does nothing alone — they must be
 |---|---|---|---|---|---|
 | User | `id_user` | Yes (`uid`, 100 chars) | Yes | `is_active` | Also has `google_sub` for OAuth; `role` (platform role: `SUPER_ADMIN`/`ADMIN`/`USER`) |
 | Group | `id_group` | Yes (`uid`, 500 chars) | Yes | `is_active` | Has `invite_code` for joining |
-| GroupMember | `id_group_member` | No | No | `is_active` + `date_left` | Junction with role; unique on `(user_id, group_id)` |
+| GroupMember | `id_group_member` | No | No | `is_active` + `date_left` | Junction with `role` (`GROUP_ADMIN`/`GROUP_MEMBER`); unique on `(user_id, group_id)` |
 | Task | `id_task` | Yes (`uid`, 500 chars) | Yes | `is_active` | Central domain object |
 | Category | `id_category` | No | Yes | `is_active` | Scoped to group; unique on `(group_id, name)` |
 | Tag | `id_tag` | No | Yes | `is_active` | Scoped to group; unique on `(group_id, name)` |
@@ -96,7 +96,7 @@ Tasks are created by and assigned to GroupMembers, not Users directly. This is d
 
 ### GroupMember roles
 
-The `role` column is CHECK-constrained to `'ADMIN'` or `'MEMBER'`. Self-referential FKs `added_by` and `removed_by` track who added/removed whom.
+The `role` column is CHECK-constrained to `'GROUP_ADMIN'` or `'GROUP_MEMBER'` (the `GroupRole` enum, V17). Self-referential FKs `added_by` and `removed_by` track who added/removed whom.
 
 ### Task lifecycle
 
@@ -165,8 +165,9 @@ Every FK column is indexed. Additional indexes on:
 | V14 | Enables Row Level Security on all tables (no new table) | all tables |
 | V15 | Adds `audit_log.actor_user_id` column + index (no new table) | `user` |
 | V16 | Adds `user.role` column (platform role, CHECK-constrained; no new table) | `user` |
+| V17 | Renames `group_member.role` values `ADMIN`/`MEMBER` → `GROUP_ADMIN`/`GROUP_MEMBER` (migrates data + CHECK) | `group_member` |
 
-Next available version: **V17**.
+Next available version: **V18**.
 
 ### Dev seed data
 
@@ -197,7 +198,7 @@ Every endpoint returns `ApiResponse<T>`:
 | Resource | Base path | Identifier | CRUD | Notes |
 |---|---|---|---|---|
 | User | `/api/users` | `/{uid}` | GET, GET all, PUT, DELETE, PUT `/{uid}/role` | No POST — creation via auth flow; role change is SUPER_ADMIN-only |
-| Group | `/api/groups` | `/{uid}` | Full CRUD | POST generates uid + invite code |
+| Group | `/api/groups` | `/{uid}` | Full CRUD | POST generates uid + invite code, and makes the creator GROUP_ADMIN |
 | Task | `/api/tasks` | `/{uid}` | Full CRUD | GET all requires `?groupId=` |
 | Category | `/api/categories` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
 | Tag | `/api/tags` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
@@ -314,9 +315,12 @@ Two independent role systems, enforced declaratively with Spring method security
 - **USER**: own data + the groups they belong to.
 - Self-access (a user acting on their own account) is expressed with the `@accountSecurity.isSelf(#uid)` bean, e.g. `@PreAuthorize("hasRole('SUPER_ADMIN') or @accountSecurity.isSelf(#uid)")` on update/delete.
 
-**Group role** (`GroupMember.role`) — relationship-based, resolved per-request against the target group (planned: a `groupSecurity` bean). *Not yet enforced.* When implemented:
-- **GroupAdmin**: create/edit group, invite/remove members, manage categories and tags.
-- **GroupMember**: join/leave group, create/edit/delete own tasks, complete tasks, view group tasks, ping task assignees.
+**Group role** (`GroupMember.role`: `GROUP_ADMIN` / `GROUP_MEMBER`) — relationship-based, resolved per-request against the target group by the `@groupSecurity` bean (`isMember`/`isAdmin` by group UID, `isMemberOfGroup`/`isAdminOfGroup` by id, `canViewMember`/`canManageMember`/`isSelfMember` by membership id).
+- **GROUP_ADMIN**: edit group, invite/remove members, change roles, manage categories and tags.
+- **GROUP_MEMBER**: create/edit/delete own tasks, complete tasks, view group content, leave the group.
+- The **creator of a group becomes its first `GROUP_ADMIN`** automatically (`GroupService.createGroup`).
+- **Last-admin protection**: a group must keep ≥1 active `GROUP_ADMIN` — demoting or removing the last one is rejected with 409 (`BusinessRuleException`).
+- *Enforced on the group and group-member endpoints; task/category/tag endpoints get their group-scoped checks as those features are fleshed out.*
 
 Denied requests (authenticated but unauthorized) return **403** via `GlobalExceptionHandler` (`AccessDeniedException`); unauthenticated requests return **401** via `JwtAuthenticationEntryPoint`.
 
