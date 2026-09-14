@@ -1,8 +1,10 @@
 package com.tasklean.api.domain.auditlog;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.user.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -21,6 +23,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class AuditContext {
 
     private final GroupMemberRepository groupMemberRepository;
+    private final UserRepository userRepository;
 
     /**
      * Resolves the group member acting in the current request for the given group —
@@ -31,25 +34,37 @@ public class AuditContext {
      *         no group id, or the user is not a member of that group
      */
     public GroupMember currentActor(Long groupId) {
-        User user = currentUser();
-        if (user == null || groupId == null) {
+        Long userId = currentUserId();
+        if (userId == null || groupId == null) {
             return null;
         }
         return groupMemberRepository
-                .findByUserIdUserAndGroupIdGroup(user.getIdUser(), groupId)
+                .findByUserIdUserAndGroupIdGroup(userId, groupId)
                 .orElse(null);
     }
 
     /**
-     * Returns the authenticated user making the current request.
+     * Returns a reference to the authenticated user making the current request, for use as an
+     * audit-log foreign key. Returns a lazy proxy (no database load) — only its id is read when
+     * the audit entry is persisted.
      *
-     * @return the current user, or {@code null} if the request is anonymous (e.g. public
-     *         auth endpoints, where no caller is set in the security context)
+     * @return a reference to the current user, or {@code null} if the request is anonymous
+     *         (e.g. public auth endpoints, where no caller is set in the security context)
      */
     public User currentUser() {
+        Long userId = currentUserId();
+        return userId != null ? userRepository.getReferenceById(userId) : null;
+    }
+
+    /**
+     * Returns the id of the authenticated user making the current request.
+     *
+     * @return the current user's id, or {@code null} if the request is anonymous
+     */
+    public Long currentUserId() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth != null && auth.getPrincipal() instanceof User user) {
-            return user;
+        if (auth != null && auth.getPrincipal() instanceof AuthPrincipal principal) {
+            return principal.userId();
         }
         return null;
     }

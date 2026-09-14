@@ -83,11 +83,18 @@ public class RefreshTokenService {
             throw new BadCredentialsException("Refresh token expired");
         }
 
+        User user = existing.getUser();
+
+        // Deny refresh if user is deactivated
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            refreshTokenRepository.revokeAllByUserId(user.getIdUser());
+            throw new BadCredentialsException("Account is deactivated");
+        }
+
         // Rotate: revoke old, issue new
         existing.setIsRevoked(true);
         refreshTokenRepository.save(existing);
 
-        User user = existing.getUser();
         String newAccessToken = jwtService.generateToken(user);
         String newRefreshToken = createRefreshToken(user);
 

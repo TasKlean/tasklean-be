@@ -234,10 +234,12 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 ### Token architecture (implemented)
 
 **Access token (JWT)**:
-- HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `iat`, `exp`
+- HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `role` (platform role), `iat`, `exp`
 - Expiration: **15 minutes** (configurable via `jwt.expiration` in ms; dev profile overrides to 1 year for easier local testing)
 - Secret: min 256 bits, configured per profile via `jwt.secret`
 - Library: jjwt 0.12.6
+
+**Stateless authentication**: the token carries everything needed to authenticate *and* authorize a request (identity + platform role), so `JwtAuthenticationFilter` builds an `AuthPrincipal` (record: `userId`, `uid`, `email`, `role`) straight from the claims with **no database load per request**. The trade-off is *bounded staleness*: a role change or account deactivation only takes effect at the next token **refresh**, so `RefreshTokenService.refresh` re-checks `is_active` (revokes all tokens + denies if deactivated) and re-reads the role into the new access token. The access-token TTL (15 min in prod) is that staleness window. Instant revocation would need a store-backed blocklist (e.g. Redis) — deliberately deferred.
 
 **Refresh token (opaque)**:
 - 32-byte cryptographically random value (via `SecureRandom`), Base64url-encoded
@@ -252,7 +254,7 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 
 0. `RequestLoggingFilter` (highest precedence, runs before the Spring Security chain) mints/adopts a `requestId`, puts request context into MDC, and logs a summary line on completion — so even 401s are logged and correlated
 1. `JwtAuthenticationFilter` (runs before Spring's authorization check) extracts the Bearer token from the `Authorization` header
-2. If valid: looks up user by email, places `User` entity into `SecurityContextHolder`
+2. If valid: builds an `AuthPrincipal` from the token claims (no DB load) and places it into `SecurityContextHolder` with a `ROLE_<platform role>` authority
 3. If missing/invalid: request continues as anonymous
 4. Spring's `authorizeHttpRequests` rules decide allow/deny based on whether SecurityContext has an authenticated principal
 5. Denied requests → `JwtAuthenticationEntryPoint` returns 401 JSON matching `ApiResponse` envelope
@@ -288,7 +290,7 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 
 **Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified) → verify password against hash (401 if mismatch) → generate access JWT + refresh token → return `AuthResponse`.
 
-**Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → revoke old token → generate new access JWT + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401.
+**Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → check `is_active` (revoke **all** user tokens + 401 if deactivated) → revoke old token → generate new access JWT (carrying the user's current role) + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401. This is the point where a deactivation or role change made mid-session takes effect.
 
 **Logout**: hash incoming refresh token → look up non-revoked match → revoke all refresh tokens for that user. Invalid token returns 401.
 
@@ -535,17 +537,17 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 | Class | Tests | Covers |
 |-------|-------|--------|
-| `JwtServiceTest` | 9 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction |
+| `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 10 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email) |
-| `JwtAuthenticationFilterTest` | 8 | Valid token sets SecurityContext, no/bad/invalid token passes through, inactive/deleted user rejected, auth endpoints skipped |
+| `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
-| `RefreshTokenServiceTest` | 7 | createRefreshToken (hashed storage); refresh (valid rotation, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
+| `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
 | `AuditLogServiceTest` | 3 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup |
-| `AuditContextTest` | 9 | Actor/user resolution from `SecurityContextHolder` (User principal / anonymous / non-User); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
+| `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **54 tests** across 7 test classes.
+Total: **57 tests** across 7 test classes.
 
 ### What's NOT in the codebase yet
 

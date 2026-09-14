@@ -1,8 +1,7 @@
 package com.tasklean.api.auth.jwt;
 
 import com.tasklean.api.common.logging.LogFields;
-import com.tasklean.api.domain.user.User;
-import com.tasklean.api.domain.user.UserRepository;
+import com.tasklean.api.domain.user.UserRole;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -11,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
 import org.slf4j.MDC;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
@@ -21,20 +21,23 @@ import java.util.List;
 
 /**
  * Intercepts every request to identify the caller from their JWT token.
- * Does not reject requests — only sets the authenticated user in SecurityContext
+ * Does not reject requests — only sets the authenticated caller in SecurityContext
  * so Spring's authorization layer can decide whether to allow or deny.
+ *
+ * <p>Authentication is fully stateless: the caller is built from the token's claims with
+ * no database load. A user deactivated mid-session keeps access until their access token
+ * expires; deactivation is re-checked at token refresh (see {@code RefreshTokenService}).
  */
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
-    private final UserRepository userRepository;
 
     /**
-     * Extracts the Bearer token, validates it, and places the corresponding User
-     * into SecurityContextHolder. If the token is missing or invalid, the request
-     * continues anonymously (no rejection here).
+     * Extracts the Bearer token, validates it, and places an {@link AuthPrincipal} built from
+     * its claims into SecurityContextHolder, granting the {@code ROLE_<platform role>} authority.
+     * If the token is missing or invalid, the request continues anonymously.
      *
      * @param request     the incoming request
      * @param response    the response, passed along the chain
@@ -59,20 +62,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        String email = jwtService.extractEmail(token);
+        if (SecurityContextHolder.getContext().getAuthentication() == null) {
+            UserRole role = jwtService.extractRole(token);
+            AuthPrincipal principal = new AuthPrincipal(
+                    jwtService.extractUserId(token),
+                    jwtService.extractUid(token),
+                    jwtService.extractEmail(token),
+                    role);
 
-        if (email != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            User user = userRepository.findByEmail(email).orElse(null);
-
-            if (user != null && user.getIsActive()) {
-                UsernamePasswordAuthenticationToken authentication =
-                        new UsernamePasswordAuthenticationToken(user, null, List.of());
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
-                // Attach the caller to the log context so every line for this request is attributable.
-                // Cleared centrally by RequestLoggingFilter's MDC.clear() once the request completes.
-                MDC.put(LogFields.USER_ID, user.getUid());
-            }
+            UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                    principal, null, List.of(new SimpleGrantedAuthority("ROLE_" + role.name())));
+            authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            // Attach the caller to the log context so every line for this request is attributable.
+            // Cleared centrally by RequestLoggingFilter's MDC.clear() once the request completes.
+            MDC.put(LogFields.USER_ID, principal.uid());
         }
 
         filterChain.doFilter(request, response);

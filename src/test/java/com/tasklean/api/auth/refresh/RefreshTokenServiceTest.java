@@ -114,6 +114,31 @@ class RefreshTokenServiceTest {
     }
 
     @Test
+    void refresh_deactivatedUser_revokesAllAndThrows() {
+        User user = buildUser();
+        user.setIsActive(false);
+        RefreshToken existing = RefreshToken.builder()
+                .idRefreshToken(1L)
+                .user(user)
+                .token("hashed-value")
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(3))
+                .isRevoked(false)
+                .build();
+
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("raw-refresh-token");
+
+        when(refreshTokenRepository.findByTokenAndIsRevokedFalse(anyString()))
+                .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> refreshTokenService.refresh(request))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("deactivated");
+
+        verify(refreshTokenRepository).revokeAllByUserId(1L);
+    }
+
+    @Test
     void refresh_expiredToken_revokesAndThrows() {
         User user = buildUser();
         RefreshToken expired = RefreshToken.builder()

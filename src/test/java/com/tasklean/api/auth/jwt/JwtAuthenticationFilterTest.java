@@ -1,7 +1,6 @@
 package com.tasklean.api.auth.jwt;
 
-import com.tasklean.api.domain.user.User;
-import com.tasklean.api.domain.user.UserRepository;
+import com.tasklean.api.domain.user.UserRole;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,10 +11,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.io.IOException;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
@@ -25,9 +24,6 @@ class JwtAuthenticationFilterTest {
 
     @Mock
     private JwtService jwtService;
-
-    @Mock
-    private UserRepository userRepository;
 
     @Mock
     private FilterChain filterChain;
@@ -46,22 +42,25 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    void validToken_setsAuthenticationInSecurityContext() throws ServletException, IOException {
-        User user = User.builder()
-                .idUser(1L)
-                .email("alice@example.com")
-                .isActive(true)
-                .build();
-
+    void validToken_setsAuthPrincipalWithRoleAuthority() throws ServletException, IOException {
         request.addHeader("Authorization", "Bearer valid-token");
         when(jwtService.validateToken("valid-token")).thenReturn(true);
+        when(jwtService.extractRole("valid-token")).thenReturn(UserRole.ADMIN);
+        when(jwtService.extractUserId("valid-token")).thenReturn(1L);
+        when(jwtService.extractUid("valid-token")).thenReturn("usr-abc-123");
         when(jwtService.extractEmail("valid-token")).thenReturn("alice@example.com");
-        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(user));
 
         filter.doFilterInternal(request, response, filterChain);
 
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNotNull();
-        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isEqualTo(user);
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(auth).isNotNull();
+        assertThat(auth.getPrincipal()).isInstanceOf(AuthPrincipal.class);
+        AuthPrincipal principal = (AuthPrincipal) auth.getPrincipal();
+        assertThat(principal.userId()).isEqualTo(1L);
+        assertThat(principal.uid()).isEqualTo("usr-abc-123");
+        assertThat(principal.email()).isEqualTo("alice@example.com");
+        assertThat(principal.role()).isEqualTo(UserRole.ADMIN);
+        assertThat(auth.getAuthorities()).extracting("authority").containsExactly("ROLE_ADMIN");
         verify(filterChain).doFilter(request, response);
     }
 
@@ -89,38 +88,6 @@ class JwtAuthenticationFilterTest {
     void invalidToken_continuesWithoutAuthentication() throws ServletException, IOException {
         request.addHeader("Authorization", "Bearer bad-token");
         when(jwtService.validateToken("bad-token")).thenReturn(false);
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void validToken_inactiveUser_doesNotAuthenticate() throws ServletException, IOException {
-        User inactiveUser = User.builder()
-                .idUser(1L)
-                .email("alice@example.com")
-                .isActive(false)
-                .build();
-
-        request.addHeader("Authorization", "Bearer valid-token");
-        when(jwtService.validateToken("valid-token")).thenReturn(true);
-        when(jwtService.extractEmail("valid-token")).thenReturn("alice@example.com");
-        when(userRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(inactiveUser));
-
-        filter.doFilterInternal(request, response, filterChain);
-
-        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
-        verify(filterChain).doFilter(request, response);
-    }
-
-    @Test
-    void validToken_userNotInDb_doesNotAuthenticate() throws ServletException, IOException {
-        request.addHeader("Authorization", "Bearer valid-token");
-        when(jwtService.validateToken("valid-token")).thenReturn(true);
-        when(jwtService.extractEmail("valid-token")).thenReturn("deleted@example.com");
-        when(userRepository.findByEmail("deleted@example.com")).thenReturn(Optional.empty());
 
         filter.doFilterInternal(request, response, filterChain);
 
