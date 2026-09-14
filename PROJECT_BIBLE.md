@@ -196,7 +196,7 @@ Every endpoint returns `ApiResponse<T>`:
 
 | Resource | Base path | Identifier | CRUD | Notes |
 |---|---|---|---|---|
-| User | `/api/users` | `/{uid}` | GET, GET all, PUT, DELETE | No POST — creation via auth flow |
+| User | `/api/users` | `/{uid}` | GET, GET all, PUT, DELETE, PUT `/{uid}/role` | No POST — creation via auth flow; role change is SUPER_ADMIN-only |
 | Group | `/api/groups` | `/{uid}` | Full CRUD | POST generates uid + invite code |
 | Task | `/api/tasks` | `/{uid}` | Full CRUD | GET all requires `?groupId=` |
 | Category | `/api/categories` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
@@ -304,12 +304,21 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 - Rate limiting on public auth endpoints (prevent brute force / spam)
 - httpOnly cookies for refresh token transport (currently sent in JSON response body)
 
-### Authorization model (not yet built)
+### Authorization model
 
-The GroupMember role system (`ADMIN` / `MEMBER`) exists in the schema but is not enforced in the API layer. When implemented:
+Two independent role systems, enforced declaratively with Spring method security (`@EnableMethodSecurity`):
 
-- **GroupAdmin** (extends GroupMember permissions): create/edit group, invite/remove members, manage categories and tags
-- **GroupMember**: join/leave group, create/edit/delete own tasks, complete tasks, view group tasks, ping task assignees
+**Platform role** (`User.role`: `SUPER_ADMIN` / `ADMIN` / `USER`) — global, carried in the JWT, checked with `@PreAuthorize("hasRole(...)")`. A `RoleHierarchy` bean makes `SUPER_ADMIN → ADMIN → USER` (a higher role satisfies any lower `hasRole` check).
+- **SUPER_ADMIN**: full platform access, including changing platform roles (`PUT /api/users/{uid}/role`).
+- **ADMIN**: support/staff — read across the platform (e.g. list all users); no destructive or role-granting actions.
+- **USER**: own data + the groups they belong to.
+- Self-access (a user acting on their own account) is expressed with the `@accountSecurity.isSelf(#uid)` bean, e.g. `@PreAuthorize("hasRole('SUPER_ADMIN') or @accountSecurity.isSelf(#uid)")` on update/delete.
+
+**Group role** (`GroupMember.role`) — relationship-based, resolved per-request against the target group (planned: a `groupSecurity` bean). *Not yet enforced.* When implemented:
+- **GroupAdmin**: create/edit group, invite/remove members, manage categories and tags.
+- **GroupMember**: join/leave group, create/edit/delete own tasks, complete tasks, view group tasks, ping task assignees.
+
+Denied requests (authenticated but unauthorized) return **403** via `GlobalExceptionHandler` (`AccessDeniedException`); unauthenticated requests return **401** via `JwtAuthenticationEntryPoint`.
 
 ## Configuration strategy
 

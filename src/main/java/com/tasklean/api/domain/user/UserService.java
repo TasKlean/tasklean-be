@@ -72,6 +72,30 @@ public class UserService {
     }
 
     /**
+     * Changes a user's platform role.
+     *
+     * @param uid  the user's public UID
+     * @param role the new platform role
+     * @return the updated user
+     * @throws ResourceNotFoundException if no user has that UID
+     */
+    @Transactional
+    public UserResponse updateUserRole(String uid, UserRole role) {
+        User user = userRepository.findByUid(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
+
+        user.setRole(role);
+        User saved = userRepository.save(user);
+
+        // Authorization-relevant state change → INFO.
+        log.info("User platform role changed: uid={} role={}", uid, role);
+        auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.ROLE_CHANGED,
+                "Platform role changed to " + role, null);
+
+        return UserResponse.from(saved);
+    }
+
+    /**
      * Soft-deletes a user account (sets it inactive).
      *
      * @param uid the user's public UID
