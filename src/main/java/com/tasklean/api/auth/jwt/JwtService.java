@@ -2,6 +2,7 @@ package com.tasklean.api.auth.jwt;
 
 import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.user.UserRole;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -15,7 +16,8 @@ import java.util.Date;
 
 /**
  * Handles JWT token creation, validation, and claim extraction.
- * Tokens use HMAC-SHA signing and carry the user's email (subject), internal ID, and UID.
+ * Tokens use HMAC-SHA signing and carry the user's email (subject), internal ID, UID,
+ * and platform role.
  */
 @Service
 @RequiredArgsConstructor
@@ -24,7 +26,7 @@ public class JwtService {
     private final JwtConfig jwtConfig;
 
     /**
-     * Creates a signed JWT containing the user's email, internal ID, and public UID.
+     * Creates a signed JWT containing the user's email, internal ID, public UID, and platform role.
      *
      * @param user the user to issue the token for
      * @return the compact signed JWT
@@ -37,6 +39,7 @@ public class JwtService {
                 .subject(user.getEmail())
                 .claim("userId", user.getIdUser())
                 .claim("uid", user.getUid())
+                .claim("role", user.getRole().name())
                 .issuedAt(now)
                 .expiration(expiration)
                 .signWith(getSigningKey())
@@ -86,6 +89,17 @@ public class JwtService {
      */
     public String extractUid(String token) {
         return extractClaims(token).get("uid", String.class);
+    }
+
+    /**
+     * Extracts the platform role claim from a valid token.
+     *
+     * @param token the JWT
+     * @return the user's platform role; defaults to {@link UserRole#USER} if the claim is empty
+     */
+    public UserRole extractRole(String token) {
+        String role = extractClaims(token).get("role", String.class);
+        return role != null ? UserRole.valueOf(role) : UserRole.USER;
     }
 
     private Claims extractClaims(String token) {

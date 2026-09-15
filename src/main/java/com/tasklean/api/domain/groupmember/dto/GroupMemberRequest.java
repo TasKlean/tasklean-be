@@ -1,6 +1,6 @@
 package com.tasklean.api.domain.groupmember.dto;
 
-import jakarta.validation.constraints.NotBlank;
+import com.tasklean.api.domain.groupmember.GroupRole;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
@@ -16,6 +16,6 @@ public class GroupMemberRequest {
     @NotNull
     private Long groupId;
 
-    @NotBlank
-    private String role;
+    @NotNull
+    private GroupRole role;
 }

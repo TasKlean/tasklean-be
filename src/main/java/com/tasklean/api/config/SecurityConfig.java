@@ -5,8 +5,12 @@ import com.tasklean.api.auth.jwt.JwtAuthenticationFilter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
+import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -16,10 +20,12 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Central security configuration. Defines which endpoints are public vs protected,
- * wires the JWT filter into Spring's security chain, and configures stateless session management.
+ * wires the JWT filter into Spring's security chain, configures stateless session management,
+ * and enables method-level authorization ({@code @PreAuthorize}) with a platform role hierarchy.
  */
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
     private final CorsConfigurationSource corsConfigurationSource;
@@ -40,13 +46,15 @@ public class SecurityConfig {
      *
      * @param http the security builder
      * @return the built security filter chain
-     * @throws Exception if the chain cannot be built
      */
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
-                .csrf(csrf -> csrf.disable())
+                // CSRF is disabled by design: this is a stateless, token-authenticated API. Auth
+                // travels in the Authorization header (Bearer JWT), never in cookies, so the browser
+                // sends no ambient credential for a CSRF attack to forge.
+                .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .authorizeHttpRequests(auth -> auth
@@ -60,6 +68,21 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    /**
+     * The platform role hierarchy: {@code SUPER_ADMIN} implies {@code ADMIN} implies {@code USER},
+     * so a higher role automatically satisfies any {@code hasRole} check for a lower one. Published
+     * as a bean, it is picked up automatically by both request- and method-level authorization.
+     *
+     * @return the role hierarchy
+     */
+    @Bean
+    static RoleHierarchy roleHierarchy() {
+        return RoleHierarchyImpl.withDefaultRolePrefix()
+                .role("SUPER_ADMIN").implies("ADMIN")
+                .role("ADMIN").implies("USER")
+                .build();
     }
 
     /**

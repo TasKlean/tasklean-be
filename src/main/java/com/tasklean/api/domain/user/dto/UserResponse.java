@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.user.dto;
 
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.user.UserRole;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -21,6 +22,7 @@ public class UserResponse {
     private String photoUrl;
     private Boolean isEmailVerified;
     private Boolean isActive;
+    private UserRole role;
     private LocalDateTime dateCreated;
     private LocalDateTime dateUpdated;
 
@@ -35,6 +37,7 @@ public class UserResponse {
                 .photoUrl(user.getPhotoUrl())
                 .isEmailVerified(user.getIsEmailVerified())
                 .isActive(user.getIsActive())
+                .role(user.getRole())
                 .dateCreated(user.getDateCreated())
                 .dateUpdated(user.getDateUpdated())
                 .build();

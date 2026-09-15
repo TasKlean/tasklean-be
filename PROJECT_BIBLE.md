@@ -66,9 +66,9 @@ Everything revolves around the Group. A User does nothing alone — they must be
 
 | Entity | PK | Has UID | Extends BaseEntity | Soft-delete | Notes |
 |---|---|---|---|---|---|
-| User | `id_user` | Yes (`uid`, 100 chars) | Yes | `is_active` | Also has `google_sub` for OAuth |
+| User | `id_user` | Yes (`uid`, 100 chars) | Yes | `is_active` | Also has `google_sub` for OAuth; `role` (platform role: `SUPER_ADMIN`/`ADMIN`/`USER`) |
 | Group | `id_group` | Yes (`uid`, 500 chars) | Yes | `is_active` | Has `invite_code` for joining |
-| GroupMember | `id_group_member` | No | No | `is_active` + `date_left` | Junction with role; unique on `(user_id, group_id)` |
+| GroupMember | `id_group_member` | No | No | `is_active` + `date_left` | Junction with `role` (`GROUP_ADMIN`/`GROUP_MEMBER`); unique on `(user_id, group_id)` |
 | Task | `id_task` | Yes (`uid`, 500 chars) | Yes | `is_active` | Central domain object |
 | Category | `id_category` | No | Yes | `is_active` | Scoped to group; unique on `(group_id, name)` |
 | Tag | `id_tag` | No | Yes | `is_active` | Scoped to group; unique on `(group_id, name)` |
@@ -96,7 +96,7 @@ Tasks are created by and assigned to GroupMembers, not Users directly. This is d
 
 ### GroupMember roles
 
-The `role` column is CHECK-constrained to `'ADMIN'` or `'MEMBER'`. Self-referential FKs `added_by` and `removed_by` track who added/removed whom.
+The `role` column is CHECK-constrained to `'GROUP_ADMIN'` or `'GROUP_MEMBER'` (the `GroupRole` enum, V17). Self-referential FKs `added_by` and `removed_by` track who added/removed whom.
 
 ### Task lifecycle
 
@@ -164,8 +164,10 @@ Every FK column is indexed. Additional indexes on:
 | V13 | `refresh_token` (with indexes on `token` and `user_id`) | `user` |
 | V14 | Enables Row Level Security on all tables (no new table) | all tables |
 | V15 | Adds `audit_log.actor_user_id` column + index (no new table) | `user` |
+| V16 | Adds `user.role` column (platform role, CHECK-constrained; no new table) | `user` |
+| V17 | Renames `group_member.role` values `ADMIN`/`MEMBER` → `GROUP_ADMIN`/`GROUP_MEMBER` (migrates data + CHECK) | `group_member` |
 
-Next available version: **V16**.
+Next available version: **V18**.
 
 ### Dev seed data
 
@@ -195,8 +197,8 @@ Every endpoint returns `ApiResponse<T>`:
 
 | Resource | Base path | Identifier | CRUD | Notes |
 |---|---|---|---|---|
-| User | `/api/users` | `/{uid}` | GET, GET all, PUT, DELETE | No POST — creation via auth flow |
-| Group | `/api/groups` | `/{uid}` | Full CRUD | POST generates uid + invite code |
+| User | `/api/users` | `/{uid}` | GET, GET all, PUT, DELETE, PUT `/{uid}/role` | No POST — creation via auth flow; role change is SUPER_ADMIN-only |
+| Group | `/api/groups` | `/{uid}` | Full CRUD | POST generates uid + invite code, and makes the creator GROUP_ADMIN |
 | Task | `/api/tasks` | `/{uid}` | Full CRUD | GET all requires `?groupId=` |
 | Category | `/api/categories` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
 | Tag | `/api/tags` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
@@ -233,10 +235,12 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 ### Token architecture (implemented)
 
 **Access token (JWT)**:
-- HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `iat`, `exp`
+- HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `role` (platform role), `iat`, `exp`
 - Expiration: **15 minutes** (configurable via `jwt.expiration` in ms; dev profile overrides to 1 year for easier local testing)
 - Secret: min 256 bits, configured per profile via `jwt.secret`
 - Library: jjwt 0.12.6
+
+**Stateless authentication**: the token carries everything needed to authenticate *and* authorize a request (identity + platform role), so `JwtAuthenticationFilter` builds an `AuthPrincipal` (record: `userId`, `uid`, `email`, `role`) straight from the claims with **no database load per request**. The trade-off is *bounded staleness*: a role change or account deactivation only takes effect at the next token **refresh**, so `RefreshTokenService.refresh` re-checks `is_active` (revokes all tokens + denies if deactivated) and re-reads the role into the new access token. The access-token TTL (15 min in prod) is that staleness window. Instant revocation would need a store-backed blocklist (e.g. Redis) — deliberately deferred.
 
 **Refresh token (opaque)**:
 - 32-byte cryptographically random value (via `SecureRandom`), Base64url-encoded
@@ -247,11 +251,20 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 - Scheduled cleanup (`@Scheduled`, every 6 hours) purges expired and revoked tokens from DB
 - Entity: `RefreshToken` (table `refresh_token`, V13 migration)
 
+### Client session architecture (decided)
+
+The Spring API stays a **pure, stateless Bearer API for all clients** — it never issues cookies or handles CSRF. Each client stores tokens the way that's safe for its platform, and the browser-only cookie/CSRF concern is pushed to the web layer:
+
+- **Web (Next.js)** — a **BFF (Backend-For-Frontend)**: the Next.js *server* logs in against Spring, holds the access + refresh tokens server-side, and hands the browser only an **httpOnly, Secure, SameSite cookie**. Browser JS never sees a JWT (immune to XSS token theft). Browser ↔ Next.js uses the cookie (+ CSRF token on mutations, `SameSite=Lax`); Next.js ↔ Spring uses `Authorization: Bearer` server-to-server. On refresh, the BFF gets the rotated pair from Spring and **re-writes the cookie** (persistent cookie ~ refresh TTL gives a rolling 14-day session; an absolute cap is a future hardening).
+- **Mobile (React Native or Flutter)** — talks to Spring **directly** with `Authorization: Bearer`, storing tokens in **OS-backed secure storage** (iOS Keychain / Android Keystore — never AsyncStorage/SharedPreferences). On rotation it overwrites the stored tokens.
+
+Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on native), so making Spring cookie-based would burden mobile. Keeping Spring Bearer-only serves web (via BFF) and mobile (directly) from one unchanged API. This is why CSRF stays disabled on Spring — no browser talks to it directly.
+
 ### Request flow
 
 0. `RequestLoggingFilter` (highest precedence, runs before the Spring Security chain) mints/adopts a `requestId`, puts request context into MDC, and logs a summary line on completion — so even 401s are logged and correlated
 1. `JwtAuthenticationFilter` (runs before Spring's authorization check) extracts the Bearer token from the `Authorization` header
-2. If valid: looks up user by email, places `User` entity into `SecurityContextHolder`
+2. If valid: builds an `AuthPrincipal` from the token claims (no DB load) and places it into `SecurityContextHolder` with a `ROLE_<platform role>` authority
 3. If missing/invalid: request continues as anonymous
 4. Spring's `authorizeHttpRequests` rules decide allow/deny based on whether SecurityContext has an authenticated principal
 5. Denied requests → `JwtAuthenticationEntryPoint` returns 401 JSON matching `ApiResponse` envelope
@@ -287,7 +300,7 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 
 **Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified) → verify password against hash (401 if mismatch) → generate access JWT + refresh token → return `AuthResponse`.
 
-**Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → revoke old token → generate new access JWT + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401.
+**Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → check `is_active` (revoke **all** user tokens + 401 if deactivated) → revoke old token → generate new access JWT (carrying the user's current role) + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401. This is the point where a deactivation or role change made mid-session takes effect.
 
 **Logout**: hash incoming refresh token → look up non-revoked match → revoke all refresh tokens for that user. Invalid token returns 401.
 
@@ -295,18 +308,29 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 
 ### Still to implement
 
-- `GoogleOAuthService` — Google token verification, user upsert
-- `POST /api/auth/google` endpoint in AuthController
-- Role-based authorization (ADMIN/MEMBER enforcement in API layer)
+- `GoogleOAuthService` — Google token verification, user upsert; `POST /api/auth/google` endpoint. **When building mobile Google login**, use the system browser + PKCE (AppAuth), not an embedded webview (OWASP/IETF standard for native OAuth).
 - Rate limiting on public auth endpoints (prevent brute force / spam)
-- httpOnly cookies for refresh token transport (currently sent in JSON response body)
+- **Per-device logout**: `logout` currently revokes **all** the user's refresh tokens (`revokeAllByUserId`). With multiple clients (web + mobile) this signs the user out everywhere. **When logout work resumes**, change it to revoke only the presented refresh token (this device), and keep revoke-all as a separate explicit "sign out everywhere" action (and on password change).
+- Web-side httpOnly cookies live in the **Next.js BFF**, not Spring (see *Client session architecture* above) — no Spring change needed; the JSON-body token response is what the BFF/mobile consume.
 
-### Authorization model (not yet built)
+### Authorization model
 
-The GroupMember role system (`ADMIN` / `MEMBER`) exists in the schema but is not enforced in the API layer. When implemented:
+Two independent role systems, enforced declaratively with Spring method security (`@EnableMethodSecurity`):
 
-- **GroupAdmin** (extends GroupMember permissions): create/edit group, invite/remove members, manage categories and tags
-- **GroupMember**: join/leave group, create/edit/delete own tasks, complete tasks, view group tasks, ping task assignees
+**Platform role** (`User.role`: `SUPER_ADMIN` / `ADMIN` / `USER`) — global, carried in the JWT, checked with `@PreAuthorize("hasRole(...)")`. A `RoleHierarchy` bean makes `SUPER_ADMIN → ADMIN → USER` (a higher role satisfies any lower `hasRole` check).
+- **SUPER_ADMIN**: full platform access, including changing platform roles (`PUT /api/users/{uid}/role`).
+- **ADMIN**: support/staff — read across the platform (e.g. list all users); no destructive or role-granting actions.
+- **USER**: own data + the groups they belong to.
+- Self-access (a user acting on their own account) is expressed with the `@accountSecurity.isSelf(#uid)` bean, e.g. `@PreAuthorize("hasRole('SUPER_ADMIN') or @accountSecurity.isSelf(#uid)")` on update/delete.
+
+**Group role** (`GroupMember.role`: `GROUP_ADMIN` / `GROUP_MEMBER`) — relationship-based, resolved per-request against the target group by the `@groupSecurity` bean (`isMember`/`isAdmin` by group UID, `isMemberOfGroup`/`isAdminOfGroup` by id, `canViewMember`/`canManageMember`/`isSelfMember` by membership id).
+- **GROUP_ADMIN**: edit group, invite/remove members, change roles, manage categories and tags.
+- **GROUP_MEMBER**: create/edit/delete own tasks, complete tasks, view group content, leave the group.
+- The **creator of a group becomes its first `GROUP_ADMIN`** automatically (`GroupService.createGroup`).
+- **Last-admin protection**: a group must keep ≥1 active `GROUP_ADMIN` — demoting or removing the last one is rejected with 409 (`BusinessRuleException`).
+- *Enforced on the group and group-member endpoints; task/category/tag endpoints get their group-scoped checks as those features are fleshed out.*
+
+Denied requests (authenticated but unauthorized) return **403** via `GlobalExceptionHandler` (`AccessDeniedException`); unauthenticated requests return **401** via `JwtAuthenticationEntryPoint`.
 
 ## Configuration strategy
 
@@ -534,17 +558,24 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 | Class | Tests | Covers |
 |-------|-------|--------|
-| `JwtServiceTest` | 9 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction |
+| `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 10 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email) |
-| `JwtAuthenticationFilterTest` | 8 | Valid token sets SecurityContext, no/bad/invalid token passes through, inactive/deleted user rejected, auth endpoints skipped |
+| `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
-| `RefreshTokenServiceTest` | 7 | createRefreshToken (hashed storage); refresh (valid rotation, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
+| `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
 | `AuditLogServiceTest` | 3 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup |
-| `AuditContextTest` | 9 | Actor/user resolution from `SecurityContextHolder` (User principal / anonymous / non-User); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
+| `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
+| `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
+| `GroupSecurityTest` | 12 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); `canManageMember`/`canViewMember`/`isSelfMember` by membership id |
+| `GroupServiceTest` | 1 | `createGroup` makes the creator the first `GROUP_ADMIN` |
+| `GroupMemberServiceTest` | 7 | addMember (success / duplicate); role change and removal with last-admin protection (blocked when last, allowed with another admin); promote member |
+| `UserServiceTest` | 2 | `updateUserRole` (changes role + audits; unknown uid throws) |
+| `UserControllerSecurityTest` | 7 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
+| `GroupControllerSecurityTest` | 5 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **54 tests** across 7 test classes.
+Total: **95 tests** across 14 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

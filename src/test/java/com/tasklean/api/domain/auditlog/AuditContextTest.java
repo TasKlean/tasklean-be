@@ -1,8 +1,11 @@
 package com.tasklean.api.domain.auditlog;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.user.UserRepository;
+import com.tasklean.api.domain.user.UserRole;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -26,6 +29,9 @@ class AuditContextTest {
     @Mock
     private GroupMemberRepository groupMemberRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
     @InjectMocks
     private AuditContext auditContext;
 
@@ -35,9 +41,10 @@ class AuditContextTest {
         RequestContextHolder.resetRequestAttributes();
     }
 
-    private void authenticateAs(User user) {
+    private void authenticateAs(Long userId) {
+        AuthPrincipal principal = new AuthPrincipal(userId, "usr-test", "test@example.com", UserRole.USER);
         SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken(user, null));
+                new UsernamePasswordAuthenticationToken(principal, null));
     }
 
     private void bindRequestWithIp(String ip) {
@@ -46,14 +53,37 @@ class AuditContextTest {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
     }
 
+    // --- currentUserId ---
+
+    @Test
+    void currentUserId_authenticated_returnsId() {
+        authenticateAs(1L);
+
+        assertThat(auditContext.currentUserId()).isEqualTo(1L);
+    }
+
+    @Test
+    void currentUserId_noAuthentication_returnsNull() {
+        assertThat(auditContext.currentUserId()).isNull();
+    }
+
+    @Test
+    void currentUserId_nonAuthPrincipal_returnsNull() {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("anonymousString", null));
+
+        assertThat(auditContext.currentUserId()).isNull();
+    }
+
     // --- currentUser ---
 
     @Test
-    void currentUser_authenticatedUserPrincipal_returnsUser() {
-        User user = User.builder().idUser(1L).build();
-        authenticateAs(user);
+    void currentUser_authenticated_returnsUserReference() {
+        authenticateAs(1L);
+        User reference = User.builder().idUser(1L).build();
+        when(userRepository.getReferenceById(1L)).thenReturn(reference);
 
-        assertThat(auditContext.currentUser()).isEqualTo(user);
+        assertThat(auditContext.currentUser()).isEqualTo(reference);
     }
 
     @Test
@@ -61,20 +91,11 @@ class AuditContextTest {
         assertThat(auditContext.currentUser()).isNull();
     }
 
-    @Test
-    void currentUser_nonUserPrincipal_returnsNull() {
-        SecurityContextHolder.getContext().setAuthentication(
-                new UsernamePasswordAuthenticationToken("anonymousString", null));
-
-        assertThat(auditContext.currentUser()).isNull();
-    }
-
     // --- currentActor ---
 
     @Test
     void currentActor_memberOfGroup_returnsMembership() {
-        User user = User.builder().idUser(1L).build();
-        authenticateAs(user);
+        authenticateAs(1L);
         GroupMember member = GroupMember.builder().idGroupMember(5L).build();
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
                 .thenReturn(Optional.of(member));
@@ -84,8 +105,7 @@ class AuditContextTest {
 
     @Test
     void currentActor_notAMember_returnsNull() {
-        User user = User.builder().idUser(1L).build();
-        authenticateAs(user);
+        authenticateAs(1L);
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
                 .thenReturn(Optional.empty());
 
@@ -99,7 +119,7 @@ class AuditContextTest {
 
     @Test
     void currentActor_nullGroupId_returnsNull() {
-        authenticateAs(User.builder().idUser(1L).build());
+        authenticateAs(1L);
 
         assertThat(auditContext.currentActor(null)).isNull();
     }

@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.groupmember.dto;
 
 import com.tasklean.api.domain.groupmember.GroupMember;
+import com.tasklean.api.domain.groupmember.GroupRole;
 import lombok.*;
 
 import java.time.LocalDateTime;
@@ -13,7 +14,7 @@ import java.time.LocalDateTime;
 public class GroupMemberResponse {
 
     private Long id;
-    private String role;
+    private GroupRole role;
     private Boolean isActive;
     private LocalDateTime dateJoined;
     private LocalDateTime dateLeft;

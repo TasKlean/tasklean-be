@@ -5,10 +5,13 @@ import com.tasklean.api.common.ErrorMessages;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -48,6 +51,18 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Maps a violated domain invariant to 409.
+     *
+     * @param ex the thrown exception
+     * @return a 409 response with the exception message
+     */
+    @ExceptionHandler(BusinessRuleException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBusinessRule(BusinessRuleException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    /**
      * Maps a failed authentication to 401.
      *
      * @param ex the thrown exception
@@ -62,13 +77,50 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Maps an unknown route (no matching controller or static resource) to 404 in our envelope.
+     * Maps an authorization denial (a {@code @PreAuthorize} check that failed) to 403. The caller
+     * is authenticated but lacks permission; a generic message is returned so policy details aren't leaked.
      *
      * @param ex the thrown exception
+     * @return a 403 response with a generic access-denied message
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException ex) {
+        // Security-relevant (authorization failure) — WARN for monitoring; no internal detail leaked.
+        log.warn("Access denied: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ApiResponse.error(ErrorMessages.ACCESS_DENIED));
+    }
+
+    /**
+     * Maps an unreadable request body (malformed JSON, or an invalid enum value like an unknown role) to 400.
+     *
+     * @return a 400 response with a generic malformed-request message
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleUnreadableBody() {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ErrorMessages.MALFORMED_REQUEST));
+    }
+
+    /**
+     * Maps a request parameter or path variable that can't be converted to the expected type
+     * to 400.
+     *
+     * @return a 400 response with a generic malformed-request message
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiResponse<Void>> handleTypeMismatch() {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ErrorMessages.MALFORMED_REQUEST));
+    }
+
+    /**
+     * Maps an unknown route (no matching controller or static resource) to 404 in our envelope.
+     *
      * @return a 404 response with the endpoint-not-found message
      */
     @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<ApiResponse<Void>> handleNoResource(NoResourceFoundException ex) {
+    public ResponseEntity<ApiResponse<Void>> handleNoResource() {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiResponse.error(ErrorMessages.ENDPOINT_NOT_FOUND));
     }

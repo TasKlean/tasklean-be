@@ -23,8 +23,9 @@ public class GroupMember {
     @Column(name = "id_group_member")
     private Long idGroupMember;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 50)
-    private String role;
+    private GroupRole role;
 
     @Builder.Default
     @Column(name = "is_active", nullable = false)

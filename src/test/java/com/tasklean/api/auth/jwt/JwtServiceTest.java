@@ -2,6 +2,7 @@ package com.tasklean.api.auth.jwt;
 
 import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.user.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -100,5 +101,27 @@ class JwtServiceTest {
         String token = jwtService.generateToken(buildTestUser());
 
         assertThat(jwtService.extractUid(token)).isEqualTo("usr-abc-123");
+    }
+
+    @Test
+    void extractRole_returnsRoleFromToken() {
+        User admin = User.builder()
+                .idUser(42L)
+                .uid("usr-abc-123")
+                .email("alice@example.com")
+                .name("Alice")
+                .role(UserRole.SUPER_ADMIN)
+                .build();
+        String token = jwtService.generateToken(admin);
+
+        assertThat(jwtService.extractRole(token)).isEqualTo(UserRole.SUPER_ADMIN);
+    }
+
+    @Test
+    void extractRole_defaultsToUser() {
+        // buildTestUser leaves role unset, so the builder default (USER) is what gets signed in
+        String token = jwtService.generateToken(buildTestUser());
+
+        assertThat(jwtService.extractRole(token)).isEqualTo(UserRole.USER);
     }
 }
