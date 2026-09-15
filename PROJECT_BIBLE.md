@@ -572,9 +572,14 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 | `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
 | `GroupSecurityTest` | 12 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); `canManageMember`/`canViewMember`/`isSelfMember` by membership id |
-| `GroupServiceTest` | 1 | `createGroup` makes the creator the first `GROUP_ADMIN` |
+| `GroupServiceTest` | 8 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found |
 | `GroupMemberServiceTest` | 7 | addMember (success / duplicate); role change and removal with last-admin protection (blocked when last, allowed with another admin); promote member |
-| `UserServiceTest` | 2 | `updateUserRole` (changes role + audits; unknown uid throws) |
+| `UserServiceTest` | 7 | updateUserRole (+ audit / unknown); get/getAll/update/delete + not-found |
+| `CategoryServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
+| `TagServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
+| `TaskServiceTest` | 13 | get/getByGroup/create/update/delete incl. assignee & category branches + not-found |
+| `TaskCompletionServiceTest` | 5 | list by task/member; create (+ task/member not-found) |
+| `DeviceServiceTest` | 10 | get/getByUser/register/update/deactivate + not-found + duplicate token |
 | `UserControllerSecurityTest` | 7 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
 | `GroupControllerSecurityTest` | 5 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
@@ -582,7 +587,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **110 tests** across 16 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **170 tests** across 21 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
