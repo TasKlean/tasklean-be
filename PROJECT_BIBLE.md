@@ -251,6 +251,15 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 - Scheduled cleanup (`@Scheduled`, every 6 hours) purges expired and revoked tokens from DB
 - Entity: `RefreshToken` (table `refresh_token`, V13 migration)
 
+### Client session architecture (decided)
+
+The Spring API stays a **pure, stateless Bearer API for all clients** — it never issues cookies or handles CSRF. Each client stores tokens the way that's safe for its platform, and the browser-only cookie/CSRF concern is pushed to the web layer:
+
+- **Web (Next.js)** — a **BFF (Backend-For-Frontend)**: the Next.js *server* logs in against Spring, holds the access + refresh tokens server-side, and hands the browser only an **httpOnly, Secure, SameSite cookie**. Browser JS never sees a JWT (immune to XSS token theft). Browser ↔ Next.js uses the cookie (+ CSRF token on mutations, `SameSite=Lax`); Next.js ↔ Spring uses `Authorization: Bearer` server-to-server. On refresh, the BFF gets the rotated pair from Spring and **re-writes the cookie** (persistent cookie ~ refresh TTL gives a rolling 14-day session; an absolute cap is a future hardening).
+- **Mobile (React Native or Flutter)** — talks to Spring **directly** with `Authorization: Bearer`, storing tokens in **OS-backed secure storage** (iOS Keychain / Android Keystore — never AsyncStorage/SharedPreferences). On rotation it overwrites the stored tokens.
+
+Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on native), so making Spring cookie-based would burden mobile. Keeping Spring Bearer-only serves web (via BFF) and mobile (directly) from one unchanged API. This is why CSRF stays disabled on Spring — no browser talks to it directly.
+
 ### Request flow
 
 0. `RequestLoggingFilter` (highest precedence, runs before the Spring Security chain) mints/adopts a `requestId`, puts request context into MDC, and logs a summary line on completion — so even 401s are logged and correlated
@@ -299,11 +308,10 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 
 ### Still to implement
 
-- `GoogleOAuthService` — Google token verification, user upsert
-- `POST /api/auth/google` endpoint in AuthController
-- Role-based authorization (ADMIN/MEMBER enforcement in API layer)
+- `GoogleOAuthService` — Google token verification, user upsert; `POST /api/auth/google` endpoint. **When building mobile Google login**, use the system browser + PKCE (AppAuth), not an embedded webview (OWASP/IETF standard for native OAuth).
 - Rate limiting on public auth endpoints (prevent brute force / spam)
-- httpOnly cookies for refresh token transport (currently sent in JSON response body)
+- **Per-device logout**: `logout` currently revokes **all** the user's refresh tokens (`revokeAllByUserId`). With multiple clients (web + mobile) this signs the user out everywhere. **When logout work resumes**, change it to revoke only the presented refresh token (this device), and keep revoke-all as a separate explicit "sign out everywhere" action (and on password change).
+- Web-side httpOnly cookies live in the **Next.js BFF**, not Spring (see *Client session architecture* above) — no Spring change needed; the JSON-body token response is what the BFF/mobile consume.
 
 ### Authorization model
 
