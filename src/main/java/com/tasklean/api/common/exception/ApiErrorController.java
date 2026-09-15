@@ -8,6 +8,7 @@ import org.springframework.boot.webmvc.error.ErrorController;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -26,7 +27,9 @@ public class ApiErrorController implements ErrorController {
      * @param request the errored request, carrying the original status as a dispatch attribute
      * @return the error as a JSON {@link ApiResponse} with the original status code
      */
-    @RequestMapping("/error")
+    @RequestMapping(value = "/error", method = {
+            RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT,
+            RequestMethod.PATCH, RequestMethod.DELETE})
     public ResponseEntity<ApiResponse<Void>> handleError(HttpServletRequest request) {
         HttpStatus status = resolveStatus(request);
         String message = switch (status) {
