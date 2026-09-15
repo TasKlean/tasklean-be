@@ -4,6 +4,7 @@ import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -54,5 +56,49 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> userService.updateUserRole("nope", UserRole.ADMIN))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getUserByUid_found_returns() {
+        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(User.builder().idUser(1L).uid("usr-x").build()));
+        assertThat(userService.getUserByUid("usr-x").getUid()).isEqualTo("usr-x");
+    }
+
+    @Test
+    void getUserByUid_missing_throws() {
+        when(userRepository.findByUid("nope")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> userService.getUserByUid("nope")).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getAllUsers_returnsList() {
+        when(userRepository.findAll()).thenReturn(List.of(User.builder().idUser(1L).build()));
+        assertThat(userService.getAllUsers()).hasSize(1);
+    }
+
+    @Test
+    void updateUser_success_savesAndAudits() {
+        User user = User.builder().idUser(1L).uid("usr-x").build();
+        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        UserRequest request = new UserRequest();
+        request.setName("New");
+        request.setLastName("Name");
+
+        userService.updateUser("usr-x", request);
+
+        assertThat(user.getName()).isEqualTo("New");
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L), eq(AuditAction.UPDATE), anyString(), isNull());
+    }
+
+    @Test
+    void deleteUser_success_softDeletesAndAudits() {
+        User user = User.builder().idUser(1L).uid("usr-x").isActive(true).build();
+        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+
+        userService.deleteUser("usr-x");
+
+        assertThat(user.getIsActive()).isFalse();
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L), eq(AuditAction.ACCOUNT_DELETED), anyString(), isNull());
     }
 }
