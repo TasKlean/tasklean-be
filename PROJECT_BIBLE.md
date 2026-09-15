@@ -356,6 +356,7 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 | `DB_USERNAME` | base (all profiles) | Database user |
 | `DB_PASSWORD` | base (all profiles) | Database password |
 | `JWT_SECRET` | base (all profiles) | HMAC signing key (min 256 bits) |
+| `CORS_ALLOWED_ORIGINS` | prod (dev defaults to `http://localhost:3000`) | Comma-separated browser origins allowed to call `/api/**` |
 | `GOOGLE_CLIENT_ID` | base (all profiles) | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | base (all profiles) | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URI` | prod only | OAuth callback URL (dev hardcodes `localhost:3000`) |
