@@ -51,6 +51,9 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
+                // CSRF is disabled by design: this is a stateless, token-authenticated API. Auth
+                // travels in the Authorization header (Bearer JWT), never in cookies, so the browser
+                // sends no ambient credential for a CSRF attack to forge.
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint))
