@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -112,6 +113,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleTypeMismatch() {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(ErrorMessages.MALFORMED_REQUEST));
+    }
+
+    /**
+     * Maps a request to a known path with an unsupported HTTP method (e.g. GET on a POST-only
+     * endpoint) to 405, instead of letting it fall through to the error page.
+     *
+     * @return a 405 response with a generic method-not-allowed message
+     */
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotAllowed() {
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(ApiResponse.error(ErrorMessages.METHOD_NOT_ALLOWED));
     }
 
     /**

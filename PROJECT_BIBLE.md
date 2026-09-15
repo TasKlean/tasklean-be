@@ -212,11 +212,15 @@ Every endpoint returns `ApiResponse<T>`:
 
 - `200` — success (GET, PUT, PATCH, DELETE, login)
 - `201` — created (POST, register)
-- `400` — validation failure (MethodArgumentNotValidException)
+- `400` — validation failure (MethodArgumentNotValidException), malformed body (HttpMessageNotReadableException), or bad param/enum type (MethodArgumentTypeMismatchException)
 - `401` — unauthorized (missing/invalid token, bad credentials, deactivated account)
-- `404` — ResourceNotFoundException, or an unknown route (NoResourceFoundException → JSON envelope, not the Whitelabel HTML page)
-- `409` — DuplicateResourceException
+- `403` — authenticated but not authorized (AccessDeniedException from `@PreAuthorize`)
+- `404` — ResourceNotFoundException, or an unknown route (NoResourceFoundException)
+- `405` — wrong HTTP method on a known path (HttpRequestMethodNotSupportedException)
+- `409` — DuplicateResourceException, or a violated domain invariant (BusinessRuleException)
 - `500` — catch-all `@ExceptionHandler(Exception.class)` for anything unhandled; logs the stack trace (with requestId/userId) and returns a generic message — never leaks internal details
+
+All error responses use the JSON `ApiResponse` envelope, never the Whitelabel HTML page: `ApiErrorController` (a custom `ErrorController`) renders any `/error` dispatch — including errors raised outside the MVC handler — as JSON, for every `Accept` header.
 
 ### Identifiers in URLs
 
