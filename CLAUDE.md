@@ -93,6 +93,7 @@ Tests mirror `src/main/java` under `src/test/java`. Test class naming:
 - **One assertion per concept** — a test can have multiple asserts if they verify one logical outcome
 - **Test what matters**: business rules, edge cases, security boundaries. Don't test getters/setters or framework wiring.
 - **No test for the sake of coverage** — every test should prove a behaviour or guard a bug
+- **Coverage**: JaCoCo generates `target/site/jacoco/jacoco.xml` during `mvn verify`, consumed by SonarCloud. DTOs/config/main class are excluded (`sonar.coverage.exclusions` in `pom.xml`); Lombok-generated getters/setters/builders are excluded via `lombok.config` (`addLombokGeneratedAnnotation`). The gate measures coverage on **new code**.
 
 ## Environment
 
