@@ -577,10 +577,12 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UserServiceTest` | 2 | `updateUserRole` (changes role + audits; unknown uid throws) |
 | `UserControllerSecurityTest` | 7 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
 | `GroupControllerSecurityTest` | 5 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`) |
+| `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
+| `GlobalExceptionHandlerTest` | 11 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **95 tests** across 14 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **110 tests** across 16 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
