@@ -270,8 +270,9 @@ Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on
 1. `JwtAuthenticationFilter` (runs before Spring's authorization check) extracts the Bearer token from the `Authorization` header
 2. If valid: builds an `AuthPrincipal` from the token claims (no DB load) and places it into `SecurityContextHolder` with a `ROLE_<platform role>` authority
 3. If missing/invalid: request continues as anonymous
-4. Spring's `authorizeHttpRequests` rules decide allow/deny based on whether SecurityContext has an authenticated principal
-5. Denied requests → `JwtAuthenticationEntryPoint` returns 401 JSON matching `ApiResponse` envelope
+4. `RateLimitFilter` (after the JWT filter) applies token-bucket limits — per-user **and** per-IP when authenticated, per-IP by tier otherwise; over-limit → 429 + `Retry-After`
+5. Spring's `authorizeHttpRequests` rules decide allow/deny based on whether SecurityContext has an authenticated principal
+6. Denied requests → `JwtAuthenticationEntryPoint` returns 401 JSON matching `ApiResponse` envelope
 
 ### Security filter chain config
 
@@ -281,6 +282,16 @@ Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on
 - Public paths: `/api/auth/**`, `/actuator/health`, `/error`
 - All other paths: `authenticated()`
 - Password encoding: BCrypt
+
+### Rate limiting
+
+Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the security chain right after `JwtAuthenticationFilter` so it can key by user id. In-memory (Caffeine) — fine for a single instance; the `BucketRegistry` interface is the seam to swap in Redis if the app ever runs more than one instance.
+
+- **Keying:** an **authenticated** request must pass **both** a per-user bucket and a per-IP bucket; an **unauthenticated** request is limited per IP by the endpoint's tier.
+- **Tiers** (`ratelimit.*` in `RateLimitProperties`, overridable per env): auth 10/min, register 5/hour, refresh 20/min, api 120/min per user + 300/min per IP.
+- **Client IP** comes from `X-Forwarded-For` via `server.forward-headers-strategy=native` (Render sits behind a proxy).
+- **Rejection:** 429 with a `Retry-After` header and the JSON `ApiResponse` envelope (written directly — filters run before Spring MVC). Skips `/actuator/**` and `/error`; disable entirely with `ratelimit.enabled=false`.
+- **Deferred (seams, not built):** a Redis-backed store (only if >1 instance) and a Cloudflare edge layer (volumetric DDoS shield).
 
 ### Auth endpoints
 
@@ -313,7 +324,6 @@ Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on
 ### Still to implement
 
 - `GoogleOAuthService` — Google token verification, user upsert; `POST /api/auth/google` endpoint. **When building mobile Google login**, use the system browser + PKCE (AppAuth), not an embedded webview (OWASP/IETF standard for native OAuth).
-- Rate limiting on public auth endpoints (prevent brute force / spam)
 - **Per-device logout**: `logout` currently revokes **all** the user's refresh tokens (`revokeAllByUserId`). With multiple clients (web + mobile) this signs the user out everywhere. **When logout work resumes**, change it to revoke only the presented refresh token (this device), and keep revoke-all as a separate explicit "sign out everywhere" action (and on password change).
 - Web-side httpOnly cookies live in the **Next.js BFF**, not Spring (see *Client session architecture* above) — no Spring change needed; the JSON-body token response is what the BFF/mobile consume.
 
@@ -584,10 +594,12 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `GroupControllerSecurityTest` | 5 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
 | `GlobalExceptionHandlerTest` | 11 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join) |
+| `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
+| `RateLimitFilterTest` | 8 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; `shouldNotFilter` (disabled/actuator/error/normal) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **170 tests** across 21 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **181 tests** across 23 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
