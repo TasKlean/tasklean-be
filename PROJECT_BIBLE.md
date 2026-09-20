@@ -321,6 +321,12 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 **Google sign-in**: the client runs Google Sign-In itself and posts the resulting **ID token** to `POST /api/auth/google` → `GoogleIdTokenVerifier` validates signature (JWKS), issuer, expiry, and audience (`google.client-id`) → require `email_verified` (401 otherwise) → resolve the account: (1) match `google_sub` → log in; (2) match email → **link** Google to the existing password account and mark it verified; (3) no match → **provision** a new already-verified, password-less account → generate access JWT + refresh token → return `AuthResponse`. Deactivated accounts are rejected (401) with a `LOGIN_FAILED` audit entry; success writes `LOGIN` (returning/linked) or `REGISTER` (new). The backend needs only the client id (the token audience); no client secret is used for verification.
 
+**Staging/prod checklist** (the common  traps — all config, not code):
+- `GOOGLE_CLIENT_ID` on the backend **exactly matches** the Client ID the frontend's button uses (a mismatch fails on token audience).
+- The frontend's deployed origin is listed under **Authorized JavaScript origins** on that OAuth client.
+- Consent screen is **published**, or the tester's account is whitelisted.
+- Verify a token's `aud`/`email_verified` out-of-band with `https://oauth2.googleapis.com/tokeninfo?id_token=<token>` when debugging.
+
 ### Still to implement
 
 - **Mobile Google login**: when native apps are added, each gets its own OAuth client id — widen the audience list in `GoogleOAuthConfig`. Use the system browser + PKCE (AppAuth), not an embedded webview (OWASP/IETF standard for native OAuth).
