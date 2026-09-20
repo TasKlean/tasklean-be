@@ -1,6 +1,7 @@
 package com.tasklean.api.auth;
 
 import com.tasklean.api.auth.dto.AuthResponse;
+import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.dto.LoginRequest;
 import com.tasklean.api.auth.dto.RegisterRequest;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final GoogleOAuthService googleOAuthService;
     private final VerificationService verificationService;
     private final RefreshTokenService refreshTokenService;
 
@@ -52,6 +54,17 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(ApiResponse.success(authService.login(request)));
+    }
+
+    /**
+     * Authenticates with a Google ID token, provisioning or linking the account as needed.
+     *
+     * @param request the request carrying the Google ID token
+     * @return {@code 200 OK} with the auth response (access + refresh tokens)
+     */
+    @PostMapping("/google")
+    public ResponseEntity<ApiResponse<AuthResponse>> google(@Valid @RequestBody GoogleAuthRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(googleOAuthService.authenticate(request)));
     }
 
     /**
