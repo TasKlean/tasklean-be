@@ -230,7 +230,7 @@ Entities with a `uid` field (User, Group, Task) use `/{uid}` as the path variabl
 
 ### Current state
 
-Email/password authentication is fully implemented. All endpoints except `/api/auth/**` require a valid JWT Bearer token. Google OAuth is planned but not yet built.
+Email/password and Google sign-in are both implemented. All endpoints except `/api/auth/**` require a valid JWT Bearer token.
 
 ### Row Level Security (Supabase)
 
@@ -303,7 +303,7 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 | `POST /api/auth/resend-verification` | 200 | Generic success message (enumeration-safe, always 200) |
 | `POST /api/auth/refresh` | 200 | New access JWT + new refresh token (rotates old refresh token) |
 | `POST /api/auth/logout` | 200 | "Logged out successfully" (revokes all user refresh tokens) |
-| `POST /api/auth/google` | Not implemented | — |
+| `POST /api/auth/google` | 200 | Access JWT + refresh token + user info (verifies a Google ID token; provisions or links the account) |
 
 ### Authentication flows
 
@@ -319,11 +319,17 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 **Logout**: hash incoming refresh token → look up non-revoked match → revoke all refresh tokens for that user. Invalid token returns 401.
 
-**Google OAuth (planned)**: redirect to Google → callback with authorization code → exchange code for access token → verify `id_token` → extract email/name/`google_sub` → find existing user by `google_sub` or create new one → generate JWT → return token.
+**Google sign-in**: the client runs Google Sign-In itself and posts the resulting **ID token** to `POST /api/auth/google` → `GoogleIdTokenVerifier` validates signature (JWKS), issuer, expiry, and audience (`google.client-id`) → require `email_verified` (401 otherwise) → resolve the account: (1) match `google_sub` → log in; (2) match email → **link** Google to the existing password account and mark it verified; (3) no match → **provision** a new already-verified, password-less account → generate access JWT + refresh token → return `AuthResponse`. Deactivated accounts are rejected (401) with a `LOGIN_FAILED` audit entry; success writes `LOGIN` (returning/linked) or `REGISTER` (new). The backend needs only the client id (the token audience); no client secret is used for verification.
+
+**Staging/prod checklist** (the common  traps — all config, not code):
+- `GOOGLE_CLIENT_ID` on the backend **exactly matches** the Client ID the frontend's button uses (a mismatch fails on token audience).
+- The frontend's deployed origin is listed under **Authorized JavaScript origins** on that OAuth client.
+- Consent screen is **published**, or the tester's account is whitelisted.
+- Verify a token's `aud`/`email_verified` out-of-band with `https://oauth2.googleapis.com/tokeninfo?id_token=<token>` when debugging.
 
 ### Still to implement
 
-- `GoogleOAuthService` — Google token verification, user upsert; `POST /api/auth/google` endpoint. **When building mobile Google login**, use the system browser + PKCE (AppAuth), not an embedded webview (OWASP/IETF standard for native OAuth).
+- **Mobile Google login**: when native apps are added, each gets its own OAuth client id — widen the audience list in `GoogleOAuthConfig`. Use the system browser + PKCE (AppAuth), not an embedded webview (OWASP/IETF standard for native OAuth).
 - **Per-device logout**: `logout` currently revokes **all** the user's refresh tokens (`revokeAllByUserId`). With multiple clients (web + mobile) this signs the user out everywhere. **When logout work resumes**, change it to revoke only the presented refresh token (this device), and keep revoke-all as a separate explicit "sign out everywhere" action (and on password change).
 - Web-side httpOnly cookies live in the **Next.js BFF**, not Spring (see *Client session architecture* above) — no Spring change needed; the JSON-body token response is what the BFF/mobile consume.
 
@@ -575,6 +581,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 10 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email) |
+| `GoogleOAuthServiceTest` | 7 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; deactivated account |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
 | `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
@@ -599,7 +606,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **181 tests** across 23 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **188 tests** across 24 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
@@ -608,9 +615,7 @@ Total: **181 tests** across 23 test classes. Controller authorization is covered
 - No filtering beyond `?groupId=` / `?userId=` / `?taskId=`
 - No `@OneToMany` collections on entities (all relationships are `@ManyToOne` only)
 - No cascade operations in JPA (cascades are in SQL only, for `device` and `task_tag`)
-- No `@WebMvcTest` slice tests or integration tests (only unit tests and a smoke test)
-- No role-based authorization enforcement (ADMIN/MEMBER roles exist in schema but not checked in API)
-- Google OAuth not yet implemented (`GoogleOAuthService` is a stub)
+- No `@SpringBootTest` integration tests yet (unit tests + `@WebMvcTest` security slices only)
 
 ## Gotchas
 
