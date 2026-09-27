@@ -197,8 +197,8 @@ Every endpoint returns `ApiResponse<T>`:
 
 | Resource | Base path | Identifier | CRUD | Notes |
 |---|---|---|---|---|
-| User | `/api/users` | `/{uid}` | GET, GET all, PUT, DELETE, PUT `/{uid}/role` | No POST — creation via auth flow; role change is SUPER_ADMIN-only |
-| Group | `/api/groups` | `/{uid}` | Full CRUD | POST generates uid + invite code, and makes the creator GROUP_ADMIN |
+| User | `/api/users` | `/{uid}` | GET `/me`, GET, GET all, PUT, DELETE, PUT `/{uid}/role` | No POST — creation via auth flow; `/me` is the caller's own profile (no identifier, resolved from the JWT); role change is SUPER_ADMIN-only |
+| Group | `/api/groups` | `/{uid}` | Full CRUD, GET `/mine`, POST `/join`, POST `/{uid}/invite-code` | POST generates uid + invite code, and makes the creator GROUP_ADMIN. `/mine` lists the caller's own groups with their `myRole`; `/join` redeems an invite code; `/{uid}/invite-code` rotates the code (GROUP_ADMIN) |
 | Task | `/api/tasks` | `/{uid}` | Full CRUD | GET all requires `?groupId=` |
 | Category | `/api/categories` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
 | Tag | `/api/tags` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
@@ -288,7 +288,8 @@ Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on
 Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the security chain right after `JwtAuthenticationFilter` so it can key by user id. In-memory (Caffeine) — fine for a single instance; the `BucketRegistry` interface is the seam to swap in Redis if the app ever runs more than one instance.
 
 - **Keying:** an **authenticated** request must pass **both** a per-user bucket and a per-IP bucket; an **unauthenticated** request is limited per IP by the endpoint's tier.
-- **Tiers** (`ratelimit.*` in `RateLimitProperties`, overridable per env): auth 10/min, register 5/hour, refresh 20/min, api 120/min per user + 300/min per IP.
+- **Tiers** (`ratelimit.*` in `RateLimitProperties`, overridable per env): auth 10/min, register 5/hour, refresh 20/min, api 120/min per user + 300/min per IP, join 10/hour per user.
+- **The join tier is additive, not alternative.** `POST /api/groups/join` is authenticated, so it passes the per-user and per-IP api buckets *and* its own tighter `join` bucket. Every other tier replaces the default; this one stacks, so a guessable 8-character invite code keeps the general api protections as well.
 - **Client IP** comes from `X-Forwarded-For` via `server.forward-headers-strategy=native` (Render sits behind a proxy).
 - **Rejection:** 429 with a `Retry-After` header and the JSON `ApiResponse` envelope (written directly — filters run before Spring MVC). Skips `/actuator/**` and `/error`; disable entirely with `ratelimit.enabled=false`.
 - **Deferred (seams, not built):** a Redis-backed store (only if >1 instance) and a Cloudflare edge layer (volumetric DDoS shield).
@@ -344,10 +345,13 @@ Two independent role systems, enforced declaratively with Spring method security
 - Self-access (a user acting on their own account) is expressed with the `@accountSecurity.isSelf(#uid)` bean, e.g. `@PreAuthorize("hasRole('SUPER_ADMIN') or @accountSecurity.isSelf(#uid)")` on update/delete.
 
 **Group role** (`GroupMember.role`: `GROUP_ADMIN` / `GROUP_MEMBER`) — relationship-based, resolved per-request against the target group by the `@groupSecurity` bean (`isMember`/`isAdmin` by group UID, `isMemberOfGroup`/`isAdminOfGroup` by id, `canViewMember`/`canManageMember`/`isSelfMember` by membership id).
-- **GROUP_ADMIN**: edit group, invite/remove members, change roles, manage categories and tags.
+- **GROUP_ADMIN**: edit group, invite/remove members, change roles, rotate the invite code, manage categories and tags.
 - **GROUP_MEMBER**: create/edit/delete own tasks, complete tasks, view group content, leave the group.
 - The **creator of a group becomes its first `GROUP_ADMIN`** automatically (`GroupService.createGroup`).
 - **Last-admin protection**: a group must keep ≥1 active `GROUP_ADMIN` — demoting or removing the last one is rejected with 409 (`BusinessRuleException`).
+- **The invite code is admin-only.** Inviting is a `GROUP_ADMIN` power, so the code is returned only to an admin of that group: `GroupResponse.from(group)` omits it and `GroupResponse.withInviteCode(group)` includes it, making the exposure an explicit decision at each call site. A plain member gets `inviteCode: null` from `GET /api/groups/{uid}` and `GET /api/groups/mine`; the platform-admin listing `GET /api/groups` omits it too, since support staff have no reason to hold join codes.
+- **Joining is self-service and audited.** `POST /api/groups/join` needs only authentication — holding a valid code *is* the authorization. It writes a `MEMBER_ADDED` audit entry, refuses a second join with 409, and returns the same 404 for an unknown code as for a soft-deleted group's code, so a redeemer cannot probe for codes that once existed. A user who previously left has their existing membership **reactivated** (the unique `(user_id, group_id)` constraint allows only one row) and comes back as a `GROUP_MEMBER` — rejoining never restores an admin role held before leaving, since a public code must not grant `GROUP_ADMIN`.
+- **Rotation is the only revocation.** `POST /api/groups/{uid}/invite-code` issues a new code and invalidates the old one. It is immediate and total: outstanding legitimate invites die alongside a leaked code, because one code serves every invite. Per-invite expiring tokens would fix that properly and remain deferred.
 - *Enforced on the group and group-member endpoints; task/category/tag endpoints get their group-scoped checks as those features are fleshed out.*
 
 Denied requests (authenticated but unauthorized) return **403** via `GlobalExceptionHandler` (`AccessDeniedException`); unauthenticated requests return **401** via `JwtAuthenticationEntryPoint`.
@@ -573,7 +577,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 - Getters/setters, builders, or Lombok-generated code
 - Framework wiring (Spring context loading, bean registration)
 - Repository queries (these would be integration tests with a real DB)
-- Controller routing/serialization (these would be `@WebMvcTest` slice tests, not yet added)
+- Controller routing/serialization beyond authorization (the `@WebMvcTest` slices assert `@PreAuthorize` wiring and route precedence, not payload shaping)
 
 **Current test coverage:**
 
@@ -589,7 +593,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 | `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
 | `GroupSecurityTest` | 12 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); `canManageMember`/`canViewMember`/`isSelfMember` by membership id |
-| `GroupServiceTest` | 8 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found |
+| `GroupServiceTest` | 22 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found; getGroupByUid invite-code visibility (admin vs plain member); getMyGroups (role mapping, soft-deleted group skipped, invite-code visibility); joinByInviteCode (new member, case-insensitive code, unknown code, soft-deleted group, already a member, rejoin reactivates the same row without restoring admin); rotateInviteCode (replaces code + audits, not-found) |
 | `GroupMemberServiceTest` | 7 | addMember (success / duplicate); role change and removal with last-admin protection (blocked when last, allowed with another admin); promote member |
 | `UserServiceTest` | 7 | updateUserRole (+ audit / unknown); get/getAll/update/delete + not-found |
 | `CategoryServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
@@ -597,16 +601,16 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `TaskServiceTest` | 13 | get/getByGroup/create/update/delete incl. assignee & category branches + not-found |
 | `TaskCompletionServiceTest` | 5 | list by task/member; create (+ task/member not-found) |
 | `DeviceServiceTest` | 10 | get/getByUser/register/update/deactivate + not-found + duplicate token |
-| `UserControllerSecurityTest` | 7 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
-| `GroupControllerSecurityTest` | 5 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`) |
+| `UserControllerSecurityTest` | 8 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, `/me` for any authenticated caller (also guarding route precedence over `/{uid}`), role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
+| `GroupControllerSecurityTest` | 10 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`); `/mine` and `/join` open to any authenticated caller (also guarding `/mine` route precedence over `/{uid}`); invite-code rotation group-admin only (plain member and platform ADMIN 403) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
 | `GlobalExceptionHandlerTest` | 11 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join) |
 | `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
-| `RateLimitFilterTest` | 8 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; `shouldNotFilter` (disabled/actuator/error/normal) |
+| `RateLimitFilterTest` | 10 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/normal) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **188 tests** across 24 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **210 tests** across 24 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
