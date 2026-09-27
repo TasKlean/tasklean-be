@@ -74,6 +74,18 @@ class GroupControllerSecurityTest {
                         .build()));
     }
 
+    // --- getMyGroups: any authenticated caller, scoped to the token ---
+
+    @Test
+    void getMyGroups_plainUser_ok() throws Exception {
+        when(groupService.getMyGroups(USER_ID)).thenReturn(List.of());
+
+        // Also guards route precedence: if the literal /mine lost to /{uid}, a non-member USER
+        // would be denied by @groupSecurity.isMember("mine") instead of getting their groups.
+        mockMvc.perform(get("/api/groups/mine").with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
     // --- getGroup: member or platform ADMIN ---
 
     @Test
@@ -86,7 +98,8 @@ class GroupControllerSecurityTest {
     @Test
     void getGroup_member_ok() throws Exception {
         callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
-        when(groupService.getGroupByUid(GROUP_UID)).thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
+        when(groupService.getGroupByUid(GROUP_UID, USER_ID))
+                .thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
 
         mockMvc.perform(get("/api/groups/{uid}", GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isOk());
@@ -94,7 +107,8 @@ class GroupControllerSecurityTest {
 
     @Test
     void getGroup_platformAdmin_ok() throws Exception {
-        when(groupService.getGroupByUid(GROUP_UID)).thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
+        when(groupService.getGroupByUid(GROUP_UID, USER_ID))
+                .thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
 
         mockMvc.perform(get("/api/groups/{uid}", GROUP_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());

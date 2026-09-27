@@ -3,6 +3,7 @@ package com.tasklean.api.domain.group;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
+import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
@@ -17,6 +18,8 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -74,7 +77,8 @@ class GroupServiceTest {
     }
 
     private Group group() {
-        return Group.builder().idGroup(10L).uid("grp-1").name("Home").isActive(true).build();
+        return Group.builder().idGroup(10L).uid("grp-1").name("Home")
+                .inviteCode("JOIN1234").isActive(true).build();
     }
 
     private GroupRequest updateRequest() {
@@ -84,16 +88,88 @@ class GroupServiceTest {
         return r;
     }
 
+    private GroupMember membership(Group group, GroupRole role) {
+        return GroupMember.builder()
+                .idGroupMember(100L)
+                .group(group)
+                .user(User.builder().idUser(1L).build())
+                .role(role)
+                .isActive(true)
+                .dateJoined(LocalDateTime.now(ZoneOffset.UTC))
+                .build();
+    }
+
     @Test
     void getGroupByUid_found_returns() {
         when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(group()));
-        assertThat(groupService.getGroupByUid("grp-1").getUid()).isEqualTo("grp-1");
+        assertThat(groupService.getGroupByUid("grp-1", 1L).getUid()).isEqualTo("grp-1");
     }
 
     @Test
     void getGroupByUid_missing_throws() {
         when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> groupService.getGroupByUid("nope")).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> groupService.getGroupByUid("nope", 1L))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getGroupByUid_asGroupAdmin_includesInviteCode() {
+        Group g = group();
+        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(g));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
+                .thenReturn(Optional.of(membership(g, GroupRole.GROUP_ADMIN)));
+
+        assertThat(groupService.getGroupByUid("grp-1", 1L).getInviteCode()).isEqualTo("JOIN1234");
+    }
+
+    @Test
+    void getGroupByUid_asPlainMember_hidesInviteCode() {
+        Group g = group();
+        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(g));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
+                .thenReturn(Optional.of(membership(g, GroupRole.GROUP_MEMBER)));
+
+        assertThat(groupService.getGroupByUid("grp-1", 1L).getInviteCode()).isNull();
+    }
+
+    @Test
+    void getMyGroups_returnsActiveGroupsWithCallerRole() {
+        Group g = group();
+        when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
+                .thenReturn(List.of(membership(g, GroupRole.GROUP_MEMBER)));
+
+        List<MyGroupResponse> mine = groupService.getMyGroups(1L);
+
+        assertThat(mine).singleElement().satisfies(m -> {
+            assertThat(m.getUid()).isEqualTo("grp-1");
+            assertThat(m.getMyRole()).isEqualTo(GroupRole.GROUP_MEMBER);
+        });
+    }
+
+    @Test
+    void getMyGroups_skipsSoftDeletedGroups() {
+        Group deleted = group();
+        deleted.setIsActive(false);
+        when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
+                .thenReturn(List.of(membership(deleted, GroupRole.GROUP_ADMIN)));
+
+        assertThat(groupService.getMyGroups(1L)).isEmpty();
+    }
+
+    @Test
+    void getMyGroups_groupAdmin_includesInviteCodeToShare() {
+        when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
+                .thenReturn(List.of(membership(group(), GroupRole.GROUP_ADMIN)));
+
+        assertThat(groupService.getMyGroups(1L).getFirst().getInviteCode()).isEqualTo("JOIN1234");
+    }
+
+    @Test
+    void getMyGroups_plainMember_hidesInviteCode() {
+        when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
+                .thenReturn(List.of(membership(group(), GroupRole.GROUP_MEMBER)));
+
+        assertThat(groupService.getMyGroups(1L).getFirst().getInviteCode()).isNull();
     }
 
     @Test

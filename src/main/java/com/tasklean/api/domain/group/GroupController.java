@@ -4,6 +4,7 @@ import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -15,7 +16,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * REST endpoints for groups (households) — create, fetch, list, update, and delete.
+ * REST endpoints for groups (households) — create, fetch, list the caller's own, list all
+ * (admin), update, and delete.
  */
 @RestController
 @RequestMapping("/api/groups")
@@ -40,15 +42,31 @@ public class GroupController {
     }
 
     /**
+     * Lists the groups the caller is an active member of, each with the caller's own role in it.
+     *
+     * @param principal the authenticated caller
+     * @return {@code 200 OK} with the caller's groups
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/mine")
+    public ResponseEntity<ApiResponse<List<MyGroupResponse>>> getMyGroups(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(groupService.getMyGroups(principal.userId())));
+    }
+
+    /**
      * Fetches a group by public UID.
      *
-     * @param uid the group's public UID
+     * @param uid       the group's public UID
+     * @param principal the authenticated caller, whose group role decides whether the invite code
+     *                  is included
      * @return {@code 200 OK} with the group
      */
     @PreAuthorize("hasRole('ADMIN') or @groupSecurity.isMember(#uid)")
     @GetMapping("/{uid}")
-    public ResponseEntity<ApiResponse<GroupResponse>> getGroup(@PathVariable String uid) {
-        return ResponseEntity.ok(ApiResponse.success(groupService.getGroupByUid(uid)));
+    public ResponseEntity<ApiResponse<GroupResponse>> getGroup(
+            @PathVariable String uid, @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(groupService.getGroupByUid(uid, principal.userId())));
     }
 
     /**

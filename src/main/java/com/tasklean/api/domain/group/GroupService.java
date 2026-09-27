@@ -7,6 +7,7 @@ import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
@@ -37,26 +38,46 @@ public class GroupService {
     private final Clock clock;
 
     /**
-     * Returns a group by its public UID.
+     * Returns a group by its public UID, as seen by the given caller. The invite code is included
+     * only when the caller is an admin of that group.
      *
-     * @param uid the group's public UID
+     * @param uid          the group's public UID
+     * @param callerUserId the id of the authenticated caller
      * @return the group
      * @throws ResourceNotFoundException if no group has that UID
      */
-    public GroupResponse getGroupByUid(String uid) {
+    public GroupResponse getGroupByUid(String uid, Long callerUserId) {
         Group group = groupRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
-        return GroupResponse.from(group);
+        return isGroupAdmin(callerUserId, group.getIdGroup())
+                ? GroupResponse.withInviteCode(group)
+                : GroupResponse.from(group);
     }
 
     /**
-     * Returns all groups.
+     * Returns all groups, without invite codes — this is a platform-admin listing, and staff have
+     * no reason to hold the codes that let someone join a household.
      *
      * @return all groups
      */
     public List<GroupResponse> getAllGroups() {
         return groupRepository.findAll().stream()
                 .map(GroupResponse::from)
+                .toList();
+    }
+
+    /**
+     * Returns the groups the given user is an active member of, each carrying that user's own role
+     * in the group. This is how a normal user discovers their own households.
+     *
+     * @param userId the id of the authenticated user
+     * @return the user's active memberships as group summaries, newest membership last
+     */
+    public List<MyGroupResponse> getMyGroups(Long userId) {
+        return groupMemberRepository.findByUserIdUserAndIsActiveTrue(userId).stream()
+                // A membership can outlive its group's soft-deletion, so filter on the group too.
+                .filter(m -> Boolean.TRUE.equals(m.getGroup().getIsActive()))
+                .map(MyGroupResponse::from)
                 .toList();
     }
 
@@ -96,7 +117,8 @@ public class GroupService {
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, savedMember.getIdGroupMember(),
                 AuditAction.MEMBER_ADDED, "Creator added as group admin", saved);
 
-        return GroupResponse.from(saved);
+        // The creator is the group's admin, so they get the invite code straight away to share.
+        return GroupResponse.withInviteCode(saved);
     }
 
     /**
@@ -117,7 +139,8 @@ public class GroupService {
         Group saved = groupRepository.save(group);
         auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), saved);
-        return GroupResponse.from(saved);
+        // Only a group admin (or SUPER_ADMIN) can reach this endpoint, so the code is safe to return.
+        return GroupResponse.withInviteCode(saved);
     }
 
     /**
@@ -139,6 +162,15 @@ public class GroupService {
 
     private static String auditMessage(String name, String verb) {
         return "Group \"" + name + "\" " + verb;
+    }
+
+    // Mirrors @groupSecurity.isAdminOfGroup, but resolves the role from an explicit user id rather
+    // than the SecurityContext, so the service stays usable outside a request (jobs, tests).
+    private boolean isGroupAdmin(Long userId, Long groupId) {
+        return userId != null && groupMemberRepository.findByUserIdUserAndGroupIdGroup(userId, groupId)
+                .filter(m -> Boolean.TRUE.equals(m.getIsActive()))
+                .map(m -> m.getRole() == GroupRole.GROUP_ADMIN)
+                .orElse(false);
     }
 
     private String generateInviteCode() {
