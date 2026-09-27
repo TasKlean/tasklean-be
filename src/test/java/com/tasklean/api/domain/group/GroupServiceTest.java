@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.group;
 
+import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
@@ -176,6 +177,85 @@ class GroupServiceTest {
     void getAllGroups_returnsList() {
         when(groupRepository.findAll()).thenReturn(List.of(group()));
         assertThat(groupService.getAllGroups()).hasSize(1);
+    }
+
+    // --- joinByInviteCode ---
+
+    @Test
+    void joinByInviteCode_newMember_joinsAsGroupMember() {
+        Group g = group();
+        when(groupRepository.findByInviteCode("JOIN1234")).thenReturn(Optional.of(g));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L)).thenReturn(Optional.empty());
+        when(userRepository.getReferenceById(1L)).thenReturn(User.builder().idUser(1L).build());
+        when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
+
+        MyGroupResponse joined = groupService.joinByInviteCode("JOIN1234", 1L);
+
+        assertThat(joined.getUid()).isEqualTo("grp-1");
+        assertThat(joined.getMyRole()).isEqualTo(GroupRole.GROUP_MEMBER);
+        verify(auditLogService).recordEvent(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void joinByInviteCode_lowercaseCode_stillJoins() {
+        Group g = group();
+        when(groupRepository.findByInviteCode("JOIN1234")).thenReturn(Optional.of(g));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L)).thenReturn(Optional.empty());
+        when(userRepository.getReferenceById(1L)).thenReturn(User.builder().idUser(1L).build());
+        when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
+
+        assertThat(groupService.joinByInviteCode(" join1234 ", 1L).getUid()).isEqualTo("grp-1");
+    }
+
+    @Test
+    void joinByInviteCode_unknownCode_throwsNotFound() {
+        when(groupRepository.findByInviteCode("NOPE0000")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupService.joinByInviteCode("NOPE0000", 1L))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void joinByInviteCode_softDeletedGroup_throwsNotFound() {
+        Group deleted = group();
+        deleted.setIsActive(false);
+        when(groupRepository.findByInviteCode("JOIN1234")).thenReturn(Optional.of(deleted));
+
+        assertThatThrownBy(() -> groupService.joinByInviteCode("JOIN1234", 1L))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void joinByInviteCode_alreadyActiveMember_throwsBusinessRule() {
+        Group g = group();
+        when(groupRepository.findByInviteCode("JOIN1234")).thenReturn(Optional.of(g));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
+                .thenReturn(Optional.of(membership(g, GroupRole.GROUP_MEMBER)));
+
+        assertThatThrownBy(() -> groupService.joinByInviteCode("JOIN1234", 1L))
+                .isInstanceOf(BusinessRuleException.class);
+    }
+
+    @Test
+    void joinByInviteCode_previouslyLeft_reactivatesWithoutDuplicatingRow() {
+        Group g = group();
+        GroupMember left = membership(g, GroupRole.GROUP_ADMIN);
+        left.setIsActive(false);
+        left.setDateLeft(LocalDateTime.now(ZoneOffset.UTC));
+        when(groupRepository.findByInviteCode("JOIN1234")).thenReturn(Optional.of(g));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L)).thenReturn(Optional.of(left));
+        when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
+
+        MyGroupResponse joined = groupService.joinByInviteCode("JOIN1234", 1L);
+
+        // The same row is reused (the unique (user_id, group_id) constraint allows only one),
+        // and the admin role they held before leaving is not restored.
+        ArgumentCaptor<GroupMember> captor = ArgumentCaptor.forClass(GroupMember.class);
+        verify(groupMemberRepository).save(captor.capture());
+        assertThat(captor.getValue()).isSameAs(left);
+        assertThat(left.getIsActive()).isTrue();
+        assertThat(left.getDateLeft()).isNull();
+        assertThat(joined.getMyRole()).isEqualTo(GroupRole.GROUP_MEMBER);
     }
 
     @Test

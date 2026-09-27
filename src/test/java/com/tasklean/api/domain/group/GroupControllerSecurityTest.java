@@ -3,6 +3,7 @@ package com.tasklean.api.domain.group;
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
@@ -27,6 +28,7 @@ import java.util.Optional;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -72,6 +74,20 @@ class GroupControllerSecurityTest {
                         .group(Group.builder().idGroup(GROUP_ID).build())
                         .user(User.builder().idUser(USER_ID).build())
                         .build()));
+    }
+
+    // --- joinGroup: any authenticated caller; holding a valid code is the authorization ---
+
+    @Test
+    void joinGroup_plainUserNotYetInGroup_ok() throws Exception {
+        when(groupService.joinByInviteCode("JOIN1234", USER_ID))
+                .thenReturn(MyGroupResponse.builder().uid(GROUP_UID).build());
+
+        mockMvc.perform(post("/api/groups/join")
+                        .with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inviteCode\":\"JOIN1234\"}"))
+                .andExpect(status().isOk());
     }
 
     // --- getMyGroups: any authenticated caller, scoped to the token ---

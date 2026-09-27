@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.group;
 
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
@@ -24,7 +25,8 @@ import java.util.UUID;
 
 /**
  * Manages groups (households) — lookup by UID, listing, creation, updates, and
- * soft-deletion. Each group is issued a unique invite code on creation.
+ * soft-deletion, plus joining a group by redeeming its invite code. Each group is issued a
+ * unique invite code on creation.
  */
 @Slf4j
 @Service
@@ -119,6 +121,59 @@ public class GroupService {
 
         // The creator is the group's admin, so they get the invite code straight away to share.
         return GroupResponse.withInviteCode(saved);
+    }
+
+    /**
+     * Joins the caller to the group holding the given invite code, as a {@code GROUP_MEMBER}.
+     * A user who previously left has their existing membership reactivated rather than duplicated,
+     * and does not regain any admin role they once held.
+     *
+     * @param inviteCode the invite code being redeemed (case-insensitive)
+     * @param userId     the id of the authenticated user joining
+     * @return the joined group, with the caller's role in it
+     * @throws ResourceNotFoundException if no active group holds that invite code
+     * @throws BusinessRuleException     if the caller is already an active member
+     */
+    @Transactional
+    public MyGroupResponse joinByInviteCode(String inviteCode, Long userId) {
+        // Codes are generated uppercase; accept whatever casing the user typed or pasted.
+        String normalized = inviteCode.trim().toUpperCase();
+        Group group = groupRepository.findByInviteCode(normalized)
+                .filter(g -> Boolean.TRUE.equals(g.getIsActive()))
+                // Same error for an unknown and a soft-deleted group
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.INVALID_INVITE_CODE));
+
+        GroupMember membership = groupMemberRepository
+                .findByUserIdUserAndGroupIdGroup(userId, group.getIdGroup())
+                .map(this::rejoin)
+                .orElseGet(() -> GroupMember.builder()
+                        .user(userRepository.getReferenceById(userId))
+                        .group(group)
+                        .role(GroupRole.GROUP_MEMBER)
+                        .isActive(true)
+                        .dateJoined(LocalDateTime.now(clock))
+                        .build());
+
+        GroupMember saved = groupMemberRepository.save(membership);
+        log.info("User joined group via invite code: groupUid={} groupMemberId={}",
+                group.getUid(), saved.getIdGroupMember());
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(),
+                AuditAction.MEMBER_ADDED, "Member joined via invite code", group);
+        return MyGroupResponse.from(saved);
+    }
+
+    // Reactivates a membership the user previously left. The unique (user_id, group_id) constraint
+    // rules out a second row, and rejoining must not restore a role they held before leaving.
+    private GroupMember rejoin(GroupMember existing) {
+        if (Boolean.TRUE.equals(existing.getIsActive())) {
+            throw new BusinessRuleException(ErrorMessages.ALREADY_GROUP_MEMBER);
+        }
+        existing.setIsActive(true);
+        existing.setRole(GroupRole.GROUP_MEMBER);
+        existing.setDateJoined(LocalDateTime.now(clock));
+        existing.setDateLeft(null);
+        existing.setRemovedBy(null);
+        return existing;
     }
 
     /**

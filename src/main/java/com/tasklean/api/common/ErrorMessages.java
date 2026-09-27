@@ -12,6 +12,8 @@ public final class ErrorMessages {
 
     public static final String USER_NOT_FOUND = "User not found";
     public static final String GROUP_NOT_FOUND = "Group not found";
+    public static final String INVALID_INVITE_CODE = "Invalid invite code";
+    public static final String ALREADY_GROUP_MEMBER = "You are already a member of this group";
     public static final String GROUP_MEMBER_NOT_FOUND = "Group member not found";
     public static final String TASK_NOT_FOUND = "Task not found";
     public static final String CATEGORY_NOT_FOUND = "Category not found";

@@ -4,6 +4,7 @@ import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.group.dto.JoinGroupRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -17,7 +18,7 @@ import java.util.List;
 
 /**
  * REST endpoints for groups (households) — create, fetch, list the caller's own, list all
- * (admin), update, and delete.
+ * (admin), join by invite code, update, and delete.
  */
 @RestController
 @RequestMapping("/api/groups")
@@ -39,6 +40,22 @@ public class GroupController {
             @Valid @RequestBody GroupRequest request, @AuthenticationPrincipal AuthPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(groupService.createGroup(request, principal.userId())));
+    }
+
+    /**
+     * Joins the caller to a group by redeeming its invite code. Any authenticated user — holding a
+     * valid code is the authorization.
+     *
+     * @param request   the invite code being redeemed
+     * @param principal the authenticated caller
+     * @return {@code 200 OK} with the joined group and the caller's role in it
+     */
+    @PreAuthorize("isAuthenticated()")
+    @PostMapping("/join")
+    public ResponseEntity<ApiResponse<MyGroupResponse>> joinGroup(
+            @Valid @RequestBody JoinGroupRequest request, @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                groupService.joinByInviteCode(request.getInviteCode(), principal.userId())));
     }
 
     /**
