@@ -4,6 +4,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
+import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
@@ -274,6 +275,28 @@ class GroupServiceTest {
     void updateGroup_missing_throws() {
         when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> groupService.updateGroup("nope", updateRequest())).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void rotateInviteCode_replacesCodeAndAudits() {
+        Group existing = group();
+        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.existsByInviteCode(any())).thenReturn(false);
+        when(groupRepository.save(any(Group.class))).thenAnswer(i -> i.getArgument(0));
+
+        GroupResponse rotated = groupService.rotateInviteCode("grp-1");
+
+        assertThat(rotated.getInviteCode())
+                .isNotNull()
+                .isNotEqualTo("JOIN1234");
+        verify(auditLogService).recordEvent(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void rotateInviteCode_missing_throws() {
+        when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> groupService.rotateInviteCode("nope"))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

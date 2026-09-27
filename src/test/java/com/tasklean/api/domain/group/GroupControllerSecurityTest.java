@@ -130,6 +130,33 @@ class GroupControllerSecurityTest {
                 .andExpect(status().isOk());
     }
 
+    // --- rotateInviteCode: group admin or platform SUPER_ADMIN ---
+
+    @Test
+    void rotateInviteCode_plainMember_forbidden() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+
+        mockMvc.perform(post("/api/groups/{uid}/invite-code", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rotateInviteCode_groupAdmin_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
+        when(groupService.rotateInviteCode(GROUP_UID))
+                .thenReturn(GroupResponse.builder().uid(GROUP_UID).inviteCode("NEW00001").build());
+
+        mockMvc.perform(post("/api/groups/{uid}/invite-code", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void rotateInviteCode_platformAdmin_forbidden() throws Exception {
+        // ADMIN is read-only across the platform; only SUPER_ADMIN overrides group roles.
+        mockMvc.perform(post("/api/groups/{uid}/invite-code", GROUP_UID).with(as(UserRole.ADMIN)))
+                .andExpect(status().isForbidden());
+    }
+
     // --- updateGroup: group admin or platform SUPER_ADMIN ---
 
     @Test

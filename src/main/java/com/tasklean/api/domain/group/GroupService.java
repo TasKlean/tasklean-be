@@ -199,6 +199,30 @@ public class GroupService {
     }
 
     /**
+     * Issues a new invite code for a group, invalidating the previous one. Used when a code has
+     * leaked or been shared too widely — anyone holding the old code can no longer join.
+     *
+     * @param uid the group's public UID
+     * @return the group with its new invite code
+     * @throws ResourceNotFoundException if no group has that UID
+     */
+    @Transactional
+    public GroupResponse rotateInviteCode(String uid) {
+        Group group = groupRepository.findByUid(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+        // The old code is still persisted, so the uniqueness check in generateInviteCode also
+        // guarantees the new code differs from it.
+        group.setInviteCode(generateInviteCode());
+        Group saved = groupRepository.save(group);
+        // Never log the code itself — it is a join secret.
+        log.info("Group invite code rotated: uid={}", uid);
+        auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
+                auditMessage(saved.getName(), "invite code rotated"), saved);
+        // Only a group admin (or SUPER_ADMIN) can reach this, so returning the code is safe.
+        return GroupResponse.withInviteCode(saved);
+    }
+
+    /**
      * Soft-deletes a group (sets it inactive).
      *
      * @param uid the group's public UID

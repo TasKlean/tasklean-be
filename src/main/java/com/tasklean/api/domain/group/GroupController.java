@@ -112,6 +112,19 @@ public class GroupController {
     }
 
     /**
+     * Issues a new invite code for a group, invalidating the previous one. Not idempotent — each
+     * call produces a different code.
+     *
+     * @param uid the group's public UID
+     * @return {@code 200 OK} with the group and its new invite code
+     */
+    @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.isAdmin(#uid)")
+    @PostMapping("/{uid}/invite-code")
+    public ResponseEntity<ApiResponse<GroupResponse>> rotateInviteCode(@PathVariable String uid) {
+        return ResponseEntity.ok(ApiResponse.success(groupService.rotateInviteCode(uid)));
+    }
+
+    /**
      * Soft-deletes a group.
      *
      * @param uid the group's public UID
