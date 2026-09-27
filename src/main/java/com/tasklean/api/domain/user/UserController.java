@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.user;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
@@ -8,13 +9,15 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
- * REST endpoints for user profiles — fetch, list, update, account deletion, and platform-role
- * management. A user may act on their own account; platform admins/super-admins have wider access.
+ * REST endpoints for user profiles — fetch (own via {@code /me}, or by UID), list, update,
+ * account deletion, and platform-role management. A user may act on their own account; platform
+ * admins/super-admins have wider access.
  */
 @RestController
 @RequestMapping("/api/users")
@@ -22,6 +25,20 @@ import java.util.List;
 public class UserController {
 
     private final UserService userService;
+
+    /**
+     * Fetches the authenticated caller's own profile. Takes no identifier — the user is resolved
+     * from the JWT principal, so a client never has to track or send its own UID.
+     *
+     * @param principal the authenticated caller
+     * @return {@code 200 OK} with the caller's profile
+     */
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponse<UserResponse>> getCurrentUser(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(userService.getUserByUid(principal.uid())));
+    }
 
     /**
      * Fetches a user by public UID.
