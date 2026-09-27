@@ -629,7 +629,11 @@ Total: **188 tests** across 24 test classes. Controller authorization is covered
 
 5. **Render free tier constraints** — 512MB RAM, IPv4 only. The app needs `JAVA_TOOL_OPTIONS=-Xmx384m` and Supabase connection pooler (port 6543) with `?prepareThreshold=0` since the pooler doesn't support prepared statements.
 
-6. **Timestamps are UTC but columns have no timezone.** All `TIMESTAMP` columns are `WITHOUT TIME ZONE`. The application enforces UTC via an injected `Clock` bean (`ClockConfig`). All services use `LocalDateTime.now(clock)`, never bare `LocalDateTime.now()`. The frontend must convert UTC to local time for display.
+6. **Timestamps are UTC but columns have no timezone.** All `TIMESTAMP` columns are `WITHOUT TIME ZONE`, so UTC is enforced by the application in two places, and both are needed:
+   - **Service-set times** use the injected `Clock` bean (`ClockConfig`), pinned to UTC — `LocalDateTime.now(clock)`, never bare `LocalDateTime.now()`. Covers `GroupMember.date_joined`/`date_left`, `TaskCompletion.date_completed`, `Notification.read_at`, `Device.last_used`, `RefreshToken.expires_at`, `EmailVerification.expires_at`.
+   - **Hibernate-managed times** (`@CreationTimestamp`/`@UpdateTimestamp`) do **not** go through that bean — on a `LocalDateTime` they read the **JVM default zone**. So `TaskleanApiApplication.main` calls `TimeZone.setDefault(UTC)` before `SpringApplication.run`. Covers `date_created`/`date_updated` on every `BaseEntity` entity (`User`, `Group`, `Task`, `Category`, `Tag`, `Device`) plus `AuditLog`, `Notification`, `TaskCompletion`, `TaskTag`, `RefreshToken` and `EmailVerification`.
+
+   Without the JVM pin, a host in a non-UTC zone writes the second family in local time while the first stays UTC — two time regimes in one table, off by the host's offset. It was easy to miss because containers (Render, the Postgres image) default to UTC, so it only showed up on a developer machine. The frontend must convert UTC to local time for display.
 
 7. **String-typed enums.** Priority, status, recurrence type, and role are all `VARCHAR` + CHECK constraints in SQL, stored as plain `String` in Java. There are no Java enums — consider adding them for type safety when the domain stabilizes.
 

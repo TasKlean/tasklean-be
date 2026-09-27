@@ -10,6 +10,11 @@ import java.time.ZoneOffset;
  * Provides the application-wide {@link Clock} bean, pinned to UTC so all timestamps
  * are consistent regardless of the host's time zone. Inject this wherever the current
  * time is needed instead of calling {@code LocalDateTime.now()} directly.
+ *
+ * <p>This bean covers only timestamps the services set themselves. Hibernate-managed ones
+ * ({@code @CreationTimestamp}/{@code @UpdateTimestamp} on {@code BaseEntity} and friends) read the
+ * JVM default zone instead, which
+ * {@link com.tasklean.api.TaskleanApiApplication#main(String[]) main} pins to UTC for that reason.
  */
 @Configuration
 public class ClockConfig {
