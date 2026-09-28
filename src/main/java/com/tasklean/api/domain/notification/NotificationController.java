@@ -2,6 +2,7 @@ package com.tasklean.api.domain.notification;
 
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.notification.dto.NotificationResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -11,6 +12,7 @@ import java.util.List;
 /**
  * REST endpoints for notifications — list, list unread, unread count, and mark read.
  */
+@Tag(name = "Notifications", description = "In-app notifications for the signed-in user.")
 @RestController
 @RequestMapping("/api/notifications")
 @RequiredArgsConstructor

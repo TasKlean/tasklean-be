@@ -2,6 +2,7 @@ package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.auditlog.dto.AuditLogResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -11,6 +12,7 @@ import java.util.List;
 /**
  * Read-only REST endpoints for the audit trail — query by group, entity, or member.
  */
+@Tag(name = "Audit logs", description = "Append-only record of who changed what within a household.")
 @RestController
 @RequestMapping("/api/audit-logs")
 @RequiredArgsConstructor

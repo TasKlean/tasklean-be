@@ -6,6 +6,7 @@ import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.JoinGroupRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,7 @@ import java.util.List;
  * REST endpoints for groups (households) — create, fetch, list the caller's own, list all
  * (admin), join by invite code, update, and delete.
  */
+@Tag(name = "Groups", description = "Households: create one, discover your own, join by invite code, rotate the code, update and delete.")
 @RestController
 @RequestMapping("/api/groups")
 @RequiredArgsConstructor

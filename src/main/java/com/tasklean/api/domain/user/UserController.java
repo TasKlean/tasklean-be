@@ -5,6 +5,7 @@ import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
 import com.tasklean.api.domain.user.dto.UserRoleRequest;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ import java.util.List;
  * account deletion, and platform-role management. A user may act on their own account; platform
  * admins/super-admins have wider access.
  */
+@Tag(name = "Users", description = "User profiles: the caller's own via /me, plus platform-admin listing and role management.")
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor

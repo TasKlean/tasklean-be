@@ -3,6 +3,7 @@ package com.tasklean.api.domain.category;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.category.dto.CategoryRequest;
 import com.tasklean.api.domain.category.dto.CategoryResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.util.List;
 /**
  * REST endpoints for task categories — create, fetch, list by group, update, and delete.
  */
+@Tag(name = "Categories", description = "Group-scoped task categories.")
 @RestController
 @RequestMapping("/api/categories")
 @RequiredArgsConstructor
