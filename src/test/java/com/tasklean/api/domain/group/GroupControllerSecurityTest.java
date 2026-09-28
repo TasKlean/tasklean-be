@@ -3,6 +3,7 @@ package com.tasklean.api.domain.group;
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
@@ -27,6 +28,7 @@ import java.util.Optional;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -74,6 +76,32 @@ class GroupControllerSecurityTest {
                         .build()));
     }
 
+    // --- joinGroup: any authenticated caller; holding a valid code is the authorization ---
+
+    @Test
+    void joinGroup_plainUserNotYetInGroup_ok() throws Exception {
+        when(groupService.joinByInviteCode("JOIN1234", USER_ID))
+                .thenReturn(MyGroupResponse.builder().uid(GROUP_UID).build());
+
+        mockMvc.perform(post("/api/groups/join")
+                        .with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"inviteCode\":\"JOIN1234\"}"))
+                .andExpect(status().isOk());
+    }
+
+    // --- getMyGroups: any authenticated caller, scoped to the token ---
+
+    @Test
+    void getMyGroups_plainUser_ok() throws Exception {
+        when(groupService.getMyGroups(USER_ID)).thenReturn(List.of());
+
+        // Also guards route precedence: if the literal /mine lost to /{uid}, a non-member USER
+        // would be denied by @groupSecurity.isMember("mine") instead of getting their groups.
+        mockMvc.perform(get("/api/groups/mine").with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
     // --- getGroup: member or platform ADMIN ---
 
     @Test
@@ -86,7 +114,8 @@ class GroupControllerSecurityTest {
     @Test
     void getGroup_member_ok() throws Exception {
         callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
-        when(groupService.getGroupByUid(GROUP_UID)).thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
+        when(groupService.getGroupByUid(GROUP_UID, USER_ID))
+                .thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
 
         mockMvc.perform(get("/api/groups/{uid}", GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isOk());
@@ -94,10 +123,38 @@ class GroupControllerSecurityTest {
 
     @Test
     void getGroup_platformAdmin_ok() throws Exception {
-        when(groupService.getGroupByUid(GROUP_UID)).thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
+        when(groupService.getGroupByUid(GROUP_UID, USER_ID))
+                .thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
 
         mockMvc.perform(get("/api/groups/{uid}", GROUP_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());
+    }
+
+    // --- rotateInviteCode: group admin or platform SUPER_ADMIN ---
+
+    @Test
+    void rotateInviteCode_plainMember_forbidden() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+
+        mockMvc.perform(post("/api/groups/{uid}/invite-code", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rotateInviteCode_groupAdmin_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
+        when(groupService.rotateInviteCode(GROUP_UID))
+                .thenReturn(GroupResponse.builder().uid(GROUP_UID).inviteCode("NEW00001").build());
+
+        mockMvc.perform(post("/api/groups/{uid}/invite-code", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void rotateInviteCode_platformAdmin_forbidden() throws Exception {
+        // ADMIN is read-only across the platform; only SUPER_ADMIN overrides group roles.
+        mockMvc.perform(post("/api/groups/{uid}/invite-code", GROUP_UID).with(as(UserRole.ADMIN)))
+                .andExpect(status().isForbidden());
     }
 
     // --- updateGroup: group admin or platform SUPER_ADMIN ---

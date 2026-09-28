@@ -125,6 +125,36 @@ class RateLimitFilterTest {
         assertThat(response.getStatus()).isEqualTo(429);
     }
 
+    // --- invite-code redemption (tighter tier on top of the api tiers) ---
+
+    @Test
+    void joinEndpoint_overJoinLimit_returns429() throws Exception {
+        authenticate(1L);
+        props.setApiPerUser(tier(100));
+        props.setApiPerIp(tier(100));
+        props.setJoin(tier(1));
+
+        run("/api/groups/join");
+        MockHttpServletResponse response = run("/api/groups/join");
+
+        // The api tiers still had room — the join tier is what stopped the guessing.
+        assertThat(response.getStatus()).isEqualTo(429);
+        verify(chain, times(1)).doFilter(any(), any());
+    }
+
+    @Test
+    void joinLimit_doesNotApplyToOtherEndpoints() throws Exception {
+        authenticate(1L);
+        props.setApiPerUser(tier(100));
+        props.setApiPerIp(tier(100));
+        props.setJoin(tier(1));
+
+        run("/api/groups/join");                                  // exhausts the join tier
+        MockHttpServletResponse response = run("/api/groups/mine");
+
+        assertThat(response.getStatus()).isEqualTo(200);
+    }
+
     // --- shouldNotFilter ---
 
     @Test

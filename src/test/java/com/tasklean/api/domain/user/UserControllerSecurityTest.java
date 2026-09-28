@@ -78,6 +78,19 @@ class UserControllerSecurityTest {
                 .andExpect(status().isOk());
     }
 
+    // --- get own profile: any authenticated caller, identity taken from the token ---
+
+    @Test
+    void getCurrentUser_plainUser_returnsOwnProfile() throws Exception {
+        when(userService.getUserByUid("usr-1")).thenReturn(UserResponse.builder().uid("usr-1").build());
+
+        // Also guards route precedence: if the literal /me lost to /{uid}, a plain USER would be
+        // denied (isSelf("me") is false) instead of getting their own profile.
+        mockMvc.perform(get("/api/users/me").with(as(UserRole.USER, "usr-1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.uid").value("usr-1"));
+    }
+
     // --- get one user: ADMIN or self ---
 
     @Test

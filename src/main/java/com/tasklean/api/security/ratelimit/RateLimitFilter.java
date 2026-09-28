@@ -81,9 +81,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
     private List<LimitCheck> checksFor(String path, String ip, Long userId) {
         if (userId != null) {
             // Authenticated: must pass both the per-user quota and a per-IP backstop.
-            return List.of(
-                    new LimitCheck("apiUser", "apiUser:" + userId, properties.getApiPerUser()),
-                    new LimitCheck("apiIp", "apiIp:" + ip, properties.getApiPerIp()));
+            LimitCheck perUser = new LimitCheck("apiUser", "apiUser:" + userId, properties.getApiPerUser());
+            LimitCheck perIp = new LimitCheck("apiIp", "apiIp:" + ip, properties.getApiPerIp());
+
+            // Other special authenticated checks
+            if (path.equals("/api/groups/join")) {
+                // Redeeming an invite code is guessable, so it adds a tighter quota on top.
+                return List.of(perUser, perIp, new LimitCheck("join", "join:" + userId, properties.getJoin()));
+            }
+
+            return List.of(perUser, perIp);
         }
         if (path.equals("/api/auth/register")) {
             return List.of(new LimitCheck("register", "register:" + ip, properties.getRegister()));

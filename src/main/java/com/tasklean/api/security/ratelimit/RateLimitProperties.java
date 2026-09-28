@@ -38,6 +38,12 @@ public class RateLimitProperties {
     /** Authenticated API calls — also keyed by IP (backstop; must pass alongside the per-user tier). */
     private Tier apiPerIp = new Tier(300, Duration.ofMinutes(1));
 
+    /**
+     * Redeeming a group invite code — keyed by user id, on top of the api tiers. Invite codes are
+     * only 8 characters, so this keeps guessing one impractical.
+     */
+    private Tier join = new Tier(10, Duration.ofHours(1));
+
     @Getter
     @Setter
     @NoArgsConstructor
