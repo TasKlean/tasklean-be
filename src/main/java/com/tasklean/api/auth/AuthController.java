@@ -10,6 +10,7 @@ import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@SecurityRequirements
 public class AuthController {
 
     private final AuthService authService;
