@@ -24,6 +24,12 @@ docker-compose down -v                 # Wipe database completely (fresh start)
 # === Build & package ===
 ./mvnw clean package                 # Build JAR
 
+# === API contract (dev profile) ===
+# Live spec:   http://localhost:8080/v3/api-docs      (always reflects the running code)
+# Swagger UI:  http://localhost:8080/swagger-ui.html  (paste a token once, then click through requests)
+# docs/openapi.json is rewritten by OpenApiSpecExporter on every dev startup when the spec changed
+# — no command to run. Commit it when it changes; never hand-edit it.
+
 # === Database inspection ===
 docker exec -it tasklean-db psql -U dev -d tasklean_dev    # Open psql shell
 docker exec tasklean-db psql -U dev -d tasklean_dev -c "\dt"  # List tables
@@ -70,6 +76,7 @@ Package root: `com.tasklean.api`
   - **Method-level** — public and protected methods get a Javadoc comment (`/** ... */`): a sentence describing what the method does, followed by `@param` for **every** parameter, `@return` for **any** non-`void` return, and `@throws` for each exception a caller should anticipate (e.g. `ResourceNotFoundException`). A no-argument `void` method needs only the description. Private helpers don't need Javadoc; comment them inline only when non-obvious.
   - **Applies to all logic-bearing classes** — services, controllers, filters, config, and other components. Trivial data carriers (entities, request/response DTOs) are exempt from the file header and method Javadoc.
   - **Inline** — use `//` on its own line *above* the code (not trailing) to explain the *why* behind complex, non-obvious, or unconventional logic. Explain intent and decisions; never restate what the code plainly does (`// increment i` is noise).
+- **API contract**: `docs/openapi.json` is the generated contract the frontend generates its types from. It is produced by springdoc from the controllers, DTOs and Bean Validation annotations — **never hand-edited**. `OpenApiSpecExporter` (dev profile only) rewrites it on startup when it differs, so changing an endpoint and restarting is all that's needed; commit the result alongside the code change so the diff shows what the API did. Operation and schema descriptions come from **existing Javadoc** via therapi, so there are no `@Operation` annotations to keep in sync — improving a method's Javadoc improves the spec. **Every new controller must carry a `@Tag`** (name + one-line description) — without it springdoc derives an ugly `foo-controller` tag and Swagger UI ends up half hand-named, half machine-named. Nothing fails, which is exactly why it has to be a rule. A new **public** endpoint additionally needs an empty `@SecurityRequirements` to opt out of the global bearer requirement, alongside its `SecurityConfig` whitelist entry. Two things the spec deliberately does not express: role requirements (springdoc does not read `@PreAuthorize`, so it states only that a token is needed) and per-operation `404`/`409` (too operation-specific to attach by rule — see `OpenApiConfig`). Behavioural rules live in [PROJECT_BIBLE.md](PROJECT_BIBLE.md); the spec is authoritative on shapes only.
 - **Commit message prefixes**: used for auto-versioning on production releases. `fix:` → patch bump, `feat:` → minor bump, `BREAKING CHANGE:` → major bump. No prefix defaults to patch.
 
 ## Testing

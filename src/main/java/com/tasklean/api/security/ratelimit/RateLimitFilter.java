@@ -75,7 +75,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return true;
         }
         String path = request.getRequestURI();
-        return path.startsWith("/actuator/") || path.equals("/error");
+        // API docs are developer traffic
+        return path.startsWith("/actuator/")
+                || path.equals("/error")
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/swagger-ui");
     }
 
     private List<LimitCheck> checksFor(String path, String ip, Long userId) {

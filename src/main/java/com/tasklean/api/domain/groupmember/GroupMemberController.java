@@ -3,6 +3,7 @@ package com.tasklean.api.domain.groupmember;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberRequest;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -15,6 +16,7 @@ import java.util.List;
 /**
  * REST endpoints for group membership — add member, fetch, list by group, change role, and remove.
  */
+@Tag(name = "Group members", description = "Membership of a household: add, list, change role, remove, or leave.")
 @RestController
 @RequestMapping("/api/group-members")
 @RequiredArgsConstructor

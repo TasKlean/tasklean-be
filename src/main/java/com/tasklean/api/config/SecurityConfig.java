@@ -65,6 +65,10 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         // Public health check for uptime monitors / Render (no internal details exposed)
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        // API docs. Inert in prod, where springdoc is disabled by properties and these
+                        // paths simply 404.
+                        .requestMatchers("/v3/api-docs", "/v3/api-docs/**",
+                                "/swagger-ui.html", "/swagger-ui/**").permitAll()
                         // Spring forwards to /error on controller exceptions; without this, the forward gets a 401
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()

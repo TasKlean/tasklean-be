@@ -14,6 +14,9 @@ import java.util.List;
 /**
  * REST endpoints for tags — create, fetch, list by group, update, and delete.
  */
+// Fully qualified: this package also declares a Tag entity, and an import of
+// Swagger's Tag would silently shadow it for readers of this file.
+@io.swagger.v3.oas.annotations.tags.Tag(name = "Tags", description = "Group-scoped task tags.")
 @RestController
 @RequestMapping("/api/tags")
 @RequiredArgsConstructor

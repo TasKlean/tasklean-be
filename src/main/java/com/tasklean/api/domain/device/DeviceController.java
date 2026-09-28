@@ -3,6 +3,7 @@ package com.tasklean.api.domain.device;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.device.dto.DeviceRequest;
 import com.tasklean.api.domain.device.dto.DeviceResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.util.List;
 /**
  * REST endpoints for user devices — register, fetch, list by user, update, and deactivate.
  */
+@Tag(name = "Devices", description = "Devices registered for push notifications.")
 @RestController
 @RequestMapping("/api/devices")
 @RequiredArgsConstructor

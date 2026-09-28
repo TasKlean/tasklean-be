@@ -1,0 +1,3837 @@
+{
+  "openapi" : "3.1.0",
+  "info" : {
+    "description" : "Household task management API.\n\nConventions callers need:\n- Every response is the envelope `{ success, message, data }`.\n- `user`, `group` and `task` are addressed by opaque `uid`; every other resource by numeric `id`.\n- Timestamps are UTC with no zone suffix — parse as UTC, convert for display.\n- Actors are derived from the token; never send a user or member id to identify the caller.\n- Errors: 400 validation, 401 unauthenticated, 403 forbidden, 404 not found, 409 duplicate or violated business rule, 429 rate limited (see `Retry-After`).\n- Role requirements are stated per operation and are not modelled in this spec.\n",
+    "title" : "TasKlean API",
+    "version" : "0.0.1-SNAPSHOT"
+  },
+  "servers" : [ {
+    "url" : "/",
+    "description" : "Relative to the host serving this API"
+  } ],
+  "security" : [ {
+    "bearerAuth" : [ ]
+  } ],
+  "tags" : [ {
+    "description" : "Registration, login, email verification, Google sign-in, token refresh and logout. Public - these endpoints need no token.",
+    "name" : "Auth"
+  }, {
+    "description" : "Households: create one, discover your own, join by invite code, rotate the code, update and delete.",
+    "name" : "Groups"
+  }, {
+    "description" : "Group-scoped task tags.",
+    "name" : "Tags"
+  }, {
+    "description" : "Immutable records of a task being completed, with optional photo proof.",
+    "name" : "Task completions"
+  }, {
+    "description" : "Membership of a household: add, list, change role, remove, or leave.",
+    "name" : "Group members"
+  }, {
+    "description" : "In-app notifications for the signed-in user.",
+    "name" : "Notifications"
+  }, {
+    "description" : "Devices registered for push notifications.",
+    "name" : "Devices"
+  }, {
+    "description" : "Group-scoped task categories.",
+    "name" : "Categories"
+  }, {
+    "description" : "Chores within a household.",
+    "name" : "Tasks"
+  }, {
+    "description" : "User profiles: the caller's own via /me, plus platform-admin listing and role management.",
+    "name" : "Users"
+  }, {
+    "description" : "Append-only record of who changed what within a household.",
+    "name" : "Audit logs"
+  } ],
+  "paths" : {
+    "/api/audit-logs" : {
+      "get" : {
+        "description" : "Lists a group's audit-log entries, newest first.",
+        "operationId" : "getLogsByGroup",
+        "parameters" : [ {
+          "description" : "the group id",
+          "in" : "query",
+          "name" : "groupId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListAuditLogResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the entries"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a group's audit-log entries, newest first.",
+        "tags" : [ "Audit logs" ]
+      }
+    },
+    "/api/audit-logs/entity" : {
+      "get" : {
+        "description" : "Lists audit-log entries for a specific entity, newest first.",
+        "operationId" : "getLogsByEntity",
+        "parameters" : [ {
+          "description" : "the entity type (e.g. \"task\", \"group\")",
+          "in" : "query",
+          "name" : "entityType",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "the entity id",
+          "in" : "query",
+          "name" : "entityId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListAuditLogResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the entries"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists audit-log entries for a specific entity, newest first.",
+        "tags" : [ "Audit logs" ]
+      }
+    },
+    "/api/audit-logs/member/{groupMemberId}" : {
+      "get" : {
+        "description" : "Lists audit-log entries recorded for a specific group member, newest first.",
+        "operationId" : "getLogsByMember",
+        "parameters" : [ {
+          "description" : "the group member id",
+          "in" : "path",
+          "name" : "groupMemberId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListAuditLogResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the entries"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists audit-log entries recorded for a specific group member, newest first.",
+        "tags" : [ "Audit logs" ]
+      }
+    },
+    "/api/auth/google" : {
+      "post" : {
+        "description" : "Authenticates with a Google ID token, provisioning or linking the account as needed.",
+        "operationId" : "google",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GoogleAuthRequest"
+              }
+            }
+          },
+          "description" : "the request carrying the Google ID token",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the auth response (access + refresh tokens)"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Authenticates with a Google ID token, provisioning or linking the account as needed.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/login" : {
+      "post" : {
+        "description" : "Authenticates with email and password.",
+        "operationId" : "login",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "description" : "the login credentials",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the auth response (access + refresh tokens)"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Authenticates with email and password.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/logout" : {
+      "post" : {
+        "description" : "Revokes all refresh tokens for the user (logout).",
+        "operationId" : "logout",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "description" : "the refresh token identifying the user",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Revokes all refresh tokens for the user (logout).",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/refresh" : {
+      "post" : {
+        "description" : "Issues a new access + refresh token pair using a valid refresh token (rotation).",
+        "operationId" : "refresh",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "description" : "the current refresh token",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the refreshed auth response"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Issues a new access + refresh token pair using a valid refresh token (rotation).",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/register" : {
+      "post" : {
+        "description" : "Registers a new user and sends a verification code. No JWT is issued until verified.",
+        "operationId" : "register",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "description" : "the registration details (email, password, name)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the pending-verification auth response"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Registers a new user and sends a verification code.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/resend-verification" : {
+      "post" : {
+        "description" : "Resends a fresh verification code to an unverified user.",
+        "operationId" : "resendVerification",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ResendVerificationRequest"
+              }
+            }
+          },
+          "description" : "the email to resend the code to",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a neutral message (does not reveal whether the email exists)"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Resends a fresh verification code to an unverified user.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/verify-email" : {
+      "post" : {
+        "description" : "Validates an email verification code and completes verification.",
+        "operationId" : "verifyEmail",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "description" : "the email and verification code",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the auth response on success"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Validates an email verification code and completes verification.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/categories" : {
+      "get" : {
+        "description" : "Lists a group's active categories.",
+        "operationId" : "getCategoriesByGroup",
+        "parameters" : [ {
+          "description" : "the group id",
+          "in" : "query",
+          "name" : "groupId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListCategoryResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the categories"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a group's active categories.",
+        "tags" : [ "Categories" ]
+      },
+      "post" : {
+        "description" : "Creates a category.",
+        "operationId" : "createCategory",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CategoryRequest"
+              }
+            }
+          },
+          "description" : "the category details (name, color, icon, group)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseCategoryResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the created category"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Creates a category.",
+        "tags" : [ "Categories" ]
+      }
+    },
+    "/api/categories/{id}" : {
+      "delete" : {
+        "description" : "Soft-deletes a category.",
+        "operationId" : "deleteCategory",
+        "parameters" : [ {
+          "description" : "the category id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Soft-deletes a category.",
+        "tags" : [ "Categories" ]
+      },
+      "get" : {
+        "description" : "Fetches a category by id.",
+        "operationId" : "getCategory",
+        "parameters" : [ {
+          "description" : "the category id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseCategoryResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the category"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches a category by id.",
+        "tags" : [ "Categories" ]
+      },
+      "put" : {
+        "description" : "Updates a category.",
+        "operationId" : "updateCategory",
+        "parameters" : [ {
+          "description" : "the category id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CategoryRequest"
+              }
+            }
+          },
+          "description" : "the new category details",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseCategoryResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated category"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Updates a category.",
+        "tags" : [ "Categories" ]
+      }
+    },
+    "/api/devices" : {
+      "get" : {
+        "description" : "Lists a user's active devices.",
+        "operationId" : "getDevicesByUser",
+        "parameters" : [ {
+          "description" : "the user id",
+          "in" : "query",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListDeviceResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the devices"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a user's active devices.",
+        "tags" : [ "Devices" ]
+      },
+      "post" : {
+        "description" : "Registers a device for push notifications.",
+        "operationId" : "registerDevice",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DeviceRequest"
+              }
+            }
+          },
+          "description" : "the device details (token, type, user)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseDeviceResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the registered device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Registers a device for push notifications.",
+        "tags" : [ "Devices" ]
+      }
+    },
+    "/api/devices/{id}" : {
+      "delete" : {
+        "description" : "Soft-deletes (deactivates) a device.",
+        "operationId" : "deactivateDevice",
+        "parameters" : [ {
+          "description" : "the device id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Soft-deletes (deactivates) a device.",
+        "tags" : [ "Devices" ]
+      },
+      "get" : {
+        "description" : "Fetches a device by id.",
+        "operationId" : "getDevice",
+        "parameters" : [ {
+          "description" : "the device id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseDeviceResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches a device by id.",
+        "tags" : [ "Devices" ]
+      },
+      "put" : {
+        "description" : "Updates a device's descriptive fields.",
+        "operationId" : "updateDevice",
+        "parameters" : [ {
+          "description" : "the device id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DeviceRequest"
+              }
+            }
+          },
+          "description" : "the new device details",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseDeviceResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Updates a device's descriptive fields.",
+        "tags" : [ "Devices" ]
+      }
+    },
+    "/api/group-members" : {
+      "get" : {
+        "description" : "Lists a group's active members.",
+        "operationId" : "getMembersByGroup",
+        "parameters" : [ {
+          "description" : "the group id",
+          "in" : "query",
+          "name" : "groupId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListGroupMemberResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the members"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a group's active members.",
+        "tags" : [ "Group members" ]
+      },
+      "post" : {
+        "description" : "Adds a user to a group.",
+        "operationId" : "addMember",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GroupMemberRequest"
+              }
+            }
+          },
+          "description" : "the membership details (user, group, role)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseGroupMemberResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the created membership"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Adds a user to a group.",
+        "tags" : [ "Group members" ]
+      }
+    },
+    "/api/group-members/{id}" : {
+      "delete" : {
+        "description" : "Soft-removes a member from a group.",
+        "operationId" : "removeMember",
+        "parameters" : [ {
+          "description" : "the membership id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Soft-removes a member from a group.",
+        "tags" : [ "Group members" ]
+      },
+      "get" : {
+        "description" : "Fetches a membership by id.",
+        "operationId" : "getMember",
+        "parameters" : [ {
+          "description" : "the membership id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseGroupMemberResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the membership"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches a membership by id.",
+        "tags" : [ "Group members" ]
+      }
+    },
+    "/api/group-members/{id}/role" : {
+      "patch" : {
+        "description" : "Changes a member's role.",
+        "operationId" : "updateRole",
+        "parameters" : [ {
+          "description" : "the membership id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "description" : "the new role",
+          "in" : "query",
+          "name" : "role",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseGroupMemberResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated membership"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Changes a member's role.",
+        "tags" : [ "Group members" ]
+      }
+    },
+    "/api/groups" : {
+      "get" : {
+        "description" : "Lists all groups.",
+        "operationId" : "getAllGroups",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListGroupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the groups"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists all groups.",
+        "tags" : [ "Groups" ]
+      },
+      "post" : {
+        "description" : "Creates a group. Any authenticated user; the creator becomes the group's first admin.",
+        "operationId" : "createGroup",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GroupRequest"
+              }
+            }
+          },
+          "description" : "the group details (name, description, photo)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseGroupResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the created group"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Creates a group.",
+        "tags" : [ "Groups" ]
+      }
+    },
+    "/api/groups/join" : {
+      "post" : {
+        "description" : "Joins the caller to a group by redeeming its invite code. Any authenticated user — holding a\n valid code is the authorization.",
+        "operationId" : "joinGroup",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/JoinGroupRequest"
+              }
+            }
+          },
+          "description" : "the invite code being redeemed",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseMyGroupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the joined group and the caller's role in it"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Joins the caller to a group by redeeming its invite code.",
+        "tags" : [ "Groups" ]
+      }
+    },
+    "/api/groups/mine" : {
+      "get" : {
+        "description" : "Lists the groups the caller is an active member of, each with the caller's own role in it.",
+        "operationId" : "getMyGroups",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListMyGroupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the caller's groups"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists the groups the caller is an active member of, each with the caller's own role in it.",
+        "tags" : [ "Groups" ]
+      }
+    },
+    "/api/groups/{uid}" : {
+      "delete" : {
+        "description" : "Soft-deletes a group.",
+        "operationId" : "deleteGroup",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Soft-deletes a group.",
+        "tags" : [ "Groups" ]
+      },
+      "get" : {
+        "description" : "Fetches a group by public UID.",
+        "operationId" : "getGroup",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseGroupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the group"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches a group by public UID.",
+        "tags" : [ "Groups" ]
+      },
+      "put" : {
+        "description" : "Updates a group.",
+        "operationId" : "updateGroup",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GroupRequest"
+              }
+            }
+          },
+          "description" : "the new group details",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseGroupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated group"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Updates a group.",
+        "tags" : [ "Groups" ]
+      }
+    },
+    "/api/groups/{uid}/invite-code" : {
+      "post" : {
+        "description" : "Issues a new invite code for a group, invalidating the previous one. Not idempotent — each\n call produces a different code.",
+        "operationId" : "rotateInviteCode",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseGroupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the group and its new invite code"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Issues a new invite code for a group, invalidating the previous one.",
+        "tags" : [ "Groups" ]
+      }
+    },
+    "/api/notifications" : {
+      "get" : {
+        "description" : "Lists a user's notifications, newest first.",
+        "operationId" : "getNotificationsByUser",
+        "parameters" : [ {
+          "description" : "the user id",
+          "in" : "query",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListNotificationResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the notifications"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a user's notifications, newest first.",
+        "tags" : [ "Notifications" ]
+      }
+    },
+    "/api/notifications/unread" : {
+      "get" : {
+        "description" : "Lists a user's unread notifications, newest first.",
+        "operationId" : "getUnreadNotifications",
+        "parameters" : [ {
+          "description" : "the user id",
+          "in" : "query",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListNotificationResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the unread notifications"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a user's unread notifications, newest first.",
+        "tags" : [ "Notifications" ]
+      }
+    },
+    "/api/notifications/unread/count" : {
+      "get" : {
+        "description" : "Returns a user's unread notification count.",
+        "operationId" : "getUnreadCount",
+        "parameters" : [ {
+          "description" : "the user id",
+          "in" : "query",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseLong"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the count"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns a user's unread notification count.",
+        "tags" : [ "Notifications" ]
+      }
+    },
+    "/api/notifications/{id}/read" : {
+      "patch" : {
+        "description" : "Marks a notification as read.",
+        "operationId" : "markAsRead",
+        "parameters" : [ {
+          "description" : "the notification id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseNotificationResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated notification"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Marks a notification as read.",
+        "tags" : [ "Notifications" ]
+      }
+    },
+    "/api/tags" : {
+      "get" : {
+        "description" : "Lists a group's active tags.",
+        "operationId" : "getTagsByGroup",
+        "parameters" : [ {
+          "description" : "the group id",
+          "in" : "query",
+          "name" : "groupId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListTagResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the tags"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a group's active tags.",
+        "tags" : [ "Tags" ]
+      },
+      "post" : {
+        "description" : "Creates a tag.",
+        "operationId" : "createTag",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TagRequest"
+              }
+            }
+          },
+          "description" : "the tag details (name, color, group)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTagResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the created tag"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Creates a tag.",
+        "tags" : [ "Tags" ]
+      }
+    },
+    "/api/tags/{id}" : {
+      "delete" : {
+        "description" : "Soft-deletes a tag.",
+        "operationId" : "deleteTag",
+        "parameters" : [ {
+          "description" : "the tag id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Soft-deletes a tag.",
+        "tags" : [ "Tags" ]
+      },
+      "get" : {
+        "description" : "Fetches a tag by id.",
+        "operationId" : "getTag",
+        "parameters" : [ {
+          "description" : "the tag id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTagResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the tag"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches a tag by id.",
+        "tags" : [ "Tags" ]
+      },
+      "put" : {
+        "description" : "Updates a tag.",
+        "operationId" : "updateTag",
+        "parameters" : [ {
+          "description" : "the tag id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TagRequest"
+              }
+            }
+          },
+          "description" : "the new tag details",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTagResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated tag"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Updates a tag.",
+        "tags" : [ "Tags" ]
+      }
+    },
+    "/api/task-completions" : {
+      "get" : {
+        "description" : "Lists a task's completion history, newest first.",
+        "operationId" : "getCompletionsByTask",
+        "parameters" : [ {
+          "description" : "the task id",
+          "in" : "query",
+          "name" : "taskId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListTaskCompletionResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the completions"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a task's completion history, newest first.",
+        "tags" : [ "Task completions" ]
+      },
+      "post" : {
+        "description" : "Records a task completion.",
+        "operationId" : "createCompletion",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TaskCompletionRequest"
+              }
+            }
+          },
+          "description" : "the completion details (task, member, optional photo/note)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskCompletionResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the recorded completion"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Records a task completion.",
+        "tags" : [ "Task completions" ]
+      }
+    },
+    "/api/task-completions/member/{groupMemberId}" : {
+      "get" : {
+        "description" : "Lists the completions recorded by a group member, newest first.",
+        "operationId" : "getCompletionsByMember",
+        "parameters" : [ {
+          "description" : "the group member id",
+          "in" : "path",
+          "name" : "groupMemberId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListTaskCompletionResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the completions"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists the completions recorded by a group member, newest first.",
+        "tags" : [ "Task completions" ]
+      }
+    },
+    "/api/tasks" : {
+      "get" : {
+        "description" : "Lists a group's active tasks.",
+        "operationId" : "getTasksByGroup",
+        "parameters" : [ {
+          "description" : "the group id",
+          "in" : "query",
+          "name" : "groupId",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListTaskResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the tasks"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a group's active tasks.",
+        "tags" : [ "Tasks" ]
+      },
+      "post" : {
+        "description" : "Creates a task.",
+        "operationId" : "createTask",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TaskRequest"
+              }
+            }
+          },
+          "description" : "the task details",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the created task"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Creates a task.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/tasks/{uid}" : {
+      "delete" : {
+        "description" : "Soft-deletes a task.",
+        "operationId" : "deleteTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Soft-deletes a task.",
+        "tags" : [ "Tasks" ]
+      },
+      "get" : {
+        "description" : "Fetches a task by public UID.",
+        "operationId" : "getTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the task"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches a task by public UID.",
+        "tags" : [ "Tasks" ]
+      },
+      "put" : {
+        "description" : "Updates a task.",
+        "operationId" : "updateTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TaskRequest"
+              }
+            }
+          },
+          "description" : "the new task details",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated task"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Updates a task.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/users" : {
+      "get" : {
+        "description" : "Lists all users.",
+        "operationId" : "getAllUsers",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListUserResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the users"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists all users.",
+        "tags" : [ "Users" ]
+      }
+    },
+    "/api/users/me" : {
+      "get" : {
+        "description" : "Fetches the authenticated caller's own profile. Takes no identifier — the user is resolved\n from the JWT principal, so a client never has to track or send its own UID.",
+        "operationId" : "getCurrentUser",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the caller's profile"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches the authenticated caller's own profile.",
+        "tags" : [ "Users" ]
+      }
+    },
+    "/api/users/{uid}" : {
+      "delete" : {
+        "description" : "Soft-deletes a user account.",
+        "operationId" : "deleteUser",
+        "parameters" : [ {
+          "description" : "the user's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Soft-deletes a user account.",
+        "tags" : [ "Users" ]
+      },
+      "get" : {
+        "description" : "Fetches a user by public UID.",
+        "operationId" : "getUser",
+        "parameters" : [ {
+          "description" : "the user's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the user"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches a user by public UID.",
+        "tags" : [ "Users" ]
+      },
+      "put" : {
+        "description" : "Updates a user's profile.",
+        "operationId" : "updateUser",
+        "parameters" : [ {
+          "description" : "the user's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UserRequest"
+              }
+            }
+          },
+          "description" : "the new profile details",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated user"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Updates a user's profile.",
+        "tags" : [ "Users" ]
+      }
+    },
+    "/api/users/{uid}/role" : {
+      "put" : {
+        "description" : "Changes a user's platform role.",
+        "operationId" : "updateUserRole",
+        "parameters" : [ {
+          "description" : "the user's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UserRoleRequest"
+              }
+            }
+          },
+          "description" : "the new platform role",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated user"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Changes a user's platform role.",
+        "tags" : [ "Users" ]
+      }
+    }
+  },
+  "components" : {
+    "responses" : {
+      "BadRequest" : {
+        "content" : {
+          "application/json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description" : "Validation failure, malformed body, or a bad path/query parameter"
+      },
+      "Forbidden" : {
+        "content" : {
+          "application/json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description" : "Authenticated, but lacking the platform or group role this operation requires"
+      },
+      "InternalServerError" : {
+        "content" : {
+          "application/json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description" : "Unexpected server error"
+      },
+      "TooManyRequests" : {
+        "content" : {
+          "application/json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description" : "Rate limit exceeded — see the Retry-After header"
+      },
+      "Unauthorized" : {
+        "content" : {
+          "application/json" : {
+            "schema" : {
+              "$ref" : "#/components/schemas/ErrorResponse"
+            }
+          }
+        },
+        "description" : "No valid access token — or, on the public auth endpoints, rejected credentials"
+      }
+    },
+    "schemas" : {
+      "ApiResponseAuthResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/AuthResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseCategoryResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/CategoryResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseDeviceResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/DeviceResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseGroupMemberResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/GroupMemberResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseGroupResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/GroupResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListAuditLogResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/AuditLogResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListCategoryResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/CategoryResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListDeviceResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/DeviceResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListGroupMemberResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/GroupMemberResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListGroupResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/GroupResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListMyGroupResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/MyGroupResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListNotificationResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/NotificationResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListTagResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/TagResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListTaskCompletionResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/TaskCompletionResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListTaskResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/TaskResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListUserResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/UserResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseLong" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseMyGroupResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/MyGroupResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseNotificationResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/NotificationResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTagResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/TagResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTaskCompletionResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/TaskCompletionResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTaskResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/TaskResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseUserResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : {
+            "$ref" : "#/components/schemas/UserResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseVoid" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "properties" : {
+          "data" : { },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "AuditLogResponse" : {
+        "type" : "object",
+        "properties" : {
+          "action" : {
+            "type" : "string"
+          },
+          "actionMessage" : {
+            "type" : "string"
+          },
+          "actorUserId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "entityId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "entityType" : {
+            "type" : "string"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "groupMemberId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "ipAddress" : {
+            "type" : "string"
+          }
+        }
+      },
+      "AuthResponse" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "refreshToken" : {
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string"
+          },
+          "uid" : {
+            "type" : "string"
+          }
+        }
+      },
+      "CategoryRequest" : {
+        "type" : "object",
+        "properties" : {
+          "color" : {
+            "type" : "string"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "icon" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "groupId", "name" ]
+      },
+      "CategoryResponse" : {
+        "type" : "object",
+        "properties" : {
+          "color" : {
+            "type" : "string"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateUpdated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "icon" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "isActive" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        }
+      },
+      "DeviceRequest" : {
+        "type" : "object",
+        "properties" : {
+          "appVersion" : {
+            "type" : "string"
+          },
+          "browserInfo" : {
+            "type" : "string"
+          },
+          "deviceName" : {
+            "type" : "string"
+          },
+          "deviceToken" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "deviceType" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "osVersion" : {
+            "type" : "string"
+          },
+          "userId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "deviceToken", "deviceType", "userId" ]
+      },
+      "DeviceResponse" : {
+        "type" : "object",
+        "properties" : {
+          "appVersion" : {
+            "type" : "string"
+          },
+          "browserInfo" : {
+            "type" : "string"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateUpdated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "deviceName" : {
+            "type" : "string"
+          },
+          "deviceToken" : {
+            "type" : "string"
+          },
+          "deviceType" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "isActive" : {
+            "type" : "boolean"
+          },
+          "lastUsed" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "osVersion" : {
+            "type" : "string"
+          },
+          "userId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "ErrorResponse" : {
+        "type" : "object",
+        "description" : "The standard envelope, as returned for a failed request.",
+        "properties" : {
+          "data" : {
+            "type" : "object",
+            "description" : "Always null on an error"
+          },
+          "message" : {
+            "type" : "string",
+            "description" : "Human-readable error message"
+          },
+          "success" : {
+            "type" : "boolean",
+            "default" : false
+          }
+        }
+      },
+      "GoogleAuthRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"Sign in with Google\": the Google ID token obtained by the client.",
+        "properties" : {
+          "idToken" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "idToken" ]
+      },
+      "GroupMemberRequest" : {
+        "type" : "object",
+        "properties" : {
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "role" : {
+            "type" : "string",
+            "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
+          },
+          "userId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "groupId", "role", "userId" ]
+      },
+      "GroupMemberResponse" : {
+        "type" : "object",
+        "properties" : {
+          "addedById" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "dateJoined" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateLeft" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "isActive" : {
+            "type" : "boolean"
+          },
+          "removedById" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "role" : {
+            "type" : "string",
+            "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
+          },
+          "userId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "GroupRequest" : {
+        "type" : "object",
+        "properties" : {
+          "description" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "photoUrl" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "name" ]
+      },
+      "GroupResponse" : {
+        "type" : "object",
+        "description" : "A group as returned by the API. The invite code is a shareable join secret, so it is exposed\n only through {@link com.tasklean.api.domain.group.dto.GroupResponse#withInviteCode(Group) #withInviteCode(Group)} — for callers allowed to invite.",
+        "properties" : {
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateUpdated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "inviteCode" : {
+            "type" : "string"
+          },
+          "isActive" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "photoUrl" : {
+            "type" : "string"
+          },
+          "uid" : {
+            "type" : "string"
+          }
+        }
+      },
+      "JoinGroupRequest" : {
+        "type" : "object",
+        "properties" : {
+          "inviteCode" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "inviteCode" ]
+      },
+      "LoginRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "minLength" : 1
+          },
+          "password" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "email", "password" ]
+      },
+      "MyGroupResponse" : {
+        "type" : "object",
+        "description" : "A group as seen by one of its members, carrying that member's own role so a client can decide\n which admin controls to show. The invite code is present only for a group admin.",
+        "properties" : {
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateJoined" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateUpdated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "inviteCode" : {
+            "type" : "string"
+          },
+          "myRole" : {
+            "type" : "string",
+            "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "photoUrl" : {
+            "type" : "string"
+          },
+          "uid" : {
+            "type" : "string"
+          }
+        }
+      },
+      "NotificationResponse" : {
+        "type" : "object",
+        "properties" : {
+          "createdById" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "isRead" : {
+            "type" : "boolean"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "readAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "taskId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "title" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          },
+          "userId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "RefreshRequest" : {
+        "type" : "object",
+        "properties" : {
+          "refreshToken" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "refreshToken" ]
+      },
+      "RegisterRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "minLength" : 1
+          },
+          "lastName" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "middleName" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "password" : {
+            "type" : "string",
+            "maxLength" : 2147483647,
+            "minLength" : 8
+          }
+        },
+        "required" : [ "email", "lastName", "name", "password" ]
+      },
+      "ResendVerificationRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "email" ]
+      },
+      "TagRequest" : {
+        "type" : "object",
+        "properties" : {
+          "color" : {
+            "type" : "string"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "name" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "groupId", "name" ]
+      },
+      "TagResponse" : {
+        "type" : "object",
+        "properties" : {
+          "color" : {
+            "type" : "string"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateUpdated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "isActive" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          }
+        }
+      },
+      "TaskCompletionRequest" : {
+        "type" : "object",
+        "properties" : {
+          "completionNote" : {
+            "type" : "string"
+          },
+          "completionPhotoUrl" : {
+            "type" : "string"
+          },
+          "groupMemberId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "taskId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        },
+        "required" : [ "groupMemberId", "taskId" ]
+      },
+      "TaskCompletionResponse" : {
+        "type" : "object",
+        "properties" : {
+          "completionNote" : {
+            "type" : "string"
+          },
+          "completionPhotoUrl" : {
+            "type" : "string"
+          },
+          "dateCompleted" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "groupMemberId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "taskId" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }
+      },
+      "TaskRequest" : {
+        "type" : "object",
+        "properties" : {
+          "assignedToId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "categoryId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createdById" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "estimatedTimeMinutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "name" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "nextDueDate" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "priority" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "recurrencePattern" : {
+            "type" : "object",
+            "additionalProperties" : { }
+          },
+          "recurrenceType" : {
+            "type" : "string"
+          },
+          "requiresPhotoProof" : {
+            "type" : "boolean"
+          },
+          "status" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "taskPhotoUrl" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "createdById", "groupId", "name", "priority", "status" ]
+      },
+      "TaskResponse" : {
+        "type" : "object",
+        "properties" : {
+          "assignedToId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "categoryId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "createdById" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "dateCompleted" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateUpdated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "description" : {
+            "type" : "string"
+          },
+          "estimatedTimeMinutes" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "groupId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "isActive" : {
+            "type" : "boolean"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "nextDueDate" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "priority" : {
+            "type" : "string"
+          },
+          "recurrencePattern" : {
+            "type" : "object",
+            "additionalProperties" : { }
+          },
+          "recurrenceType" : {
+            "type" : "string"
+          },
+          "requiresPhotoProof" : {
+            "type" : "boolean"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "taskPhotoUrl" : {
+            "type" : "string"
+          },
+          "uid" : {
+            "type" : "string"
+          }
+        }
+      },
+      "UserRequest" : {
+        "type" : "object",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "lastName" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "middleName" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "photoUrl" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "email", "lastName", "name" ]
+      },
+      "UserResponse" : {
+        "type" : "object",
+        "properties" : {
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "dateUpdated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "email" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "isActive" : {
+            "type" : "boolean"
+          },
+          "isEmailVerified" : {
+            "type" : "boolean"
+          },
+          "lastName" : {
+            "type" : "string"
+          },
+          "middleName" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "photoUrl" : {
+            "type" : "string"
+          },
+          "role" : {
+            "type" : "string",
+            "enum" : [ "SUPER_ADMIN", "ADMIN", "USER" ]
+          },
+          "uid" : {
+            "type" : "string"
+          }
+        }
+      },
+      "UserRoleRequest" : {
+        "type" : "object",
+        "properties" : {
+          "role" : {
+            "type" : "string",
+            "enum" : [ "SUPER_ADMIN", "ADMIN", "USER" ]
+          }
+        },
+        "required" : [ "role" ]
+      },
+      "VerifyEmailRequest" : {
+        "type" : "object",
+        "properties" : {
+          "code" : {
+            "type" : "string",
+            "maxLength" : 6,
+            "minLength" : 6
+          },
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "code", "email" ]
+      }
+    },
+    "securitySchemes" : {
+      "bearerAuth" : {
+        "bearerFormat" : "JWT",
+        "description" : "Access token from /api/auth/login, /api/auth/verify-email, /api/auth/google or /api/auth/refresh.",
+        "scheme" : "bearer",
+        "type" : "http"
+      }
+    }
+  }
+}

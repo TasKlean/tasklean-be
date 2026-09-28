@@ -3,6 +3,7 @@ package com.tasklean.api.domain.taskcompletion;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionRequest;
 import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.util.List;
 /**
  * REST endpoints for task completions — record a completion and list completions by task or member.
  */
+@Tag(name = "Task completions", description = "Immutable records of a task being completed, with optional photo proof.")
 @RestController
 @RequestMapping("/api/task-completions")
 @RequiredArgsConstructor

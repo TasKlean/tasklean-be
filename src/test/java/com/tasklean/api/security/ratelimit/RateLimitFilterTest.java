@@ -171,6 +171,15 @@ class RateLimitFilterTest {
     }
 
     @Test
+    void shouldNotFilter_apiDocsAndSwaggerUi_returnsTrue() {
+        // Developer traffic, not API usage: one Swagger UI page load pulls a dozen assets, which
+        // would otherwise drain the per-IP api bucket.
+        assertThat(filter.shouldNotFilter(request("/v3/api-docs"))).isTrue();
+        assertThat(filter.shouldNotFilter(request("/v3/api-docs/swagger-config"))).isTrue();
+        assertThat(filter.shouldNotFilter(request("/swagger-ui/index.html"))).isTrue();
+    }
+
+    @Test
     void shouldNotFilter_normalPath_returnsFalse() {
         assertThat(filter.shouldNotFilter(request("/api/tasks"))).isFalse();
     }

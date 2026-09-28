@@ -3,6 +3,7 @@ package com.tasklean.api.domain.task;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.task.dto.TaskRequest;
 import com.tasklean.api.domain.task.dto.TaskResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.util.List;
 /**
  * REST endpoints for tasks — create, fetch, list by group, update, and delete.
  */
+@Tag(name = "Tasks", description = "Chores within a household.")
 @RestController
 @RequestMapping("/api/tasks")
 @RequiredArgsConstructor
