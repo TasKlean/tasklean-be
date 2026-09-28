@@ -15,11 +15,13 @@ import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
 import io.swagger.v3.oas.models.security.SecurityScheme;
+import io.swagger.v3.oas.models.servers.Server;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -53,6 +55,12 @@ public class OpenApiConfig {
     @Bean
     public OpenAPI taskleanOpenApi() {
         return new OpenAPI()
+                // Pinned to a relative URL. springdoc otherwise fills in the URL of whichever
+                // instance served the spec, which would bake a localhost port into the exported
+                // file and change it whenever the app runs on a different port.
+                .servers(List.of(new Server()
+                        .url("/")
+                        .description("Relative to the host serving this API")))
                 .info(new Info()
                         .title("TasKlean API")
                         .version(version())
