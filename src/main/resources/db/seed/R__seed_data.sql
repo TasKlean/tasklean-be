@@ -9,11 +9,13 @@
 -- Platform roles: Alice = SUPER_ADMIN, Charlie = ADMIN (support), Bob = USER —
 -- so all three platform roles are available for testing RBAC in dev.
 -- ============================================================================
+-- bob@ and charlie@ share the dev password "DevPass1!" (valid BCrypt hashes, for testing
+-- password login). alice@ is Google-only (NULL hash) and signs in via OAuth.
 INSERT INTO "user" (uid, email, password_hash, name, middle_name, last_name, photo_url, google_sub, is_email_verified, role)
 VALUES
     ('5039facc-3ea1-48f9-87ad-825c2531a3e9', 'alice@example.com', NULL, 'Alice', NULL, 'Johnson', NULL, 'google-sub-alice-12345', TRUE, 'SUPER_ADMIN'),
-    ('52ca49f0-40c9-4a16-b089-3c0bbf865d27', 'bob@example.com', '$2a$10$dummyhashfordevonly000000000000000000000000000000', 'Bob', 'James', 'Smith', NULL, NULL, TRUE, 'USER'),
-    ('74e61bd9-3971-43b2-8a28-473548ec7000', 'charlie@example.com', '$2a$10$dummyhashfordevonly111111111111111111111111111111', 'Charlie', NULL, 'Williams', NULL, NULL, TRUE, 'ADMIN')
+    ('52ca49f0-40c9-4a16-b089-3c0bbf865d27', 'bob@example.com', '$2a$10$jTdkeidg0UIXk9VIX6nGxOM808Hcvcn/QPqpyuGfNqrzLAO44l39u', 'Bob', 'James', 'Smith', NULL, NULL, TRUE, 'USER'),
+    ('74e61bd9-3971-43b2-8a28-473548ec7000', 'charlie@example.com', '$2a$10$gNzTekvUjXi9hgeWKK1T1uEtMDigYEbbgwNpIb6OhDqn7nKHam5Pq', 'Charlie', NULL, 'Williams', NULL, NULL, TRUE, 'ADMIN')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================

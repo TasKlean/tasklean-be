@@ -7,6 +7,7 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.exception.DuplicateResourceException;
+import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -262,6 +263,23 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("not verified");
+
+        verifyLoginFailedRecordedFor(1L);
+    }
+
+    @Test
+    void login_unverifiedEmail_throwsEmailNotVerifiedException() {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("bob@example.com");
+        request.setPassword("correctPassword");
+
+        User unverified = buildExistingUser();
+        unverified.setIsEmailVerified(false);
+        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(unverified));
+
+        // The specific subclass is what lets the response carry the EMAIL_NOT_VERIFIED code.
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(EmailNotVerifiedException.class);
 
         verifyLoginFailedRecordedFor(1L);
     }

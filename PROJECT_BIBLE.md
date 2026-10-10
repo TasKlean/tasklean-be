@@ -173,7 +173,7 @@ Next available version: **V18**.
 
 Dev-only seed data lives in `src/main/resources/db/seed/R__seed_data.sql` — a Flyway **repeatable migration** that runs after all versioned migrations. The dev profile adds `classpath:db/seed` to `spring.flyway.locations`; prod only has `classpath:db/migration`, so seed data never touches production.
 
-The seed creates a realistic dataset: 3 users (1 Google-linked, 2 email-based), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, and devices.
+The seed creates a realistic dataset: 3 users (alice@ Google-linked; bob@/charlie@ email+password, dev password `DevPass1!`), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, and devices.
 
 All inserts use `ON CONFLICT DO NOTHING` or `NOT EXISTS` checks for idempotency. To add data, edit `R__seed_data.sql` — Flyway detects the checksum change and re-runs it on next startup.
 
@@ -331,13 +331,13 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 ### Authentication flows
 
-**Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate & send 6-digit verification code (5-min expiry) → return `AuthResponse` with message (no JWT).
+**Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate & send a 6-digit verification code (5-min expiry) → return `AuthResponse` with message (no JWT). The email carries a prefilled link `${APP_BASE_URL}/verify-email?email=&code=` (the link only lands on the FE page — nothing verifies on GET, so a mail scanner's prefetch can't spend the single-use code) plus the raw code as a fallback.
 
 **Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
 
 **Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
 
-**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified) → verify password against hash (401 if mismatch) → generate access JWT + refresh token → return `AuthResponse`.
+**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified — `EmailNotVerifiedException`, whose 401 carries `code: "EMAIL_NOT_VERIFIED"` in the envelope so clients branch on the code, not the message) → verify password against hash (401 if mismatch) → generate access JWT + refresh token → return `AuthResponse`.
 
 **Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → check `is_active` (revoke **all** user tokens + 401 if deactivated) → revoke old token → generate new access JWT (carrying the user's current role) + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401. This is the point where a deactivation or role change made mid-session takes effect.
 
@@ -400,6 +400,7 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 | `DB_PASSWORD` | base (all profiles) | Database password |
 | `JWT_SECRET` | base (all profiles) | HMAC signing key (min 256 bits) |
 | `CORS_ALLOWED_ORIGINS` | prod (dev defaults to `http://localhost:3000`) | Comma-separated browser origins allowed to call `/api/**` |
+| `APP_BASE_URL` | prod (dev defaults to `http://localhost:3000`) | Frontend origin for links in emails (e.g. the verify-email link) |
 | `GOOGLE_CLIENT_ID` | base (all profiles) | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | base (all profiles) | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URI` | prod only | OAuth callback URL (dev hardcodes `localhost:3000`) |
@@ -607,7 +608,8 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | Class | Tests | Covers |
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
-| `AuthServiceTest` | 10 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email) |
+| `AuthServiceTest` | 11 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email → `EmailNotVerifiedException`) |
+| `EmailServiceTest` | 1 | Verification email builds the prefilled link (exact param names, URL-encoded email, trailing-slash safe) |
 | `GoogleOAuthServiceTest` | 7 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; deactivated account |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
@@ -627,7 +629,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UserControllerSecurityTest` | 8 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, `/me` for any authenticated caller (also guarding route precedence over `/{uid}`), role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
 | `GroupControllerSecurityTest` | 10 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`); `/mine` and `/join` open to any authenticated caller (also guarding `/mine` route precedence over `/{uid}`); invite-code rotation group-admin only (plain member and platform ADMIN 403) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
-| `GlobalExceptionHandlerTest` | 11 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join) |
+| `GlobalExceptionHandlerTest` | 12 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join); 401 for unverified email carries the `EMAIL_NOT_VERIFIED` code |
 | `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
 | `RateLimitFilterTest` | 10 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/normal) |
 | `PasswordPolicyValidatorTest` | 19 | Length bounds, each missing-class message/grammar, space-as-special, and the guessable variants (common/leet/tail/repeated/sequential); plus the `isValid` message wiring |
@@ -635,7 +637,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **241 tests** across 27 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **244 tests** across 28 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

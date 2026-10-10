@@ -64,6 +64,22 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Maps an unverified-email login to 401, attaching the {@code EMAIL_NOT_VERIFIED} code so the
+     * client can branch on it rather than matching the message. More specific than
+     * {@link #handleBadCredentials} (its superclass), so Spring routes the subclass here.
+     *
+     * @param ex the thrown exception
+     * @return a 401 response with the message and the {@code EMAIL_NOT_VERIFIED} code
+     */
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleEmailNotVerified(EmailNotVerifiedException ex) {
+        // Security-relevant (failed auth) — WARN, consistent with handleBadCredentials.
+        log.warn("Authentication failed: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(ApiResponse.error(ex.getMessage(), EmailNotVerifiedException.CODE));
+    }
+
+    /**
      * Maps a failed authentication to 401.
      *
      * @param ex the thrown exception

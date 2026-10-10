@@ -59,6 +59,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleEmailNotVerified_returns401WithCode() {
+        ResponseEntity<ApiResponse<Void>> response =
+                handler.handleEmailNotVerified(new EmailNotVerifiedException("Email not verified. Check your inbox for a verification code"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::isSuccess, ApiResponse::getMessage, ApiResponse::getCode)
+                .containsExactly(false, "Email not verified. Check your inbox for a verification code", "EMAIL_NOT_VERIFIED");
+    }
+
+    @Test
     void handleBadCredentials_returns401WithMessage() {
         ResponseEntity<ApiResponse<Void>> response =
                 handler.handleBadCredentials(new BadCredentialsException("Invalid email or password"));

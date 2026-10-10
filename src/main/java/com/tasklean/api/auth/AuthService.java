@@ -7,6 +7,7 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.exception.DuplicateResourceException;
+import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -94,7 +95,8 @@ public class AuthService {
 
         if (!Boolean.TRUE.equals(user.getIsEmailVerified())) {
             recordFailedLogin(user, "email not verified");
-            throw new BadCredentialsException("Email not verified. Check your inbox for a verification code");
+            // Specific subclass so the response carries the EMAIL_NOT_VERIFIED code (still a 401).
+            throw new EmailNotVerifiedException("Email not verified. Check your inbox for a verification code");
         }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
