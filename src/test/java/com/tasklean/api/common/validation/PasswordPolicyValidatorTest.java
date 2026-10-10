@@ -46,17 +46,15 @@ class PasswordPolicyValidatorTest {
     }
 
     @Test
-    void validate_missingTwoClasses_joinsWithAnd() {
-        // upper + lower present, missing a number and a special character
-        assertThat(PasswordPolicyValidator.validate("aaaaAAAA"))
-                .isEqualTo("Add a number and a special character.");
+    void validate_missingDigitAndSpecial_reportsFirstMissing() {
+        // upper + lower present; digit is the first missing class
+        assertThat(PasswordPolicyValidator.validate("aaaaAAAA")).isEqualTo("Add a number.");
     }
 
     @Test
-    void validate_missingThreeClasses_joinsWithCommasAndAnd() {
-        // only lowercase present
-        assertThat(PasswordPolicyValidator.validate("aaaaaaaa"))
-                .isEqualTo("Add an uppercase letter, a number and a special character.");
+    void validate_onlyLowercase_reportsFirstMissing() {
+        // uppercase is the first missing class
+        assertThat(PasswordPolicyValidator.validate("aaaaaaaa")).isEqualTo("Add an uppercase letter.");
     }
 
     @Test

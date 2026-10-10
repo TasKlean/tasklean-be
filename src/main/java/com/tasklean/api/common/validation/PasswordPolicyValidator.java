@@ -3,7 +3,6 @@ package com.tasklean.api.common.validation;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -13,13 +12,13 @@ import java.util.regex.Pattern;
 
 /**
  * Enforces the account password policy for {@link ValidPassword}. Ported 1:1 from the frontend's
- * {@code validatePassword} so the API and UI agree exactly: 8-64 characters; at least one each of
+ * {@code passwordRule} so the API and UI agree exactly: 8-64 characters; at least one each of
  * uppercase, lowercase, digit, and a special (any non-alphanumeric) character; and not an obviously
- * guessable password. On failure it reports the same specific message the UI would show, checked in
- * the same order (empty → too short → too long → missing character classes → guessable).
+ * guessable password. On failure it reports only the first failing rule, in the same order the UI
+ * checks (empty → too short → too long → missing uppercase → lowercase → digit → special → guessable).
  *
- * <p><strong>Mirror of</strong> {@code tasklean-fe/src/lib/validation/password.ts} — the two must
- * stay byte-for-byte in agreement (same rules, same messages). Change the policy in <em>both</em>,
+ * <p><strong>Mirror of</strong> {@code tasklean-fe/src/lib/validation/password/policy.ts} + {@code rules.ts} —
+ * the two must stay byte-for-byte in agreement (same rules, same messages). Change the policy in <em>both</em>,
  * then run both suites against the shared cases in {@code src/test/resources/password-policy-vectors.json}
  * (see {@code PasswordPolicyContractTest}), which guard against the two drifting apart.
  */
@@ -79,25 +78,18 @@ public class PasswordPolicyValidator implements ConstraintValidator<ValidPasswor
             return "Use no more than " + MAX_LENGTH + " characters.";
         }
 
-        List<String> missing = new ArrayList<>();
+        // Only the first failing class is reported, in this order, matching the frontend.
         if (!UPPERCASE.matcher(value).find()) {
-            missing.add("an uppercase letter");
+            return "Add an uppercase letter.";
         }
         if (!LOWERCASE.matcher(value).find()) {
-            missing.add("a lowercase letter");
+            return "Add a lowercase letter.";
         }
         if (!DIGIT.matcher(value).find()) {
-            missing.add("a number");
+            return "Add a number.";
         }
         if (!SPECIAL.matcher(value).find()) {
-            missing.add("a special character");
-        }
-        if (missing.size() == 1) {
-            return "Add " + missing.getFirst() + ".";
-        }
-        if (missing.size() > 1) {
-            String head = String.join(", ", missing.subList(0, missing.size() - 1));
-            return "Add " + head + " and " + missing.getLast() + ".";
+            return "Add a special character.";
         }
 
         // Checked last so the rule messages come first: this one is about the whole password.
