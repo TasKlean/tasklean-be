@@ -294,6 +294,18 @@ Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on
 - All other paths: `authenticated()`
 - Password encoding: BCrypt
 
+### Password policy
+
+Registration passwords are enforced by a custom Bean Validation constraint — `@ValidPassword` → `PasswordPolicyValidator` (`common/validation`) — on `RegisterRequest.password`. Rules: **8–64 characters**; at least one each of **uppercase, lowercase, digit, and a special** (any non-alphanumeric, so a space counts); and **not obviously guessable** (a short common-password list, seen through lowercasing, leet-substitution, a stripped trailing digit/symbol tail, all-same-character, and consecutive runs). Enforced **only at register** — login and Google provisioning are untouched (no lockouts, no policy leak on login). Empty/missing password is part of the same constraint (no separate `@NotBlank`), so one constraint owns the whole policy.
+
+**Messages are deliberately descriptive** (per-rule 400s, e.g. "Add a number."), not generic: the policy isn't a secret, a policy miss is a client 400 not a server error, and the mobile client (direct Bearer, no BFF) needs the specific message to tell the user what to fix.
+
+**It is a 1:1 mirror of the frontend** (`tasklean-fe/src/lib/validation/password.ts`) — same rules, messages, and check order. The frontend is the UX layer; the backend is the real boundary (the API can be called directly). The two are kept honest by **shared contract vectors**: `src/test/resources/password-policy-vectors.json` (canonical here, mirrored in the FE) lists `(password → expected message)` cases both suites run (`PasswordPolicyContractTest`), so drift fails on whichever side changed. Change the policy → edit both implementations and the vectors.
+
+**Alternatives considered:** [Passay](https://www.passay.org) (the standard Java password-policy library) and Spring Security 6.3's `CompromisedPasswordChecker` / `HaveIBeenPwnedRestApiPasswordChecker`. Hand-porting won because the requirement was byte-identical parity with the FE's wording — Passay would need a custom message resolver and custom dictionary/sequence rules to match, adding moving parts and divergence risk. `CompromisedPasswordChecker` is the clean built-in for the (still-open) real breached-password check.
+
+**Caveats (both intentional, matching the FE):** BCrypt truncates at 72 bytes, so a 64-character *multibyte* password is effectively capped (still strong — not a hole); and `[A-Z]`/`[a-z]` are ASCII-only, so an all-non-Latin password is nudged to "add a letter."
+
 ### Rate limiting
 
 Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the security chain right after `JwtAuthenticationFilter` so it can key by user id. In-memory (Caffeine) — fine for a single instance; the `BucketRegistry` interface is the seam to swap in Redis if the app ever runs more than one instance.
@@ -319,7 +331,7 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 ### Authentication flows
 
-**Email registration**: validate input (`@Email`, `@Size(min=8)` password, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate & send 6-digit verification code (5-min expiry) → return `AuthResponse` with message (no JWT).
+**Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate & send 6-digit verification code (5-min expiry) → return `AuthResponse` with message (no JWT).
 
 **Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
 
@@ -618,10 +630,12 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `GlobalExceptionHandlerTest` | 11 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join) |
 | `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
 | `RateLimitFilterTest` | 10 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/normal) |
+| `PasswordPolicyValidatorTest` | 19 | Length bounds, each missing-class message/grammar, space-as-special, and the guessable variants (common/leet/tail/repeated/sequential); plus the `isValid` message wiring |
+| `PasswordPolicyContractTest` | 11 | Runs the validator against the shared FE/BE contract vectors (`password-policy-vectors.json`) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **210 tests** across 24 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **241 tests** across 27 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

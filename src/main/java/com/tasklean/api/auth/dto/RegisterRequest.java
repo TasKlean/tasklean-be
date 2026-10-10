@@ -1,8 +1,8 @@
 package com.tasklean.api.auth.dto;
 
+import com.tasklean.api.common.validation.ValidPassword;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import lombok.*;
 
 @Getter
@@ -16,8 +16,9 @@ public class RegisterRequest {
     @Email
     private String email;
 
-    @NotBlank
-    @Size(min = 8, message = "Password must be at least 8 characters")
+    // @ValidPassword also reports an empty/missing password, so no separate @NotBlank here —
+    // one constraint owns the whole policy and keeps the UI and API messages identical.
+    @ValidPassword
     private String password;
 
     @NotBlank
