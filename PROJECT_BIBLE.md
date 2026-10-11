@@ -343,7 +343,7 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 **Logout**: hash incoming refresh token → look up non-revoked match → revoke all refresh tokens for that user. Invalid token returns 401.
 
-**Google sign-in**: the client runs Google Sign-In itself and posts the resulting **ID token** to `POST /api/auth/google` → `GoogleIdTokenVerifier` validates signature (JWKS), issuer, expiry, and audience (`google.client-id`) → require `email_verified` (401 otherwise) → resolve the account: (1) match `google_sub` → log in; (2) match email → **link** Google to the existing password account and mark it verified; (3) no match → **provision** a new already-verified, password-less account → generate access JWT + refresh token → return `AuthResponse`. Deactivated accounts are rejected (401) with a `LOGIN_FAILED` audit entry; success writes `LOGIN` (returning/linked) or `REGISTER` (new). The backend needs only the client id (the token audience); no client secret is used for verification.
+**Google sign-in**: the client runs Google Sign-In itself and posts the resulting **ID token** plus the raw per-login nonce secret `N` to `POST /api/auth/google` → `GoogleIdTokenVerifier` validates signature (JWKS), issuer, expiry, and audience (`google.client-id`) → verify the OIDC **nonce**: the token's `nonce` claim must equal `lowercaseHex(SHA-256(N))`, binding the token to this login (anti-replay, OIDC §3.2.2.1/§16.11); mismatch or missing → 401 generic → require `email_verified` (401 otherwise) → resolve the account: (1) match `google_sub` → log in; (2) match email → **link** Google to the existing password account and mark it verified; (3) no match → **provision** a new already-verified, password-less account → generate access JWT + refresh token → return `AuthResponse`. Deactivated accounts are rejected (401) with a `LOGIN_FAILED` audit entry; success writes `LOGIN` (returning/linked) or `REGISTER` (new). The backend needs only the client id (the token audience); no client secret is used for verification.
 
 **Staging/prod checklist** (the common  traps — all config, not code):
 - `GOOGLE_CLIENT_ID` on the backend **exactly matches** the Client ID the frontend's button uses (a mismatch fails on token audience).
@@ -610,7 +610,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 13 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`) |
 | `EmailServiceTest` | 2 | Verification email builds the prefilled link (exact param names, URL-encoded email, trailing-slash safe); registration-attempt email notifies the owner |
-| `GoogleOAuthServiceTest` | 7 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; deactivated account |
+| `GoogleOAuthServiceTest` | 9 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
 | `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
@@ -637,7 +637,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **247 tests** across 28 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **249 tests** across 28 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

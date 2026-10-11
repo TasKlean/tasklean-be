@@ -3291,14 +3291,18 @@
       },
       "GoogleAuthRequest" : {
         "type" : "object",
-        "description" : "Request body for \"Sign in with Google\": the Google ID token obtained by the client.",
+        "description" : "Request body for \"Sign in with Google\": the Google ID token plus the OIDC nonce secret.",
         "properties" : {
           "idToken" : {
             "type" : "string",
             "minLength" : 1
+          },
+          "nonce" : {
+            "type" : "string",
+            "minLength" : 1
           }
         },
-        "required" : [ "idToken" ]
+        "required" : [ "idToken", "nonce" ]
       },
       "GroupMemberRequest" : {
         "type" : "object",
