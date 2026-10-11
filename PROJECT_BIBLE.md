@@ -443,7 +443,7 @@ Docker Compose only runs Postgres — the app runs on the host. The Compose file
 - **Frontend hosting**: Vercel (for the Next.js app, when built)
 - **Image storage**: AWS S3 or Cloudflare (future — for task photos and completion photos)
 
-The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`). Deployed on Render with `JAVA_TOOL_OPTIONS=-Xmx384m` to fit within the 512MB free-tier container.
+The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`): deps resolve in their own layer (cached until `pom.xml` changes, incl. by CI's gha layer cache), then the fat jar is split into Spring Boot layers (`-Djarmode=tools … extract --layers`) so a code-only change rebuilds just the small application layer. Runs as a non-root user. The entrypoint sets `-XX:MaxRAMPercentage=75.0`; on Render the explicit `JAVA_TOOL_OPTIONS=-Xmx384m` takes precedence (fits the 512MB free tier), so the percentage only applies where no `-Xmx` is set (local/Compose).
 
 **Health check**: Spring Boot Actuator exposes a public `/actuator/health` endpoint (whitelisted in `SecurityConfig`). Only the `health` endpoint is exposed and details are hidden (`show-details=never`), so it returns just `{"status":"UP"}` or `503` with `{"status":"DOWN"}`. The aggregate status includes a DB-connectivity check, so it doubles as a readiness probe — point Render's health check and uptime monitors at it.
 

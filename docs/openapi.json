@@ -2616,8 +2616,11 @@
     "schemas" : {
       "ApiResponseAuthResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/AuthResponse"
           },
@@ -2631,8 +2634,11 @@
       },
       "ApiResponseCategoryResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/CategoryResponse"
           },
@@ -2646,8 +2652,11 @@
       },
       "ApiResponseDeviceResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/DeviceResponse"
           },
@@ -2661,8 +2670,11 @@
       },
       "ApiResponseGroupMemberResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/GroupMemberResponse"
           },
@@ -2676,8 +2688,11 @@
       },
       "ApiResponseGroupResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/GroupResponse"
           },
@@ -2691,8 +2706,11 @@
       },
       "ApiResponseListAuditLogResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2709,8 +2727,11 @@
       },
       "ApiResponseListCategoryResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2727,8 +2748,11 @@
       },
       "ApiResponseListDeviceResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2745,8 +2769,11 @@
       },
       "ApiResponseListGroupMemberResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2763,8 +2790,11 @@
       },
       "ApiResponseListGroupResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2781,8 +2811,11 @@
       },
       "ApiResponseListMyGroupResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2799,8 +2832,11 @@
       },
       "ApiResponseListNotificationResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2817,8 +2853,11 @@
       },
       "ApiResponseListTagResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2835,8 +2874,11 @@
       },
       "ApiResponseListTaskCompletionResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2853,8 +2895,11 @@
       },
       "ApiResponseListTaskResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2871,8 +2916,11 @@
       },
       "ApiResponseListUserResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "array",
             "items" : {
@@ -2889,8 +2937,11 @@
       },
       "ApiResponseLong" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "type" : "integer",
             "format" : "int64"
@@ -2905,8 +2956,11 @@
       },
       "ApiResponseMyGroupResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/MyGroupResponse"
           },
@@ -2920,8 +2974,11 @@
       },
       "ApiResponseNotificationResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/NotificationResponse"
           },
@@ -2935,8 +2992,11 @@
       },
       "ApiResponseTagResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/TagResponse"
           },
@@ -2950,8 +3010,11 @@
       },
       "ApiResponseTaskCompletionResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/TaskCompletionResponse"
           },
@@ -2965,8 +3028,11 @@
       },
       "ApiResponseTaskResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/TaskResponse"
           },
@@ -2980,8 +3046,11 @@
       },
       "ApiResponseUserResponse" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : {
             "$ref" : "#/components/schemas/UserResponse"
           },
@@ -2995,8 +3064,11 @@
       },
       "ApiResponseVoid" : {
         "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, and the payload <code>data</code>. Construct via the static\n factory methods rather than the builder directly.",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "data" : { },
           "message" : {
             "type" : "string"
@@ -3479,12 +3551,10 @@
             "minLength" : 1
           },
           "password" : {
-            "type" : "string",
-            "maxLength" : 2147483647,
-            "minLength" : 8
+            "type" : "string"
           }
         },
-        "required" : [ "email", "lastName", "name", "password" ]
+        "required" : [ "email", "lastName", "name" ]
       },
       "ResendVerificationRequest" : {
         "type" : "object",
