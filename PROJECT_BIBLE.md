@@ -251,7 +251,7 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 
 **Access token (JWT)**:
 - HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `role` (platform role), `iat`, `exp`
-- Expiration: **15 minutes** (configurable via `jwt.expiration` in ms; dev profile overrides to 1 year for easier local testing)
+- Expiration: **15 minutes** (configurable via `jwt.expiration` in ms; dev profile overrides to 1 year for easier local testing, itself overridable via the `JWT_EXPIRATION` env var — e.g. set it low in Compose to exercise refresh/rotation)
 - Secret: min 256 bits, configured per profile via `jwt.secret`
 - Library: jjwt 0.12.6
 
