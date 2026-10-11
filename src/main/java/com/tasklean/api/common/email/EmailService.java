@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -19,9 +20,8 @@ public class EmailService {
 
     public EmailService(JavaMailSender mailSender, @Value("${app.base-url}") String baseUrl) {
         this.mailSender = mailSender;
-        // Strip any trailing slash so the link doesn't end up with a double slash.
-        // Possessive quantifier: no backtracking on a trailing run of slashes.
-        this.baseUrl = baseUrl.replaceAll("/++$", "");
+        // Strip any trailing slashes so the link doesn't end up with a double slash.
+        this.baseUrl = StringUtils.trimTrailingCharacter(baseUrl, '/');
     }
 
     /**
