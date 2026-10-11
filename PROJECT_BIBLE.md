@@ -173,7 +173,7 @@ Next available version: **V18**.
 
 Dev-only seed data lives in `src/main/resources/db/seed/R__seed_data.sql` — a Flyway **repeatable migration** that runs after all versioned migrations. The dev profile adds `classpath:db/seed` to `spring.flyway.locations`; prod only has `classpath:db/migration`, so seed data never touches production.
 
-The seed creates a realistic dataset: 3 users (1 Google-linked, 2 email-based), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, and devices.
+The seed creates a realistic dataset: 3 users (alice@ Google-linked; bob@/charlie@ email+password, dev password `DevPass1!`), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, and devices.
 
 All inserts use `ON CONFLICT DO NOTHING` or `NOT EXISTS` checks for idempotency. To add data, edit `R__seed_data.sql` — Flyway detects the checksum change and re-runs it on next startup.
 
@@ -251,7 +251,7 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 
 **Access token (JWT)**:
 - HMAC-SHA signed JWT with claims: `sub` (email), `userId` (internal PK), `uid` (public identifier), `role` (platform role), `iat`, `exp`
-- Expiration: **15 minutes** (configurable via `jwt.expiration` in ms; dev profile overrides to 1 year for easier local testing)
+- Expiration: **15 minutes** (configurable via `jwt.expiration` in ms; dev profile overrides to 1 year for easier local testing, itself overridable via the `JWT_EXPIRATION` env var — e.g. set it low in Compose to exercise refresh/rotation)
 - Secret: min 256 bits, configured per profile via `jwt.secret`
 - Library: jjwt 0.12.6
 
@@ -294,6 +294,18 @@ Rationale: mobile wants Bearer + secure device storage (cookies are unnatural on
 - All other paths: `authenticated()`
 - Password encoding: BCrypt
 
+### Password policy
+
+Registration passwords are enforced by a custom Bean Validation constraint — `@ValidPassword` → `PasswordPolicyValidator` (`common/validation`) — on `RegisterRequest.password`. Rules: **8–64 characters**; at least one each of **uppercase, lowercase, digit, and a special** (any non-alphanumeric, so a space counts); and **not obviously guessable** (a short common-password list, seen through lowercasing, leet-substitution, a stripped trailing digit/symbol tail, all-same-character, and consecutive runs). Enforced **only at register** — login and Google provisioning are untouched (no lockouts, no policy leak on login). Empty/missing password is part of the same constraint (no separate `@NotBlank`), so one constraint owns the whole policy.
+
+**Messages are deliberately descriptive** (per-rule 400s, e.g. "Add a number."), not generic: the policy isn't a secret, a policy miss is a client 400 not a server error, and the mobile client (direct Bearer, no BFF) needs the specific message to tell the user what to fix.
+
+**It is a 1:1 mirror of the frontend** (`tasklean-fe/src/lib/validation/password/policy.ts` + `rules.ts`) — same rules, messages, and check order, reporting only the first failing rule. The frontend is the UX layer; the backend is the real boundary (the API can be called directly). The two are kept honest by **shared contract vectors**: `src/test/resources/password-policy-vectors.json` (canonical here, mirrored in the FE) lists `(password → expected message)` cases both suites run (`PasswordPolicyContractTest`), so drift fails on whichever side changed. Change the policy → edit both implementations and the vectors.
+
+**Alternatives considered:** [Passay](https://www.passay.org) (the standard Java password-policy library) and Spring Security 6.3's `CompromisedPasswordChecker` / `HaveIBeenPwnedRestApiPasswordChecker`. Hand-porting won because the requirement was byte-identical parity with the FE's wording — Passay would need a custom message resolver and custom dictionary/sequence rules to match, adding moving parts and divergence risk. `CompromisedPasswordChecker` is the clean built-in for the (still-open) real breached-password check.
+
+**Caveats (both intentional, matching the FE):** BCrypt truncates at 72 bytes, so a 64-character *multibyte* password is effectively capped (still strong — not a hole); and `[A-Z]`/`[a-z]` are ASCII-only, so an all-non-Latin password is nudged to "add a letter."
+
 ### Rate limiting
 
 Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the security chain right after `JwtAuthenticationFilter` so it can key by user id. In-memory (Caffeine) — fine for a single instance; the `BucketRegistry` interface is the seam to swap in Redis if the app ever runs more than one instance.
@@ -309,7 +321,7 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 | Endpoint | Status | Response |
 |---|---|---|
-| `POST /api/auth/register` | 201 | User info + "Verification code sent" message (no tokens until verified) |
+| `POST /api/auth/register` | 201 | Neutral message echoing only the email, no tokens/uid/name (identical whether or not the email exists — enumeration-safe) |
 | `POST /api/auth/login` | 200 | Access JWT + refresh token + user info (rejects unverified users) |
 | `POST /api/auth/verify-email` | 200 | Access JWT + refresh token + user info (on valid code) |
 | `POST /api/auth/resend-verification` | 200 | Generic success message (enumeration-safe, always 200) |
@@ -319,19 +331,19 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 ### Authentication flows
 
-**Email registration**: validate input (`@Email`, `@Size(min=8)` password, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate & send 6-digit verification code (5-min expiry) → return `AuthResponse` with message (no JWT).
+**Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → look up the email. **If it already exists**: send the owner an "account already exists" email and return the same neutral response (no create, no 409) — so the caller can't tell the address is taken (enumeration-safe). **If new**: hash password (BCrypt) → create User with random UID → generate & send a 6-digit verification code (5-min expiry). Either way the response is `AuthResponse.registrationPending(email)` — just the email + a neutral message, no JWT/uid/name. The verification email carries a prefilled link `${APP_BASE_URL}/verify-email?email=&code=` (the link only lands on the FE page — nothing verifies on GET, so a mail scanner's prefetch can't spend the single-use code) plus the raw code as a fallback.
 
 **Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
 
 **Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
 
-**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified) → verify password against hash (401 if mismatch) → generate access JWT + refresh token → return `AuthResponse`.
+**Email login**: find user by email (401 generic if not found) → **verify the password first** (401 generic "Invalid email or password" if wrong, or if the account is OAuth-only with no hash) → *only after a correct password* surface account state: `is_active` (401 "deactivated") then `is_email_verified` (401 `EmailNotVerifiedException`, whose envelope carries `code: "EMAIL_NOT_VERIFIED"` so clients branch on the code, not the message) → generate access JWT + refresh token → return `AuthResponse`. Checking the password before revealing any state keeps a wrong guess indistinguishable from an unknown email (anti-enumeration); the verify-prompt still reaches a legitimate user who proved ownership. An account that has **both** a password and a linked `google_sub` can sign in with either method (the old "different sign-in option" block was removed).
 
 **Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → check `is_active` (revoke **all** user tokens + 401 if deactivated) → revoke old token → generate new access JWT (carrying the user's current role) + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401. This is the point where a deactivation or role change made mid-session takes effect.
 
 **Logout**: hash incoming refresh token → look up non-revoked match → revoke all refresh tokens for that user. Invalid token returns 401.
 
-**Google sign-in**: the client runs Google Sign-In itself and posts the resulting **ID token** to `POST /api/auth/google` → `GoogleIdTokenVerifier` validates signature (JWKS), issuer, expiry, and audience (`google.client-id`) → require `email_verified` (401 otherwise) → resolve the account: (1) match `google_sub` → log in; (2) match email → **link** Google to the existing password account and mark it verified; (3) no match → **provision** a new already-verified, password-less account → generate access JWT + refresh token → return `AuthResponse`. Deactivated accounts are rejected (401) with a `LOGIN_FAILED` audit entry; success writes `LOGIN` (returning/linked) or `REGISTER` (new). The backend needs only the client id (the token audience); no client secret is used for verification.
+**Google sign-in**: the client runs Google Sign-In itself and posts the resulting **ID token** plus the raw per-login nonce secret `N` to `POST /api/auth/google` → `GoogleIdTokenVerifier` validates signature (JWKS), issuer, expiry, and audience (`google.client-id`) → verify the OIDC **nonce**: the token's `nonce` claim must equal `lowercaseHex(SHA-256(N))`, binding the token to this login (anti-replay, OIDC §3.2.2.1/§16.11); mismatch or missing → 401 generic → require `email_verified` (401 otherwise) → resolve the account: (1) match `google_sub` → log in; (2) match email → **link** Google to the existing password account and mark it verified; (3) no match → **provision** a new already-verified, password-less account → generate access JWT + refresh token → return `AuthResponse`. Deactivated accounts are rejected (401) with a `LOGIN_FAILED` audit entry; success writes `LOGIN` (returning/linked) or `REGISTER` (new). The backend needs only the client id (the token audience); no client secret is used for verification.
 
 **Staging/prod checklist** (the common  traps — all config, not code):
 - `GOOGLE_CLIENT_ID` on the backend **exactly matches** the Client ID the frontend's button uses (a mismatch fails on token audience).
@@ -388,6 +400,7 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 | `DB_PASSWORD` | base (all profiles) | Database password |
 | `JWT_SECRET` | base (all profiles) | HMAC signing key (min 256 bits) |
 | `CORS_ALLOWED_ORIGINS` | prod (dev defaults to `http://localhost:3000`) | Comma-separated browser origins allowed to call `/api/**` |
+| `APP_BASE_URL` | prod (dev defaults to `http://localhost:3000`) | Frontend origin for links in emails (e.g. the verify-email link) |
 | `GOOGLE_CLIENT_ID` | base (all profiles) | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | base (all profiles) | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URI` | prod only | OAuth callback URL (dev hardcodes `localhost:3000`) |
@@ -430,7 +443,7 @@ Docker Compose only runs Postgres — the app runs on the host. The Compose file
 - **Frontend hosting**: Vercel (for the Next.js app, when built)
 - **Image storage**: AWS S3 or Cloudflare (future — for task photos and completion photos)
 
-The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`). Deployed on Render with `JAVA_TOOL_OPTIONS=-Xmx384m` to fit within the 512MB free-tier container.
+The Dockerfile builds a multi-stage image (`eclipse-temurin:21-jdk-alpine` → `eclipse-temurin:21-jre-alpine`): deps resolve in their own layer (cached until `pom.xml` changes, incl. by CI's gha layer cache), then the fat jar is split into Spring Boot layers (`-Djarmode=tools … extract --layers`) so a code-only change rebuilds just the small application layer. Runs as a non-root user. The entrypoint sets `-XX:MaxRAMPercentage=75.0`; on Render the explicit `JAVA_TOOL_OPTIONS=-Xmx384m` takes precedence (fits the 512MB free tier), so the percentage only applies where no `-Xmx` is set (local/Compose).
 
 **Health check**: Spring Boot Actuator exposes a public `/actuator/health` endpoint (whitelisted in `SecurityConfig`). Only the `health` endpoint is exposed and details are hidden (`show-details=never`), so it returns just `{"status":"UP"}` or `503` with `{"status":"DOWN"}`. The aggregate status includes a DB-connectivity check, so it doubles as a readiness probe — point Render's health check and uptime monitors at it.
 
@@ -595,8 +608,9 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | Class | Tests | Covers |
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
-| `AuthServiceTest` | 10 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email) |
-| `GoogleOAuthServiceTest` | 7 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; deactivated account |
+| `AuthServiceTest` | 13 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`) |
+| `EmailServiceTest` | 2 | Verification email builds the prefilled link (exact param names, URL-encoded email, trailing-slash safe); registration-attempt email notifies the owner |
+| `GoogleOAuthServiceTest` | 9 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
 | `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
@@ -615,13 +629,15 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UserControllerSecurityTest` | 8 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, `/me` for any authenticated caller (also guarding route precedence over `/{uid}`), role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
 | `GroupControllerSecurityTest` | 10 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`); `/mine` and `/join` open to any authenticated caller (also guarding `/mine` route precedence over `/{uid}`); invite-code rotation group-admin only (plain member and platform ADMIN 403) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
-| `GlobalExceptionHandlerTest` | 11 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join) |
+| `GlobalExceptionHandlerTest` | 12 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join); 401 for unverified email carries the `EMAIL_NOT_VERIFIED` code |
 | `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
 | `RateLimitFilterTest` | 10 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/normal) |
+| `PasswordPolicyValidatorTest` | 19 | Length bounds, each missing-class message/grammar, space-as-special, and the guessable variants (common/leet/tail/repeated/sequential); plus the `isValid` message wiring |
+| `PasswordPolicyContractTest` | 11 | Runs the validator against the shared FE/BE contract vectors (`password-policy-vectors.json`) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **210 tests** across 24 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **249 tests** across 28 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

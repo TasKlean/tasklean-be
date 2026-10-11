@@ -1,28 +1,59 @@
 package com.tasklean.api.common.email;
 
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
+
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 /** Shared email infrastructure — used by auth verification, notifications, etc. */
 @Service
-@RequiredArgsConstructor
 public class EmailService {
 
     private static final String FROM_ADDRESS = "noreply@tasklean.app";
 
     private final JavaMailSender mailSender;
+    private final String baseUrl;
+
+    public EmailService(JavaMailSender mailSender, @Value("${app.base-url}") String baseUrl) {
+        this.mailSender = mailSender;
+        // Strip any trailing slashes so the link doesn't end up with a double slash.
+        this.baseUrl = StringUtils.trimTrailingCharacter(baseUrl, '/');
+    }
 
     /**
-     * Sends a 6-digit email-verification code to the given address.
+     * Sends the email-verification message: a link to the frontend verify page (prefilled with the
+     * email and code) plus the raw code as a manual-entry fallback. The link only lands on the page;
+     * verification itself happens when the recipient clicks there, so a mail scanner prefetching the
+     * link can't spend the single-use code.
      *
      * @param to   the recipient email address
      * @param code the verification code to send
      */
     public void sendVerificationEmail(String to, String code) {
+        String link = baseUrl + "/verify-email?email=" + URLEncoder.encode(to, StandardCharsets.UTF_8)
+                + "&code=" + code;
         send(to, "TasKlean - Verify your email",
-                "Your verification code is: " + code + "\n\nThis code expires in 5 minutes.");
+                "Verify your email by opening this link:\n" + link
+                        + "\n\nOr enter this code manually: " + code
+                        + "\n\nThis code expires in 5 minutes.");
+    }
+
+    /**
+     * Tells the owner of an existing account that someone tried to register with their email.
+     * Sent instead of revealing account existence in the API response (anti-enumeration).
+     *
+     * @param to the existing account's email address
+     */
+    public void sendRegistrationAttemptEmail(String to) {
+        send(to, "TasKlean - Account already exists", """
+                Someone tried to create a TasKlean account with this email, but an account already exists.
+
+                If this was you, just sign in instead - you can use your password or Google.
+                If it wasn't you, you can safely ignore this email.""");
     }
 
     private void send(String to, String subject, String body) {

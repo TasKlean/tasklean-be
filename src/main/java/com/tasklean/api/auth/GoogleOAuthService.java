@@ -18,7 +18,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.UUID;
 
 /**
@@ -41,14 +45,15 @@ public class GoogleOAuthService {
      * Authenticates a user from a Google ID token, provisioning or linking an account as needed,
      * and issues access and refresh tokens.
      *
-     * @param request the request carrying the Google ID token
+     * @param request the request carrying the Google ID token and the nonce secret
      * @return the auth response with access and refresh tokens
-     * @throws BadCredentialsException if the token is invalid, the Google email is unverified,
-     *                                 or the matched account is deactivated
+     * @throws BadCredentialsException if the token is invalid, the nonce doesn't match, the Google
+     *                                 email is unverified, or the matched account is deactivated
      */
     @Transactional
     public AuthResponse authenticate(GoogleAuthRequest request) {
         GoogleIdToken.Payload payload = verifyToken(request.getIdToken());
+        verifyNonce(payload, request.getNonce());
 
         if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
             throw new BadCredentialsException("Google account email is not verified");
@@ -71,6 +76,25 @@ public class GoogleOAuthService {
 
         // 3. First-time Google sign-in — provision a new, already-verified account.
         return createGoogleUser(payload);
+    }
+
+    // OIDC nonce (implicit flow): the token's nonce claim must equal SHA-256 of the per-login
+    // secret the client kept in its session cookie, binding the token to this login (anti-replay).
+    private void verifyNonce(GoogleIdToken.Payload payload, String nonce) {
+        String expected = sha256Hex(nonce);
+        if (!expected.equals(payload.getNonce())) {
+            throw new BadCredentialsException("Invalid Google token");
+        }
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is mandated by the JDK, so this never happens at runtime.
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     private GoogleIdToken.Payload verifyToken(String idToken) {

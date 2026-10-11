@@ -1,0 +1,19 @@
+# Keep the build context small and avoid cache-busting on irrelevant files.
+target/
+.git/
+.gitignore
+.gitattributes
+.idea/
+*.iml
+.vscode/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+docs/
+*.md
+Dockerfile
+docker-compose*.yml
+.dockerignore
+.claude/

@@ -20,6 +20,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,16 +55,24 @@ class GoogleOAuthServiceTest {
     private GoogleOAuthService googleOAuthService;
 
     private static final String TOKEN = "google-id-token";
+    // Raw per-login secret the client sends; the token's nonce claim is its SHA-256.
+    private static final String NONCE = "per-login-nonce-secret";
 
-    private GoogleAuthRequest request() {
-        return new GoogleAuthRequest(TOKEN);
+    private static String sha256Hex(String value) throws Exception {
+        return HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
     }
 
-    private GoogleIdToken.Payload payload(String sub, String email, boolean emailVerified) {
+    private GoogleAuthRequest request() {
+        return new GoogleAuthRequest(TOKEN, NONCE);
+    }
+
+    private GoogleIdToken.Payload payload(String sub, String email, boolean emailVerified) throws Exception {
         GoogleIdToken.Payload payload = new GoogleIdToken.Payload();
         payload.setSubject(sub);
         payload.setEmail(email);
         payload.setEmailVerified(emailVerified);
+        payload.setNonce(sha256Hex(NONCE));
         payload.set("given_name", "Jane");
         payload.set("family_name", "Doe");
         payload.set("picture", "https://pics/jane.png");
@@ -204,6 +215,33 @@ class GoogleOAuthServiceTest {
 
         verify(userRepository, never()).findByGoogleSub(any());
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void authenticate_nonceMismatch_throwsBadCredentials() throws Exception {
+        GoogleIdToken.Payload payload = payload("sub-123", "jane@example.com", true);
+        payload.setNonce("not-the-expected-hash");
+        stubVerify(payload);
+
+        assertThatThrownBy(() -> googleOAuthService.authenticate(request()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("Invalid Google token");
+
+        verify(userRepository, never()).findByGoogleSub(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void authenticate_missingNonceInToken_throwsBadCredentials() throws Exception {
+        GoogleIdToken.Payload payload = payload("sub-123", "jane@example.com", true);
+        payload.setNonce(null);
+        stubVerify(payload);
+
+        assertThatThrownBy(() -> googleOAuthService.authenticate(request()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("Invalid Google token");
+
+        verify(userRepository, never()).findByGoogleSub(any());
     }
 
     @Test

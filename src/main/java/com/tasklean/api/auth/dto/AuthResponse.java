@@ -27,13 +27,15 @@ public class AuthResponse {
                 .build();
     }
 
-    /** Registration response — no JWT, includes message about verification. */
-    public static AuthResponse pendingVerification(User user) {
+    /**
+     * Registration response — no JWT, and deliberately neutral: it echoes only the submitted
+     * email so the reply is identical whether or not the address was already registered
+     * (anti-enumeration). No uid/name, which would reveal an existing account.
+     */
+    public static AuthResponse registrationPending(String email) {
         return AuthResponse.builder()
-                .uid(user.getUid())
-                .email(user.getEmail())
-                .name(user.getName())
-                .message("Verification code sent to your email")
+                .email(email)
+                .message("If that email isn't already registered, we've sent a verification code. Please check your inbox.")
                 .build();
     }
 }

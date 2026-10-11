@@ -1,11 +1,13 @@
 package com.tasklean.api.common;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.*;
 
 /**
  * Standard response envelope wrapping every API result with a {@code success} flag,
- * an optional {@code message}, and the payload {@code data}. Construct via the static
- * factory methods rather than the builder directly.
+ * an optional {@code message}, an optional machine-readable {@code code} (present only on
+ * selected errors), and the payload {@code data}. Construct via the static factory methods
+ * rather than the builder directly.
  *
  * @param <T> the payload type
  */
@@ -18,6 +20,10 @@ public class ApiResponse<T> {
 
     private boolean success;
     private String message;
+    // A stable, machine-readable error code (e.g. EMAIL_NOT_VERIFIED) so clients branch on it
+    // instead of matching the human message. Omitted from the JSON entirely when null.
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String code;
     private T data;
 
     /**
@@ -61,6 +67,22 @@ public class ApiResponse<T> {
         return ApiResponse.<T>builder()
                 .success(false)
                 .message(message)
+                .build();
+    }
+
+    /**
+     * Builds an error response carrying a message and a machine-readable code.
+     *
+     * @param message the error message
+     * @param code    the stable error code (e.g. {@code EMAIL_NOT_VERIFIED})
+     * @param <T>     the payload type
+     * @return an error envelope with the given message and code
+     */
+    public static <T> ApiResponse<T> error(String message, String code) {
+        return ApiResponse.<T>builder()
+                .success(false)
+                .message(message)
+                .code(code)
                 .build();
     }
 }

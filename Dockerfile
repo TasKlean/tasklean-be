@@ -1,18 +1,36 @@
+# syntax=docker/dockerfile:1
+
+# Build stage: resolve dependencies, package, then split into layers.
 FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /app
 
-COPY mvnw .
+# Copy only the wrapper + pom first so dependency resolution is its own layer,
+# cached until pom.xml changes.
 COPY .mvn .mvn
-RUN chmod +x mvnw
+COPY mvnw pom.xml ./
+RUN chmod +x mvnw && ./mvnw -B -ntp dependency:go-offline
 
-COPY pom.xml .
-RUN ./mvnw dependency:go-offline -B
-
+# Source last: editing code reuses the dependency layer above.
 COPY src ./src
-RUN ./mvnw clean package -DskipTests -B
+RUN ./mvnw -B -ntp clean package -DskipTests
 
-FROM eclipse-temurin:21-jre-alpine
+# Split the jar into Spring Boot layers (dependencies change rarely)
+# so image rebuilds reuse the big dependency layers.
+RUN cp target/*.jar app.jar && \
+    java -Djarmode=tools -jar app.jar extract --layers --destination extracted
+
+# Runtime stage: slim JRE, non-root, layers copied least- to most-volatile.
+FROM eclipse-temurin:21-jre-alpine AS runtime
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
+
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+COPY --from=build --chown=spring:spring /app/extracted/dependencies/ ./
+COPY --from=build --chown=spring:spring /app/extracted/spring-boot-loader/ ./
+COPY --from=build --chown=spring:spring /app/extracted/snapshot-dependencies/ ./
+COPY --from=build --chown=spring:spring /app/extracted/application/ ./
+
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# MaxRAMPercentage lets the JVM size the heap to the container's memory limit.
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
