@@ -20,7 +20,8 @@ public class EmailService {
     public EmailService(JavaMailSender mailSender, @Value("${app.base-url}") String baseUrl) {
         this.mailSender = mailSender;
         // Strip any trailing slash so the link doesn't end up with a double slash.
-        this.baseUrl = baseUrl.replaceAll("/+$", "");
+        // Possessive quantifier: no backtracking on a trailing run of slashes.
+        this.baseUrl = baseUrl.replaceAll("/++$", "");
     }
 
     /**
@@ -48,10 +49,11 @@ public class EmailService {
      * @param to the existing account's email address
      */
     public void sendRegistrationAttemptEmail(String to) {
-        send(to, "TasKlean - Account already exists",
-                "Someone tried to create a TasKlean account with this email, but an account already exists.\n\n"
-                        + "If this was you, just sign in instead - you can use your password or Google.\n"
-                        + "If it wasn't you, you can safely ignore this email.");
+        send(to, "TasKlean - Account already exists", """
+                Someone tried to create a TasKlean account with this email, but an account already exists.
+
+                If this was you, just sign in instead - you can use your password or Google.
+                If it wasn't you, you can safely ignore this email.""");
     }
 
     private void send(String to, String subject, String body) {
