@@ -34,4 +34,18 @@ class EmailServiceTest {
                 .contains("enter this code manually: 123456");
         assertThat(message.getTo()).containsExactly("a+b@example.com");
     }
+
+    @Test
+    void sendRegistrationAttemptEmail_notifiesOwnerWithoutSecrets() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendRegistrationAttemptEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("account already exists");
+    }
 }

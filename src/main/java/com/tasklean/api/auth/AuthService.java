@@ -6,7 +6,7 @@ import com.tasklean.api.auth.dto.RegisterRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.VerificationService;
-import com.tasklean.api.common.exception.DuplicateResourceException;
+import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
@@ -37,19 +37,25 @@ public class AuthService {
     private final VerificationService verificationService;
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
+    private final EmailService emailService;
 
     /**
      * Creates a new user account, hashes the password, and sends a verification code.
-     * No JWT is issued until the email is verified.
+     * No JWT is issued until the email is verified. The response is identical whether or not
+     * the email already exists (anti-enumeration): an existing owner is notified by email
+     * instead of the caller being told the address is taken.
      *
      * @param request the registration details (email, password, name)
-     * @return a pending-verification auth response
-     * @throws DuplicateResourceException if the email is already registered
+     * @return a neutral pending-verification response
      */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new DuplicateResourceException("Email already registered");
+        User existing = userRepository.findByEmail(request.getEmail()).orElse(null);
+        if (existing != null) {
+            // Don't reveal existence to the caller; tell the real owner by email.
+            emailService.sendRegistrationAttemptEmail(request.getEmail());
+            log.info("Registration attempt for existing email: uid={}", existing.getUid());
+            return AuthResponse.registrationPending(request.getEmail());
         }
 
         User user = User.builder()
@@ -67,41 +73,42 @@ public class AuthService {
         auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.REGISTER, "Account created", null);
         verificationService.createAndSendVerification(user);
 
-        return AuthResponse.pendingVerification(user);
+        return AuthResponse.registrationPending(user.getEmail());
     }
 
     /**
-     * Validates credentials against the stored hash and returns a JWT on success.
+     * Validates credentials against the stored hash and returns a JWT on success. An account
+     * with both a password and a linked Google identity can sign in with either.
      *
      * @param request the login credentials (email, password)
      * @return the auth response with access and refresh tokens
-     * @throws BadCredentialsException if the account is unknown, deactivated, unverified,
-     *                                 uses a different sign-in option, or the password is wrong
+     * @throws EmailNotVerifiedException if the password is correct but the email is unverified
+     * @throws BadCredentialsException   if the email is unknown, the password is wrong, the account
+     *                                   is OAuth-only, or (after a correct password) it is deactivated
      */
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
+        // Check the password before revealing any account state, so a wrong guess is
+        // indistinguishable from an unknown email (no account enumeration). A null hash is
+        // an OAuth-only account, which matches no password and yields the same generic error.
+        if (user.getPasswordHash() == null
+                || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            recordFailedLogin(user, user.getPasswordHash() == null ? "oauth-only account" : "invalid password");
+            throw new BadCredentialsException("Invalid email or password");
+        }
+
+        // Past here the caller proved they own the account, so account-state reasons are safe to surface.
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             recordFailedLogin(user, "account deactivated");
             throw new BadCredentialsException("Account is deactivated");
-        }
-
-        // Google OAuth users have no password — must use /api/auth/google instead
-        if (user.getPasswordHash() == null || user.getGoogleSub() != null) {
-            recordFailedLogin(user, "different sign-in option");
-            throw new BadCredentialsException("This account uses a different sign-in option");
         }
 
         if (!Boolean.TRUE.equals(user.getIsEmailVerified())) {
             recordFailedLogin(user, "email not verified");
             // Specific subclass so the response carries the EMAIL_NOT_VERIFIED code (still a 401).
             throw new EmailNotVerifiedException("Email not verified. Check your inbox for a verification code");
-        }
-
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            recordFailedLogin(user, "invalid password");
-            throw new BadCredentialsException("Invalid email or password");
         }
 
         String token = jwtService.generateToken(user);

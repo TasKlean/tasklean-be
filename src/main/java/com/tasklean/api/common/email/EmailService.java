@@ -41,6 +41,19 @@ public class EmailService {
                         + "\n\nThis code expires in 5 minutes.");
     }
 
+    /**
+     * Tells the owner of an existing account that someone tried to register with their email.
+     * Sent instead of revealing account existence in the API response (anti-enumeration).
+     *
+     * @param to the existing account's email address
+     */
+    public void sendRegistrationAttemptEmail(String to) {
+        send(to, "TasKlean - Account already exists",
+                "Someone tried to create a TasKlean account with this email, but an account already exists.\n\n"
+                        + "If this was you, just sign in instead - you can use your password or Google.\n"
+                        + "If it wasn't you, you can safely ignore this email.");
+    }
+
     private void send(String to, String subject, String body) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(to);

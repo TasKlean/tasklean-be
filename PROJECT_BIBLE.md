@@ -321,7 +321,7 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 | Endpoint | Status | Response |
 |---|---|---|
-| `POST /api/auth/register` | 201 | User info + "Verification code sent" message (no tokens until verified) |
+| `POST /api/auth/register` | 201 | Neutral message echoing only the email, no tokens/uid/name (identical whether or not the email exists — enumeration-safe) |
 | `POST /api/auth/login` | 200 | Access JWT + refresh token + user info (rejects unverified users) |
 | `POST /api/auth/verify-email` | 200 | Access JWT + refresh token + user info (on valid code) |
 | `POST /api/auth/resend-verification` | 200 | Generic success message (enumeration-safe, always 200) |
@@ -331,13 +331,13 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 ### Authentication flows
 
-**Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → check duplicate email (409) → hash password (BCrypt) → create User with random UID → generate & send a 6-digit verification code (5-min expiry) → return `AuthResponse` with message (no JWT). The email carries a prefilled link `${APP_BASE_URL}/verify-email?email=&code=` (the link only lands on the FE page — nothing verifies on GET, so a mail scanner's prefetch can't spend the single-use code) plus the raw code as a fallback.
+**Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → look up the email. **If it already exists**: send the owner an "account already exists" email and return the same neutral response (no create, no 409) — so the caller can't tell the address is taken (enumeration-safe). **If new**: hash password (BCrypt) → create User with random UID → generate & send a 6-digit verification code (5-min expiry). Either way the response is `AuthResponse.registrationPending(email)` — just the email + a neutral message, no JWT/uid/name. The verification email carries a prefilled link `${APP_BASE_URL}/verify-email?email=&code=` (the link only lands on the FE page — nothing verifies on GET, so a mail scanner's prefetch can't spend the single-use code) plus the raw code as a fallback.
 
 **Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
 
 **Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
 
-**Email login**: find user by email (401 if not found) → check `is_active` (401 if deactivated) → check not OAuth-only account (401 if no password hash) → check `is_email_verified` (401 if unverified — `EmailNotVerifiedException`, whose 401 carries `code: "EMAIL_NOT_VERIFIED"` in the envelope so clients branch on the code, not the message) → verify password against hash (401 if mismatch) → generate access JWT + refresh token → return `AuthResponse`.
+**Email login**: find user by email (401 generic if not found) → **verify the password first** (401 generic "Invalid email or password" if wrong, or if the account is OAuth-only with no hash) → *only after a correct password* surface account state: `is_active` (401 "deactivated") then `is_email_verified` (401 `EmailNotVerifiedException`, whose envelope carries `code: "EMAIL_NOT_VERIFIED"` so clients branch on the code, not the message) → generate access JWT + refresh token → return `AuthResponse`. Checking the password before revealing any state keeps a wrong guess indistinguishable from an unknown email (anti-enumeration); the verify-prompt still reaches a legitimate user who proved ownership. An account that has **both** a password and a linked `google_sub` can sign in with either method (the old "different sign-in option" block was removed).
 
 **Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → check `is_active` (revoke **all** user tokens + 401 if deactivated) → revoke old token → generate new access JWT (carrying the user's current role) + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401. This is the point where a deactivation or role change made mid-session takes effect.
 
@@ -608,8 +608,8 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | Class | Tests | Covers |
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
-| `AuthServiceTest` | 11 | Register (success, duplicate email, password hashing, UID generation); Login (success, wrong password, missing email, deactivated, OAuth-only, unverified email → `EmailNotVerifiedException`) |
-| `EmailServiceTest` | 1 | Verification email builds the prefilled link (exact param names, URL-encoded email, trailing-slash safe) |
+| `AuthServiceTest` | 13 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`) |
+| `EmailServiceTest` | 2 | Verification email builds the prefilled link (exact param names, URL-encoded email, trailing-slash safe); registration-attempt email notifies the owner |
 | `GoogleOAuthServiceTest` | 7 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; deactivated account |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
@@ -637,7 +637,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **244 tests** across 28 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **247 tests** across 28 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

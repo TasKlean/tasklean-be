@@ -6,7 +6,7 @@ import com.tasklean.api.auth.dto.RegisterRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.VerificationService;
-import com.tasklean.api.common.exception.DuplicateResourceException;
+import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
@@ -53,6 +53,9 @@ class AuthServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private EmailService emailService;
+
     @InjectMocks
     private AuthService authService;
 
@@ -84,7 +87,7 @@ class AuthServiceTest {
         request.setName("New");
         request.setLastName("User");
 
-        when(userRepository.existsByEmail("new@example.com")).thenReturn(false);
+        when(userRepository.findByEmail("new@example.com")).thenReturn(Optional.empty());
         when(passwordEncoder.encode("password123")).thenReturn("$2a$10$encoded");
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> {
             User u = invocation.getArgument(0);
@@ -96,7 +99,7 @@ class AuthServiceTest {
 
         assertThat(response.getToken()).isNull();
         assertThat(response.getEmail()).isEqualTo("new@example.com");
-        assertThat(response.getMessage()).contains("Verification code sent");
+        assertThat(response.getMessage()).contains("verification code");
         verify(verificationService).createAndSendVerification(any(User.class));
         verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(99L),
                 eq(AuditAction.REGISTER), anyString(), isNull());
@@ -110,7 +113,7 @@ class AuthServiceTest {
         request.setName("Test");
         request.setLastName("User");
 
-        when(userRepository.existsByEmail(any())).thenReturn(false);
+        when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
         when(passwordEncoder.encode("mypassword")).thenReturn("$2a$10$hashed");
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -129,7 +132,7 @@ class AuthServiceTest {
         request.setName("Test");
         request.setLastName("User");
 
-        when(userRepository.existsByEmail(any())).thenReturn(false);
+        when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
         when(passwordEncoder.encode(any())).thenReturn("hash");
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -141,19 +144,26 @@ class AuthServiceTest {
     }
 
     @Test
-    void register_duplicateEmail_throwsDuplicateResourceException() {
+    void register_existingEmail_returnsNeutralResponseAndEmailsOwner() {
         RegisterRequest request = new RegisterRequest();
         request.setEmail("existing@example.com");
         request.setPassword("password123");
         request.setName("Test");
         request.setLastName("User");
 
-        when(userRepository.existsByEmail("existing@example.com")).thenReturn(true);
+        when(userRepository.findByEmail("existing@example.com")).thenReturn(Optional.of(buildExistingUser()));
 
-        assertThatThrownBy(() -> authService.register(request))
-                .isInstanceOf(DuplicateResourceException.class)
-                .hasMessageContaining("Email already registered");
+        AuthResponse response = authService.register(request);
 
+        // Response echoes only the submitted email and the same neutral message as a new signup,
+        // so the caller can't tell the address is already taken.
+        assertThat(response.getToken()).isNull();
+        assertThat(response.getUid()).isNull();
+        assertThat(response.getName()).isNull();
+        assertThat(response.getEmail()).isEqualTo("existing@example.com");
+        assertThat(response.getMessage()).contains("verification code");
+        // The real owner is notified by email; nothing is created and no code is sent.
+        verify(emailService).sendRegistrationAttemptEmail("existing@example.com");
         verify(userRepository, never()).save(any());
         verify(verificationService, never()).createAndSendVerification(any());
     }
@@ -224,6 +234,8 @@ class AuthServiceTest {
         User deactivated = buildExistingUser();
         deactivated.setIsActive(false);
         when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(deactivated));
+        // Deactivation is only revealed after a correct password (reordered checks).
+        when(passwordEncoder.matches("password", "$2a$10$hashedpassword")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
@@ -233,7 +245,7 @@ class AuthServiceTest {
     }
 
     @Test
-    void login_oauthOnlyAccount_throwsBadCredentials() {
+    void login_oauthOnlyAccount_throwsGenericBadCredentials() {
         LoginRequest request = new LoginRequest();
         request.setEmail("bob@example.com");
         request.setPassword("password");
@@ -243,9 +255,52 @@ class AuthServiceTest {
         oauthUser.setGoogleSub("google-sub-123");
         when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(oauthUser));
 
+        // No password set, so the reply is the same generic error as a wrong password — no hint
+        // that this address exists or uses Google.
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
-                .hasMessageContaining("different sign-in");
+                .hasMessageContaining("Invalid email or password");
+
+        verifyLoginFailedRecordedFor(1L);
+    }
+
+    @Test
+    void login_linkedAccountWithPassword_returnsToken() {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("bob@example.com");
+        request.setPassword("correctPassword");
+
+        // Password account that later linked Google — Option B: either method signs in.
+        User linked = buildExistingUser();
+        linked.setGoogleSub("google-sub-123");
+        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(linked));
+        when(passwordEncoder.matches("correctPassword", "$2a$10$hashedpassword")).thenReturn(true);
+        when(jwtService.generateToken(linked)).thenReturn("login-token");
+        when(refreshTokenService.createRefreshToken(linked)).thenReturn("refresh-token-abc");
+
+        AuthResponse response = authService.login(request);
+
+        assertThat(response.getToken()).isEqualTo("login-token");
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L),
+                eq(AuditAction.LOGIN), anyString(), isNull());
+    }
+
+    @Test
+    void login_wrongPasswordOnUnverifiedAccount_throwsGenericNotEmailNotVerified() {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("bob@example.com");
+        request.setPassword("wrongPassword");
+
+        User unverified = buildExistingUser();
+        unverified.setIsEmailVerified(false);
+        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(unverified));
+        when(passwordEncoder.matches("wrongPassword", "$2a$10$hashedpassword")).thenReturn(false);
+
+        // A wrong password must not leak the unverified state: generic error, not EMAIL_NOT_VERIFIED.
+        assertThatThrownBy(() -> authService.login(request))
+                .isInstanceOf(BadCredentialsException.class)
+                .isNotInstanceOf(EmailNotVerifiedException.class)
+                .hasMessageContaining("Invalid email or password");
 
         verifyLoginFailedRecordedFor(1L);
     }
@@ -259,6 +314,7 @@ class AuthServiceTest {
         User unverified = buildExistingUser();
         unverified.setIsEmailVerified(false);
         when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(unverified));
+        when(passwordEncoder.matches("correctPassword", "$2a$10$hashedpassword")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
@@ -276,6 +332,7 @@ class AuthServiceTest {
         User unverified = buildExistingUser();
         unverified.setIsEmailVerified(false);
         when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(unverified));
+        when(passwordEncoder.matches("correctPassword", "$2a$10$hashedpassword")).thenReturn(true);
 
         // The specific subclass is what lets the response carry the EMAIL_NOT_VERIFIED code.
         assertThatThrownBy(() -> authService.login(request))
