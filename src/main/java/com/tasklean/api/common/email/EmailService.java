@@ -56,6 +56,50 @@ public class EmailService {
                 If it wasn't you, you can safely ignore this email.""");
     }
 
+    /**
+     * Sends a password-reset link to the frontend reset page, carrying the single-use token.
+     *
+     * @param to    the recipient email address
+     * @param token the raw reset token (only ever sent here, never stored in plaintext)
+     */
+    public void sendPasswordResetEmail(String to, String token) {
+        String link = baseUrl + "/reset-password?token=" + token;
+        send(to, "TasKlean - Reset your password", """
+                Reset your password by opening this link:
+                %s
+
+                This link expires in 15 minutes and can be used once.
+                If you didn't request this, you can safely ignore this email - your password stays unchanged.""".formatted(link));
+    }
+
+    /**
+     * Tells a Google-only account holder that there's no password to reset (sent in place of a
+     * reset link so the API response can stay neutral — anti-enumeration).
+     *
+     * @param to the recipient email address
+     */
+    public void sendGoogleOnlyResetEmail(String to) {
+        send(to, "TasKlean - Password reset", """
+                You asked to reset your TasKlean password, but this account signs in with Google.
+
+                There's no password to reset - just use "Continue with Google" to sign in.
+                If you didn't request this, you can safely ignore this email.""");
+    }
+
+    /**
+     * Confirms to the account owner that their password was just changed, so an unauthorized
+     * reset is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendPasswordChangedEmail(String to) {
+        send(to, "TasKlean - Your password was changed", """
+                Your TasKlean password was just changed, and you've been signed out on all devices.
+
+                If this was you, you can ignore this email.
+                If it wasn't you, reset your password immediately and contact support - your account may be compromised.""");
+    }
+
     private void send(String to, String subject, String body) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(to);

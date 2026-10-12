@@ -5,7 +5,6 @@ import com.tasklean.api.auth.passwordreset.dto.ResetPasswordRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -28,7 +27,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -155,8 +153,9 @@ class PasswordResetServiceTest {
         assertThat(token.getUsed()).isTrue();
         verify(userRepository).save(user);
         verify(refreshTokenService).revokeAllUserTokens(user);
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L),
-                eq(AuditAction.PASSWORD_RESET), anyString(), isNull());
+        verify(emailService).sendPasswordChangedEmail("bob@example.com");
+        verify(auditLogService).recordAccountEvent(eq(1L),
+                eq(AuditAction.PASSWORD_RESET), anyString());
     }
 
     @Test

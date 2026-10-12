@@ -190,6 +190,50 @@
         "tags" : [ "Audit logs" ]
       }
     },
+    "/api/auth/forgot-password" : {
+      "post" : {
+        "description" : "Starts a password reset by emailing a single-use reset link.",
+        "operationId" : "forgotPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ForgotPasswordRequest"
+              }
+            }
+          },
+          "description" : "the account email",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a neutral message (does not reveal whether the email exists)"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Starts a password reset by emailing a single-use reset link.",
+        "tags" : [ "Auth" ]
+      }
+    },
     "/api/auth/google" : {
       "post" : {
         "description" : "Authenticates with a Google ID token, provisioning or linking the account as needed.",
@@ -451,6 +495,50 @@
         },
         "security" : [ ],
         "summary" : "Resends a fresh verification code to an unverified user.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/reset-password" : {
+      "post" : {
+        "description" : "Completes a password reset with a valid token and sets the new password.",
+        "operationId" : "resetPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ResetPasswordRequest"
+              }
+            }
+          },
+          "description" : "the reset token and new password",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> on success; the user must then sign in with the new password"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Completes a password reset with a valid token and sets the new password.",
         "tags" : [ "Auth" ]
       }
     },
@@ -3289,6 +3377,18 @@
           }
         }
       },
+      "ForgotPasswordRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"forgot password\": the email to send a reset link to.",
+        "properties" : {
+          "email" : {
+            "type" : "string",
+            "format" : "email",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "email" ]
+      },
       "GoogleAuthRequest" : {
         "type" : "object",
         "description" : "Request body for \"Sign in with Google\": the Google ID token plus the OIDC nonce secret.",
@@ -3570,6 +3670,20 @@
           }
         },
         "required" : [ "email" ]
+      },
+      "ResetPasswordRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"reset password\": the emailed token and the chosen new password.",
+        "properties" : {
+          "newPassword" : {
+            "type" : "string"
+          },
+          "token" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "token" ]
       },
       "TagRequest" : {
         "type" : "object",

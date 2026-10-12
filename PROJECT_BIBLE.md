@@ -123,7 +123,7 @@ Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). No
 
 **What's audited** — the mutating service methods call `recordEvent(...)`:
 - Domain (group-scoped): `Task`, `Group`, `Category`, `Tag` CREATE/UPDATE/DELETE; `GroupMember` MEMBER_ADDED/ROLE_CHANGED/MEMBER_REMOVED; `TaskCompletion` COMPLETE.
-- Auth/account (group-less): REGISTER, LOGIN, LOGOUT, ACCOUNT_DELETED, user profile UPDATE, and LOGIN_FAILED on every credential rejection where the user is known. A login attempt for an **unknown email** is not audited — `entity_id` is `NOT NULL` and there is no user id to record (it stays a WARN in the ops log only).
+- Auth/account (group-less): REGISTER, LOGIN, LOGOUT, ACCOUNT_DELETED, user profile UPDATE, EMAIL_VERIFIED, PASSWORD_RESET, and LOGIN_FAILED on every credential rejection where the user is known. A login attempt for an **unknown email** is not audited — `entity_id` is `NOT NULL` and there is no user id to record (it stays a WARN in the ops log only). These run on anonymous endpoints, so they use `AuditLogService.recordAccountEvent(userId, …)`, which sets the actor to the subject (the security context has no caller) so `actor_user_id` is populated.
 
 ## Database design
 
@@ -167,7 +167,7 @@ Every FK column is indexed. Additional indexes on:
 | V16 | Adds `user.role` column (platform role, CHECK-constrained; no new table) | `user` |
 | V17 | Renames `group_member.role` values `ADMIN`/`MEMBER` → `GROUP_ADMIN`/`GROUP_MEMBER` (migrates data + CHECK) | `group_member` |
 
-Next available version: **V18**.
+Next available version: **V19**.
 
 ### Dev seed data
 
@@ -311,7 +311,7 @@ Registration passwords are enforced by a custom Bean Validation constraint — `
 Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the security chain right after `JwtAuthenticationFilter` so it can key by user id. In-memory (Caffeine) — fine for a single instance; the `BucketRegistry` interface is the seam to swap in Redis if the app ever runs more than one instance.
 
 - **Keying:** an **authenticated** request must pass **both** a per-user bucket and a per-IP bucket; an **unauthenticated** request is limited per IP by the endpoint's tier.
-- **Tiers** (`ratelimit.*` in `RateLimitProperties`, overridable per env): auth 10/min, register 5/hour, refresh 20/min, api 120/min per user + 300/min per IP, join 10/hour per user.
+- **Tiers** (`ratelimit.*` in `RateLimitProperties`, overridable per env): auth 10/min, register 5/hour, refresh 20/min, forgot-password 5/hour, reset-password 10/min, api 120/min per user + 300/min per IP, join 10/hour per user.
 - **The join tier is additive, not alternative.** `POST /api/groups/join` is authenticated, so it passes the per-user and per-IP api buckets *and* its own tighter `join` bucket. Every other tier replaces the default; this one stacks, so a guessable 8-character invite code keeps the general api protections as well.
 - **Client IP** comes from `X-Forwarded-For` via `server.forward-headers-strategy=native` (Render sits behind a proxy).
 - **Rejection:** 429 with a `Retry-After` header and the JSON `ApiResponse` envelope (written directly — filters run before Spring MVC). Skips `/actuator/**` and `/error`; disable entirely with `ratelimit.enabled=false`.
@@ -325,6 +325,8 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 | `POST /api/auth/login` | 200 | Access JWT + refresh token + user info (rejects unverified users) |
 | `POST /api/auth/verify-email` | 200 | Access JWT + refresh token + user info (on valid code) |
 | `POST /api/auth/resend-verification` | 200 | Generic success message (enumeration-safe, always 200) |
+| `POST /api/auth/forgot-password` | 200 | Neutral message — emails a reset link if the account exists (enumeration-safe, always 200) |
+| `POST /api/auth/reset-password` | 200 | Sets the new password from a valid token; revokes all sessions (then sign in again) |
 | `POST /api/auth/refresh` | 200 | New access JWT + new refresh token (rotates old refresh token) |
 | `POST /api/auth/logout` | 200 | "Logged out successfully" (revokes all user refresh tokens) |
 | `POST /api/auth/google` | 200 | Access JWT + refresh token + user info (verifies a Google ID token; provisions or links the account) |
@@ -336,6 +338,10 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 **Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
 
 **Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
+
+**Forgot password**: find user by email → unknown or deactivated is a silent no-op; a Google-only account (no password) gets a "you use Google" email; a password account gets a single-use reset token (256-bit random, stored SHA-256-hashed via `SecureTokens`, 15-min expiry, prior tokens invalidated) emailed as `${APP_BASE_URL}/reset-password?token=`. Always returns the same neutral 200 (enumeration-safe). Rate-limited per IP (email-bomb protection).
+
+**Reset password**: look up the token by its hash (must be unused and unexpired) → set the new password (`@ValidPassword`) → mark the email verified (mailbox control is proven) → mark the token used → **revoke all refresh tokens** (kills every session) → email a "password changed" notice → audit `PASSWORD_RESET`. No JWT is issued; the user signs in again. Invalid/used/expired tokens return a generic error.
 
 **Email login**: find user by email (401 generic if not found) → **verify the password first** (401 generic "Invalid email or password" if wrong, or if the account is OAuth-only with no hash) → *only after a correct password* surface account state: `is_active` (401 "deactivated") then `is_email_verified` (401 `EmailNotVerifiedException`, whose envelope carries `code: "EMAIL_NOT_VERIFIED"` so clients branch on the code, not the message) → generate access JWT + refresh token → return `AuthResponse`. Checking the password before revealing any state keeps a wrong guess indistinguishable from an unknown email (anti-enumeration); the verify-prompt still reaches a legitimate user who proved ownership. An account that has **both** a password and a linked `google_sub` can sign in with either method (the old "different sign-in option" block was removed).
 
@@ -609,12 +615,13 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 13 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`) |
-| `EmailServiceTest` | 2 | Verification email builds the prefilled link (exact param names, URL-encoded email, trailing-slash safe); registration-attempt email notifies the owner |
+| `EmailServiceTest` | 5 | Verification link (param names, URL-encoded email, trailing-slash safe); registration-attempt notice; password-reset link carries the token; Google-only reset notice (no link); password-changed notice |
 | `GoogleOAuthServiceTest` | 9 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
 | `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
-| `AuditLogServiceTest` | 3 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup |
+| `AuditLogServiceTest` | 4 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup; `recordAccountEvent` stamps the subject as actor |
+| `PasswordResetServiceTest` | 7 | requestReset (password account issues token + email, unknown/deactivated no-op, Google-only sends info email); resetPassword (valid sets password + revokes sessions + marks used, unknown/used token throws, expired throws) |
 | `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 | `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
 | `GroupSecurityTest` | 12 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); `canManageMember`/`canViewMember`/`isSelfMember` by membership id |
@@ -637,7 +644,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **249 tests** across 28 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **260 tests** across 29 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

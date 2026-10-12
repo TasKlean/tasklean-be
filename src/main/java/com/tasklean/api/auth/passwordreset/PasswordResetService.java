@@ -6,7 +6,6 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -106,8 +105,11 @@ public class PasswordResetService {
         // Force re-authentication everywhere — kills any session an attacker may hold.
         refreshTokenService.revokeAllUserTokens(user);
 
+        // Tell the owner their password changed, so an unauthorized reset is noticeable.
+        emailService.sendPasswordChangedEmail(user.getEmail());
+
         log.info("Password reset completed: uid={}", user.getUid());
-        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.PASSWORD_RESET, "Password reset", null);
+        auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.PASSWORD_RESET, "Password reset");
     }
 
     /** Scheduled cleanup — deletes expired or already-used reset tokens every 6 hours. */
