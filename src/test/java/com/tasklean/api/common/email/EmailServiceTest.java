@@ -48,4 +48,48 @@ class EmailServiceTest {
         assertThat(message.getTo()).containsExactly("bob@example.com");
         assertThat(message.getText()).contains("account already exists");
     }
+
+    @Test
+    void sendPasswordResetEmail_buildsResetLinkWithToken() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendPasswordResetEmail("bob@example.com", "tok-ABC123");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText())
+                .contains("http://localhost:3000/reset-password?token=tok-ABC123")
+                .contains("expires in 15 minutes");
+    }
+
+    @Test
+    void sendGoogleOnlyResetEmail_mentionsGoogleAndSendsNoLink() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendGoogleOnlyResetEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("Google").doesNotContain("/reset-password?token=");
+    }
+
+    @Test
+    void sendPasswordChangedEmail_notifiesOwnerOfChange() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendPasswordChangedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("password was just changed");
+    }
 }

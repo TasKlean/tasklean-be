@@ -7,7 +7,6 @@ import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -112,8 +111,8 @@ public class GoogleOAuthService {
 
     private AuthResponse loginExisting(User user) {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
-            auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN_FAILED,
-                    "Failed Google login: account deactivated", null);
+            auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
+                    "Failed Google login: account deactivated");
             throw new BadCredentialsException("Account is deactivated");
         }
         return issueTokens(user, AuditAction.LOGIN, "User logged in via Google");
@@ -121,8 +120,8 @@ public class GoogleOAuthService {
 
     private AuthResponse linkGoogleAccount(User user, GoogleIdToken.Payload payload) {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
-            auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN_FAILED,
-                    "Failed Google login: account deactivated", null);
+            auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
+                    "Failed Google login: account deactivated");
             throw new BadCredentialsException("Account is deactivated");
         }
         user.setGoogleSub(payload.getSubject());
@@ -155,7 +154,7 @@ public class GoogleOAuthService {
     private AuthResponse issueTokens(User user, AuditAction action, String auditMessage) {
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);
-        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), action, auditMessage, null);
+        auditLogService.recordAccountEvent(user.getIdUser(), action, auditMessage);
         return AuthResponse.from(user, token, refreshToken);
     }
 

@@ -4,6 +4,9 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.dto.LoginRequest;
 import com.tasklean.api.auth.dto.RegisterRequest;
+import com.tasklean.api.auth.passwordreset.PasswordResetService;
+import com.tasklean.api.auth.passwordreset.dto.ForgotPasswordRequest;
+import com.tasklean.api.auth.passwordreset.dto.ResetPasswordRequest;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
@@ -36,6 +39,7 @@ public class AuthController {
     private final GoogleOAuthService googleOAuthService;
     private final VerificationService verificationService;
     private final RefreshTokenService refreshTokenService;
+    private final PasswordResetService passwordResetService;
 
     /**
      * Registers a new user and sends a verification code. No JWT is issued until verified.
@@ -92,6 +96,30 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> resendVerification(@Valid @RequestBody ResendVerificationRequest request) {
         verificationService.resendVerification(request);
         return ResponseEntity.ok(ApiResponse.success("If this email is registered, a verification code has been sent", null));
+    }
+
+    /**
+     * Starts a password reset by emailing a single-use reset link.
+     *
+     * @param request the account email
+     * @return {@code 200 OK} with a neutral message (does not reveal whether the email exists)
+     */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        passwordResetService.requestReset(request);
+        return ResponseEntity.ok(ApiResponse.success("If that email is registered, a reset link has been sent", null));
+    }
+
+    /**
+     * Completes a password reset with a valid token and sets the new password.
+     *
+     * @param request the reset token and new password
+     * @return {@code 200 OK} on success; the user must then sign in with the new password
+     */
+    @PostMapping("/reset-password")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.resetPassword(request);
+        return ResponseEntity.ok(ApiResponse.success("Password reset. You can now sign in with your new password.", null));
     }
 
     /**

@@ -20,5 +20,7 @@ public enum AuditAction {
     ACCOUNT_DELETED,
     LOGIN,
     LOGOUT,
-    LOGIN_FAILED
+    LOGIN_FAILED,
+    EMAIL_VERIFIED,
+    PASSWORD_RESET
 }

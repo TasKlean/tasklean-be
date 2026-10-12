@@ -32,6 +32,12 @@ public class RateLimitProperties {
     /** Token refresh — keyed by IP. */
     private Tier refresh = new Tier(20, Duration.ofMinutes(1));
 
+    /** Forgot-password — keyed by IP (strict; each call can send an email, so limit email-bombing). */
+    private Tier forgotPassword = new Tier(5, Duration.ofHours(1));
+
+    /** Reset-password — keyed by IP (caps token-guessing attempts). */
+    private Tier resetPassword = new Tier(10, Duration.ofMinutes(1));
+
     /** Authenticated API calls — keyed by user id. */
     private Tier apiPerUser = new Tier(120, Duration.ofMinutes(1));
 
