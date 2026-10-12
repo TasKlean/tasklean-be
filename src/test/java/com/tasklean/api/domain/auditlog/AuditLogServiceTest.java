@@ -75,6 +75,25 @@ class AuditLogServiceTest {
         verify(auditContext, never()).currentActor(any());
     }
 
+    @Test
+    void recordAccountEvent_stampsSubjectAsActor() {
+        User subject = User.builder().idUser(1L).build();
+        when(auditContext.userReference(1L)).thenReturn(subject);
+        when(auditContext.currentIpAddress()).thenReturn("203.0.113.7");
+
+        auditLogService.recordAccountEvent(1L, AuditAction.PASSWORD_RESET, "Password reset");
+
+        AuditLog saved = captureSaved();
+        assertThat(saved.getEntityType()).isEqualTo(AuditEntityType.USER);
+        assertThat(saved.getEntityId()).isEqualTo(1L);
+        assertThat(saved.getAction()).isEqualTo("PASSWORD_RESET");
+        // Self-service events: actor is the subject, so actor_user_id is never null.
+        assertThat(saved.getActorUser()).isEqualTo(subject);
+        assertThat(saved.getGroup()).isNull();
+        assertThat(saved.getGroupMember()).isNull();
+        verify(auditContext, never()).currentActor(any());
+    }
+
     private AuditLog captureSaved() {
         ArgumentCaptor<AuditLog> captor = ArgumentCaptor.forClass(AuditLog.class);
         verify(auditLogRepository).save(captor.capture());

@@ -9,7 +9,6 @@ import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -70,7 +69,7 @@ public class AuthService {
         user = userRepository.save(user);
         // Log the uid, never the email (PII).
         log.info("User registered: uid={}", user.getUid());
-        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.REGISTER, "Account created", null);
+        auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.REGISTER, "Account created");
         verificationService.createAndSendVerification(user);
 
         return AuthResponse.registrationPending(user.getEmail());
@@ -114,14 +113,14 @@ public class AuthService {
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);
         log.info("User logged in: uid={}", user.getUid());
-        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN, "User logged in", null);
+        auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN, "User logged in");
         return AuthResponse.from(user, token, refreshToken);
     }
 
     // login() is not transactional, so each failed-login entry commits in its own
     // transaction and survives the BadCredentialsException thrown immediately after.
     private void recordFailedLogin(User user, String reason) {
-        auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.LOGIN_FAILED,
-                "Failed login attempt: " + reason, null);
+        auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
+                "Failed login attempt: " + reason);
     }
 }

@@ -9,7 +9,6 @@ import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -29,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -60,8 +58,8 @@ class AuthServiceTest {
     private AuthService authService;
 
     private void verifyLoginFailedRecordedFor(long userId) {
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(userId),
-                eq(AuditAction.LOGIN_FAILED), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(userId),
+                eq(AuditAction.LOGIN_FAILED), anyString());
     }
 
     private User buildExistingUser() {
@@ -101,8 +99,8 @@ class AuthServiceTest {
         assertThat(response.getEmail()).isEqualTo("new@example.com");
         assertThat(response.getMessage()).contains("verification code");
         verify(verificationService).createAndSendVerification(any(User.class));
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(99L),
-                eq(AuditAction.REGISTER), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(99L),
+                eq(AuditAction.REGISTER), anyString());
     }
 
     @Test
@@ -188,8 +186,8 @@ class AuthServiceTest {
         assertThat(response.getRefreshToken()).isEqualTo("refresh-token-abc");
         assertThat(response.getUid()).isEqualTo("usr-existing-123");
         assertThat(response.getEmail()).isEqualTo("bob@example.com");
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L),
-                eq(AuditAction.LOGIN), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(1L),
+                eq(AuditAction.LOGIN), anyString());
     }
 
     @Test
@@ -205,7 +203,7 @@ class AuthServiceTest {
                 .hasMessageContaining("Invalid email or password");
 
         // Unknown email cannot be audited: there is no user id to attribute the entry to.
-        verify(auditLogService, never()).recordEvent(any(), any(), any(), anyString(), any());
+        verify(auditLogService, never()).recordAccountEvent(any(), any(), anyString());
     }
 
     @Test
@@ -281,8 +279,8 @@ class AuthServiceTest {
         AuthResponse response = authService.login(request);
 
         assertThat(response.getToken()).isEqualTo("login-token");
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L),
-                eq(AuditAction.LOGIN), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(1L),
+                eq(AuditAction.LOGIN), anyString());
     }
 
     @Test

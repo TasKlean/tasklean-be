@@ -6,6 +6,8 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -45,6 +48,9 @@ class VerificationServiceTest {
 
     @Mock
     private RefreshTokenService refreshTokenService;
+
+    @Mock
+    private AuditLogService auditLogService;
 
     @Spy
     private Clock clock = Clock.systemUTC();
@@ -114,6 +120,7 @@ class VerificationServiceTest {
         assertThat(user.getIsEmailVerified()).isTrue();
         verify(userRepository).save(user);
         verify(verificationRepository).deleteByUserIdUser(1L);
+        verify(auditLogService).recordAccountEvent(eq(1L), eq(AuditAction.EMAIL_VERIFIED), anyString());
     }
 
     @Test

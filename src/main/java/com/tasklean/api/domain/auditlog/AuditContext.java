@@ -57,6 +57,18 @@ public class AuditContext {
     }
 
     /**
+     * Returns a reference to the given user for use as an audit-log foreign key, without a database
+     * load. Used to attribute self-service account events (register, login, …) to their subject on
+     * anonymous endpoints, where {@link #currentUser()} would be {@code null}.
+     *
+     * @param userId the subject user's id
+     * @return a lazy reference to that user
+     */
+    public User userReference(Long userId) {
+        return userRepository.getReferenceById(userId);
+    }
+
+    /**
      * Returns the id of the authenticated user making the current request.
      *
      * @return the current user's id, or {@code null} if the request is anonymous

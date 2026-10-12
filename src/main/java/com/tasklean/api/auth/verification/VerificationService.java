@@ -6,6 +6,8 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class VerificationService {
     private final EmailService emailService;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     /**
@@ -84,6 +87,7 @@ public class VerificationService {
         // Clean up all codes for this user
         verificationRepository.deleteByUserIdUser(user.getIdUser());
         log.info("Email verified: uid={}", user.getUid());
+        auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.EMAIL_VERIFIED, "Email verified");
 
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);

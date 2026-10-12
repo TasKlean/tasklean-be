@@ -3,9 +3,9 @@ package com.tasklean.api.auth.refresh;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
+import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import lombok.RequiredArgsConstructor;
@@ -15,14 +15,9 @@ import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.Base64;
 
 /**
  * Manages refresh tokens — issuing, rotating on refresh, revoking on logout, and
@@ -33,8 +28,6 @@ import java.util.Base64;
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
-
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtService jwtService;
@@ -50,11 +43,11 @@ public class RefreshTokenService {
      */
     @Transactional
     public String createRefreshToken(User user) {
-        String rawToken = generateToken();
+        String rawToken = SecureTokens.randomToken();
 
         RefreshToken refreshToken = RefreshToken.builder()
                 .user(user)
-                .token(hashToken(rawToken))
+                .token(SecureTokens.sha256(rawToken))
                 .expiresAt(LocalDateTime.now(clock).plus(Duration.ofMillis(jwtConfig.getRefreshExpiration())))
                 .build();
 
@@ -72,7 +65,7 @@ public class RefreshTokenService {
      */
     @Transactional
     public AuthResponse refresh(RefreshRequest request) {
-        String hashedToken = hashToken(request.getRefreshToken());
+        String hashedToken = SecureTokens.sha256(request.getRefreshToken());
 
         RefreshToken existing = refreshTokenRepository.findByTokenAndIsRevokedFalse(hashedToken)
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
@@ -111,13 +104,13 @@ public class RefreshTokenService {
      */
     @Transactional
     public void logout(RefreshRequest request) {
-        String hashedToken = hashToken(request.getRefreshToken());
+        String hashedToken = SecureTokens.sha256(request.getRefreshToken());
 
         RefreshToken token = refreshTokenRepository.findByTokenAndIsRevokedFalse(hashedToken)
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
         refreshTokenRepository.revokeAllByUserId(token.getUser().getIdUser());
         log.info("User logged out: uid={}", token.getUser().getUid());
-        auditLogService.recordEvent(AuditEntityType.USER, token.getUser().getIdUser(), AuditAction.LOGOUT, "User logged out", null);
+        auditLogService.recordAccountEvent(token.getUser().getIdUser(), AuditAction.LOGOUT, "User logged out");
     }
 
     /**
@@ -135,32 +128,5 @@ public class RefreshTokenService {
     @Transactional
     public void purgeExpiredAndRevokedTokens() {
         refreshTokenRepository.deleteExpiredAndRevoked(LocalDateTime.now(clock));
-    }
-
-    /**
-     * Generates a 256-bit URL-safe random token string.
-     *
-     * @return the raw token
-     */
-    private String generateToken() {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    /**
-     * SHA-256 hashes a raw token so only the hash is ever persisted or compared.
-     *
-     * @param rawToken the raw token
-     * @return the Base64 URL-encoded hash
-     */
-    private String hashToken(String rawToken) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
-            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
     }
 }

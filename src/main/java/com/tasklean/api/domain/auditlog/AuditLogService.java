@@ -52,6 +52,30 @@ public class AuditLogService {
     }
 
     /**
+     * Records a self-service account event (register, login, logout, email verified, password
+     * reset, …) on a {@code USER} entity. These run on anonymous endpoints, so the security context
+     * has no caller — the actor is set explicitly to the subject so {@code actor_user_id} is
+     * populated and the per-user index is usable.
+     *
+     * @param userId the subject user (also the actor)
+     * @param action the action performed
+     * @param message a human-readable description of what happened
+     */
+    @Transactional
+    public void recordAccountEvent(Long userId, AuditAction action, String message) {
+        AuditLog entry = AuditLog.builder()
+                .entityType(AuditEntityType.USER)
+                .entityId(userId)
+                .action(action.name())
+                .actionMessage(message)
+                .ipAddress(auditContext.currentIpAddress())
+                .actorUser(auditContext.userReference(userId))
+                .build();
+
+        auditLogRepository.save(entry);
+    }
+
+    /**
      * Returns all audit-log entries for a group, newest first.
      *
      * @param groupId the group id

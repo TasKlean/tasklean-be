@@ -7,7 +7,6 @@ import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -30,7 +29,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -126,8 +124,8 @@ class GoogleOAuthServiceTest {
         assertThat(saved.getPasswordHash()).isNull();
         assertThat(saved.getIsEmailVerified()).isTrue();
         assertThat(saved.getUid()).isNotBlank();
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(50L),
-                eq(AuditAction.REGISTER), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(50L),
+                eq(AuditAction.REGISTER), anyString());
     }
 
     // --- Returning Google user ---
@@ -144,8 +142,8 @@ class GoogleOAuthServiceTest {
         assertThat(response.getToken()).isEqualTo("access-token");
         assertThat(response.getUid()).isEqualTo("usr-google-7");
         verify(userRepository, never()).save(any());
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(7L),
-                eq(AuditAction.LOGIN), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(7L),
+                eq(AuditAction.LOGIN), anyString());
     }
 
     // --- Linking a password account ---
@@ -179,8 +177,8 @@ class GoogleOAuthServiceTest {
         assertThat(linked.getIsEmailVerified()).isTrue();
         assertThat(linked.getPhotoUrl()).isEqualTo("https://pics/jane.png");
         assertThat(linked.getPasswordHash()).isEqualTo("$2a$10$hash");
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(9L),
-                eq(AuditAction.LOGIN), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(9L),
+                eq(AuditAction.LOGIN), anyString());
     }
 
     // --- Rejections ---
@@ -253,8 +251,8 @@ class GoogleOAuthServiceTest {
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("deactivated");
 
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(7L),
-                eq(AuditAction.LOGIN_FAILED), anyString(), isNull());
+        verify(auditLogService).recordAccountEvent(eq(7L),
+                eq(AuditAction.LOGIN_FAILED), anyString());
         verify(jwtService, never()).generateToken(any());
     }
 }
