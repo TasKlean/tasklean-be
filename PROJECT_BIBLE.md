@@ -475,7 +475,7 @@ compile → test → sonarcloud → build & push Docker image → deploy to Rend
 ```
 Build/push/deploy only run on push (not PRs). Uses GitHub environment `Staging` for deploy secrets.
 
-**Production** (`ci-production.yml`) — triggers on push to `production` and PRs to `production`:
+**Production** (`ci-production.yml`) — triggers on push to `production`, PRs to `production`, and manual `workflow_dispatch` (dispatch runs compile/test/sonar only; version/build/deploy/release stay push-gated):
 ```
 compile → test → sonarcloud → auto-version tag → build & push Docker image → deploy to Render → create GitHub Release
 ```
