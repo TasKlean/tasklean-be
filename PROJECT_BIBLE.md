@@ -475,7 +475,7 @@ compile → test → sonarcloud → build & push Docker image → deploy to Rend
 ```
 Build/push/deploy only run on push (not PRs). Uses GitHub environment `Staging` for deploy secrets.
 
-**Production** (`ci-production.yml`) — triggers on push to `production` and PRs to `production`:
+**Production** (`ci-production.yml`) — triggers on push to `production`, PRs to `production`, and manual `workflow_dispatch` (dispatch runs compile/test/sonar only; version/build/deploy/release stay push-gated):
 ```
 compile → test → sonarcloud → auto-version tag → build & push Docker image → deploy to Render → create GitHub Release
 ```
@@ -487,7 +487,7 @@ Version/build/deploy/release only run on push (not PRs). Uses GitHub environment
 - `BREAKING CHANGE:` → major bump (e.g., `v1.0.0` → `v2.0.0`)
 - No prefix → defaults to patch
 
-Docker images are tagged with the version (`v1.0.1`), commit sha (`sha-abc123`), and `latest`.
+Docker image tags: **staging** pushes a moving `staging` tag plus the commit sha (`sha-abc123`); **production** pushes the version (`v1.0.1`), commit sha, and `latest`. Render points each service at its moving tag (`staging` / `latest`) so every deploy-hook fire pulls the newest image — the sha tag is the immutable rollback/audit handle. Pinning a Render service to a `sha-…` tag silently freezes it.
 
 **Release flow**: merge `main` → `production` via PR → pipeline runs → auto-tags, builds, deploys, and creates a GitHub Release with auto-generated notes from merged PRs.
 
