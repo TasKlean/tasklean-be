@@ -139,6 +139,7 @@ jobs:
         with:
           images: ${{ secrets.DOCKERHUB_USERNAME }}/tasklean-api
           tags: |
+            type=raw,value=staging
             type=sha,prefix=sha-
 
       - name: Build and push image
