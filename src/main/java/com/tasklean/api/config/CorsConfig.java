@@ -16,7 +16,9 @@ import java.util.List;
 @Configuration
 public class CorsConfig {
 
-    @Value("${cors.allowed-origins:http://localhost:3000}")
+    // No inline default: the dev profile supplies the local origin, so a missing
+    // cors.allowed-origins fails startup instead of silently allowing localhost.
+    @Value("${cors.allowed-origins}")
     private String allowedOrigins;
 
     /**

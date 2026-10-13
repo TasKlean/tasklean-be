@@ -405,11 +405,9 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 | `DB_USERNAME` | base (all profiles) | Database user |
 | `DB_PASSWORD` | base (all profiles) | Database password |
 | `JWT_SECRET` | base (all profiles) | HMAC signing key (min 256 bits) |
-| `CORS_ALLOWED_ORIGINS` | prod (dev defaults to `http://localhost:3000`) | Comma-separated browser origins allowed to call `/api/**` |
-| `APP_BASE_URL` | prod (dev defaults to `http://localhost:3000`) | Frontend origin for links in emails (e.g. the verify-email link) |
-| `GOOGLE_CLIENT_ID` | base (all profiles) | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | base (all profiles) | Google OAuth client secret |
-| `GOOGLE_REDIRECT_URI` | prod only | OAuth callback URL (dev hardcodes `localhost:3000`) |
+| `CORS_ALLOWED_ORIGINS` | required outside dev — unset fails startup (dev profile defaults to `http://localhost:3000`) | Comma-separated browser origins allowed to call `/api/**` |
+| `APP_BASE_URL` | required outside dev — unset fails startup (dev profile defaults to `http://localhost:3000`) | Frontend origin for links in emails (e.g. the verify-email link) |
+| `GOOGLE_CLIENT_ID` | base (all profiles) | Google OAuth client ID (token audience; the only Google value the backend uses) |
 | `MAIL_HOST` | base (all profiles) | SMTP host (Mailtrap sandbox in dev) |
 | `MAIL_PORT` | base (all profiles) | SMTP port |
 | `MAIL_USERNAME` | base (all profiles) | SMTP username |
