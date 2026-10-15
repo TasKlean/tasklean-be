@@ -1,7 +1,6 @@
 package com.tasklean.api.domain.device.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import lombok.*;
 
 @Getter
@@ -23,7 +22,4 @@ public class DeviceRequest {
     private String osVersion;
 
     private String appVersion;
-
-    @NotNull
-    private Long userId;
 }

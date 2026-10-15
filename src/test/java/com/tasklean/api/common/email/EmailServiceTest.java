@@ -92,4 +92,31 @@ class EmailServiceTest {
         assertThat(message.getTo()).containsExactly("bob@example.com");
         assertThat(message.getText()).contains("password was just changed");
     }
+
+    @Test
+    void sendNewSignInEmail_includesDeviceAndIp() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendNewSignInEmail("bob@example.com", "Chrome on Windows", "203.0.113.5");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("Chrome on Windows").contains("203.0.113.5");
+    }
+
+    @Test
+    void sendNewSignInEmail_blankIp_omitsIpClause() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendNewSignInEmail("bob@example.com", "Chrome on Windows", null);
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getText()).contains("Chrome on Windows").doesNotContain("IP ");
+    }
 }

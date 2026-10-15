@@ -134,14 +134,27 @@ public class AuthController {
     }
 
     /**
-     * Revokes all refresh tokens for the user (logout).
+     * Logs out the current device by revoking the session the presented refresh token belongs to.
      *
-     * @param request the refresh token identifying the user
+     * @param request the refresh token identifying the device/session
      * @return {@code 200 OK} with a confirmation message
      */
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody RefreshRequest request) {
         refreshTokenService.logout(request);
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
+    }
+
+    /**
+     * Logs out everywhere by revoking every refresh token for the user the presented token
+     * identifies.
+     *
+     * @param request the refresh token identifying the user
+     * @return {@code 200 OK} with a confirmation message
+     */
+    @PostMapping("/logout-all")
+    public ResponseEntity<ApiResponse<Void>> logoutAll(@Valid @RequestBody RefreshRequest request) {
+        refreshTokenService.logoutAll(request);
+        return ResponseEntity.ok(ApiResponse.success("Logged out of all sessions", null));
     }
 }

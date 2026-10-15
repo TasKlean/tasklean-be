@@ -31,9 +31,6 @@
     "description" : "In-app notifications for the signed-in user.",
     "name" : "Notifications"
   }, {
-    "description" : "Devices registered for push notifications.",
-    "name" : "Devices"
-  }, {
     "description" : "Group-scoped task categories.",
     "name" : "Categories"
   }, {
@@ -45,6 +42,9 @@
   }, {
     "description" : "Append-only record of who changed what within a household.",
     "name" : "Audit logs"
+  }, {
+    "description" : "The caller's own devices: list with session state, rename, per-device logout, remove, and push-notification registration.",
+    "name" : "Devices"
   } ],
   "paths" : {
     "/api/audit-logs" : {
@@ -324,8 +324,52 @@
     },
     "/api/auth/logout" : {
       "post" : {
-        "description" : "Revokes all refresh tokens for the user (logout).",
+        "description" : "Logs out the current device by revoking the session the presented refresh token belongs to.",
         "operationId" : "logout",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "description" : "the refresh token identifying the device/session",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Logs out the current device by revoking the session the presented refresh token belongs to.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/logout-all" : {
+      "post" : {
+        "description" : "Logs out everywhere by revoking every refresh token for the user the presented token\n identifies.",
+        "operationId" : "logoutAll",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -362,7 +406,7 @@
           }
         },
         "security" : [ ],
-        "summary" : "Revokes all refresh tokens for the user (logout).",
+        "summary" : "Logs out everywhere by revoking every refresh token for the user the presented token\n identifies.",
         "tags" : [ "Auth" ]
       }
     },
@@ -819,31 +863,18 @@
     },
     "/api/devices" : {
       "get" : {
-        "description" : "Lists a user's active devices.",
-        "operationId" : "getDevicesByUser",
-        "parameters" : [ {
-          "description" : "the user id",
-          "in" : "query",
-          "name" : "userId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
+        "description" : "Lists the caller's devices, flagging which have a live session and which is the current one.",
+        "operationId" : "getMyDevices",
         "responses" : {
           "200" : {
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListDeviceResponse"
+                  "$ref" : "#/components/schemas/ApiResponseListMyDeviceResponse"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the devices"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
+            "description" : "<code>200 OK</code> with the caller's devices"
           },
           "401" : {
             "$ref" : "#/components/responses/Unauthorized"
@@ -858,11 +889,11 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists a user's active devices.",
+        "summary" : "Lists the caller's devices, flagging which have a live session and which is the current one.",
         "tags" : [ "Devices" ]
       },
       "post" : {
-        "description" : "Registers a device for push notifications.",
+        "description" : "Registers a push-notification token for the caller's current device.",
         "operationId" : "registerDevice",
         "requestBody" : {
           "content" : {
@@ -872,7 +903,7 @@
               }
             }
           },
-          "description" : "the device details (token, type, user)",
+          "description" : "the push device details (token, type)",
           "required" : true
         },
         "responses" : {
@@ -902,14 +933,14 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Registers a device for push notifications.",
+        "summary" : "Registers a push-notification token for the caller's current device.",
         "tags" : [ "Devices" ]
       }
     },
     "/api/devices/{id}" : {
       "delete" : {
-        "description" : "Soft-deletes (deactivates) a device.",
-        "operationId" : "deactivateDevice",
+        "description" : "Removes one of the caller's devices (soft-delete) and revokes any session on it.",
+        "operationId" : "removeDevice",
         "parameters" : [ {
           "description" : "the device id",
           "in" : "path",
@@ -947,55 +978,12 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Soft-deletes (deactivates) a device.",
+        "summary" : "Removes one of the caller's devices (soft-delete) and revokes any session on it.",
         "tags" : [ "Devices" ]
       },
-      "get" : {
-        "description" : "Fetches a device by id.",
-        "operationId" : "getDevice",
-        "parameters" : [ {
-          "description" : "the device id",
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseDeviceResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the device"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Fetches a device by id.",
-        "tags" : [ "Devices" ]
-      },
-      "put" : {
-        "description" : "Updates a device's descriptive fields.",
-        "operationId" : "updateDevice",
+      "patch" : {
+        "description" : "Renames one of the caller's devices.",
+        "operationId" : "renameDevice",
         "parameters" : [ {
           "description" : "the device id",
           "in" : "path",
@@ -1010,11 +998,11 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/DeviceRequest"
+                "$ref" : "#/components/schemas/RenameDeviceRequest"
               }
             }
           },
-          "description" : "the new device details",
+          "description" : "the new display name",
           "required" : true
         },
         "responses" : {
@@ -1022,7 +1010,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseDeviceResponse"
+                  "$ref" : "#/components/schemas/ApiResponseMyDeviceResponse"
                 }
               }
             },
@@ -1044,7 +1032,52 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Updates a device's descriptive fields.",
+        "summary" : "Renames one of the caller's devices.",
+        "tags" : [ "Devices" ]
+      }
+    },
+    "/api/devices/{id}/logout" : {
+      "post" : {
+        "description" : "Logs out a single device by revoking its session; the device stays listed as inactive.",
+        "operationId" : "logoutDevice",
+        "parameters" : [ {
+          "description" : "the device id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Logs out a single device by revoking its session; the device stays listed as inactive.",
         "tags" : [ "Devices" ]
       }
     },
@@ -2834,27 +2867,6 @@
           }
         }
       },
-      "ApiResponseListDeviceResponse" : {
-        "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "data" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/DeviceResponse"
-            }
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "success" : {
-            "type" : "boolean"
-          }
-        }
-      },
       "ApiResponseListGroupMemberResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -2887,6 +2899,27 @@
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/GroupResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListMyDeviceResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/MyDeviceResponse"
             }
           },
           "message" : {
@@ -3033,6 +3066,24 @@
           "data" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseMyDeviceResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/MyDeviceResponse"
           },
           "message" : {
             "type" : "string"
@@ -3305,13 +3356,9 @@
           },
           "osVersion" : {
             "type" : "string"
-          },
-          "userId" : {
-            "type" : "integer",
-            "format" : "int64"
           }
         },
-        "required" : [ "deviceToken", "deviceType", "userId" ]
+        "required" : [ "deviceToken", "deviceType" ]
       },
       "DeviceResponse" : {
         "type" : "object",
@@ -3539,6 +3586,44 @@
         },
         "required" : [ "email", "password" ]
       },
+      "MyDeviceResponse" : {
+        "type" : "object",
+        "properties" : {
+          "activeSession" : {
+            "type" : "boolean"
+          },
+          "browserInfo" : {
+            "type" : "string"
+          },
+          "currentDevice" : {
+            "type" : "boolean"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "deviceName" : {
+            "type" : "string"
+          },
+          "deviceType" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "ipAddress" : {
+            "type" : "string"
+          },
+          "lastUsed" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "osVersion" : {
+            "type" : "string"
+          }
+        }
+      },
       "MyGroupResponse" : {
         "type" : "object",
         "description" : "A group as seen by one of its members, carrying that member's own role so a client can decide\n which admin controls to show. The invite code is present only for a group admin.",
@@ -3659,6 +3744,17 @@
           }
         },
         "required" : [ "email", "lastName", "name" ]
+      },
+      "RenameDeviceRequest" : {
+        "type" : "object",
+        "properties" : {
+          "name" : {
+            "type" : "string",
+            "maxLength" : 255,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "name" ]
       },
       "ResendVerificationRequest" : {
         "type" : "object",

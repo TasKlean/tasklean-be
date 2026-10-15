@@ -100,6 +100,24 @@ public class EmailService {
                 If it wasn't you, reset your password immediately and contact support - your account may be compromised.""");
     }
 
+    /**
+     * Alerts the account owner that their account was signed into from a new device, so an
+     * unrecognised sign-in is noticeable. Carries only the device label and IP, never credentials.
+     *
+     * @param to         the recipient email address
+     * @param deviceName the friendly device label (e.g. "Chrome on Windows")
+     * @param ipAddress  the IP the sign-in came from; omitted from the message when null/blank
+     */
+    public void sendNewSignInEmail(String to, String deviceName, String ipAddress) {
+        String fromIp = (ipAddress != null && !ipAddress.isBlank()) ? " (IP " + ipAddress + ")" : "";
+        send(to, "TasKlean - New sign-in to your account", """
+                Your TasKlean account was just signed into from a new device:
+                %s%s
+
+                If this was you, you can ignore this email.
+                If it wasn't you, change your password and sign out everywhere from your account settings.""".formatted(deviceName, fromIp));
+    }
+
     private void send(String to, String subject, String body) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(to);
