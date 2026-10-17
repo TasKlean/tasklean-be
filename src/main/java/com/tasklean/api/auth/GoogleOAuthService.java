@@ -77,6 +77,26 @@ public class GoogleOAuthService {
         return createGoogleUser(payload);
     }
 
+    /**
+     * Verifies a Google ID token for account-linking: checks the token signature, the OIDC nonce,
+     * and that Google has verified the email, then returns the Google subject id to link. Unlike
+     * {@link #authenticate}, it neither creates nor mutates any user — the caller links the subject
+     * to an already-authenticated account.
+     *
+     * @param request the request carrying the Google ID token and the nonce secret
+     * @return the verified Google identity (subject id and email) to link
+     * @throws BadCredentialsException if the token is invalid, the nonce doesn't match, or the
+     *                                 Google email is unverified
+     */
+    public GoogleIdentity verifyLinkToken(GoogleAuthRequest request) {
+        GoogleIdToken.Payload payload = verifyToken(request.getIdToken());
+        verifyNonce(payload, request.getNonce());
+        if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
+            throw new BadCredentialsException("Google account email is not verified");
+        }
+        return new GoogleIdentity(payload.getSubject(), payload.getEmail());
+    }
+
     // OIDC nonce (implicit flow): the token's nonce claim must equal SHA-256 of the per-login
     // secret the client kept in its session cookie, binding the token to this login (anti-replay).
     private void verifyNonce(GoogleIdToken.Payload payload, String nonce) {

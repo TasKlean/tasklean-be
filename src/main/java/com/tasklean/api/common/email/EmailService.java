@@ -101,6 +101,61 @@ public class EmailService {
     }
 
     /**
+     * Confirms to a (previously Google-only) account holder that a password was just added, so an
+     * unauthorized change is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendPasswordSetEmail(String to) {
+        send(to, "TasKlean - A password was added to your account", """
+                A password was just added to your TasKlean account. You can now sign in with your
+                email and password, or keep using Google. For your security, your other sessions
+                have been signed out.
+
+                If this was you, you can ignore this email.
+                If it wasn't you, reset your password immediately and contact support - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that a Google account was just linked, so an unauthorized link is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendGoogleLinkedEmail(String to) {
+        send(to, "TasKlean - Google was linked to your account", """
+                A Google account was just linked to your TasKlean account, so you can now sign in with Google.
+
+                If this was you, you can ignore this email.
+                If it wasn't you, unlink Google and change your password from your account settings - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that a Google account was just unlinked, so an unauthorized change is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendGoogleUnlinkedEmail(String to) {
+        send(to, "TasKlean - Google was unlinked from your account", """
+                Google sign-in was just removed from your TasKlean account. You'll now sign in with your email and password.
+
+                If this was you, you can ignore this email.
+                If it wasn't you, change your password immediately and contact support - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that the account was just deactivated, so an unauthorized deactivation is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendAccountDeactivatedEmail(String to) {
+        send(to, "TasKlean - Your account was deactivated", """
+                Your TasKlean account was just deactivated and you've been signed out everywhere.
+
+                If this was you, no further action is needed.
+                If it wasn't you, contact support right away - your account may be compromised.""");
+    }
+
+    /**
      * Alerts the account owner that their account was signed into from a new device, so an
      * unrecognised sign-in is noticeable. Carries only the device label and IP, never credentials.
      *

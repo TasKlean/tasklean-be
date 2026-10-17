@@ -17,8 +17,9 @@ import java.util.List;
 
 /**
  * REST endpoints for user profiles — fetch (own via {@code /me}, or by UID), list, update,
- * account deletion, and platform-role management. A user may act on their own account; platform
- * admins/super-admins have wider access.
+ * admin account deletion, and platform-role management. A user may read and update their own
+ * account; platform admins/super-admins have wider access. Self-service deactivation lives in
+ * {@link com.tasklean.api.auth.account.AccountController}.
  */
 @Tag(name = "Users", description = "User profiles: the caller's own via /me, plus platform-admin listing and role management.")
 @RestController
@@ -94,12 +95,13 @@ public class UserController {
     }
 
     /**
-     * Soft-deletes a user account.
+     * Soft-deletes a user account (platform admin action). Users deactivate their own account via
+     * {@code POST /api/account/deactivate}, which re-authenticates and revokes sessions.
      *
      * @param uid the user's public UID
      * @return {@code 200 OK} with a confirmation message
      */
-    @PreAuthorize("hasRole('SUPER_ADMIN') or @accountSecurity.isSelf(#uid)")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @DeleteMapping("/{uid}")
     public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable String uid) {
         userService.deleteUser(uid);

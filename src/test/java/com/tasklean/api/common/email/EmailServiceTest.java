@@ -94,6 +94,50 @@ class EmailServiceTest {
     }
 
     @Test
+    void sendPasswordSetEmail_notifiesOwnerOfAddedPassword() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendPasswordSetEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("password was just added");
+    }
+
+    @Test
+    void sendGoogleLinkedEmail_notifiesOwner() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendGoogleLinkedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("Google account was just linked");
+    }
+
+    @Test
+    void sendGoogleUnlinkedEmail_notifiesOwner() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendGoogleUnlinkedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("Google sign-in was just removed");
+    }
+
+    @Test
+    void sendAccountDeactivatedEmail_notifiesOwner() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendAccountDeactivatedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("account was just deactivated");
+    }
+
+    @Test
     void sendNewSignInEmail_includesDeviceAndIp() {
         EmailService service = new EmailService(mailSender, "http://localhost:3000");
 

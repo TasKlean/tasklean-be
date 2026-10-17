@@ -40,6 +40,9 @@
     "description" : "User profiles: the caller's own via /me, plus platform-admin listing and role management.",
     "name" : "Users"
   }, {
+    "description" : "The caller's own account security: change/set password, connected accounts (Google), and deactivation.",
+    "name" : "Account"
+  }, {
     "description" : "Append-only record of who changed what within a household.",
     "name" : "Audit logs"
   }, {
@@ -47,6 +50,252 @@
     "name" : "Devices"
   } ],
   "paths" : {
+    "/api/account/change-password" : {
+      "post" : {
+        "description" : "Changes the caller's password, signing out other devices and keeping this one.",
+        "operationId" : "changePassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "description" : "the current and new passwords",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a fresh auth response (new tokens) for the current device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Changes the caller's password, signing out other devices and keeping this one.",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/connections" : {
+      "get" : {
+        "description" : "Returns the caller's active sign-in methods (password set, Google linked).",
+        "operationId" : "getConnections",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseConnectionsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the connections summary"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns the caller's active sign-in methods (password set, Google linked).",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/connections/google" : {
+      "delete" : {
+        "description" : "Unlinks the caller's Google account (refused if it would leave no way to sign in).",
+        "operationId" : "unlinkGoogle",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseConnectionsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated connections summary"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Unlinks the caller's Google account (refused if it would leave no way to sign in).",
+        "tags" : [ "Account" ]
+      },
+      "post" : {
+        "description" : "Links a Google account to the caller after verifying the Google ID token.",
+        "operationId" : "linkGoogle",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GoogleAuthRequest"
+              }
+            }
+          },
+          "description" : "the Google ID token and nonce secret",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseConnectionsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated connections summary"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Links a Google account to the caller after verifying the Google ID token.",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/deactivate" : {
+      "post" : {
+        "description" : "Deactivates the caller's account and signs out every session.",
+        "operationId" : "deactivate",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DeactivateAccountRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Deactivates the caller's account and signs out every session.",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/set-password" : {
+      "post" : {
+        "description" : "Sets a password on a Google-only account, signing out other devices and keeping this one.",
+        "operationId" : "setPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          },
+          "description" : "the new password",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a fresh auth response (new tokens) for the current device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Sets a password on a Google-only account, signing out other devices and keeping this one.",
+        "tags" : [ "Account" ]
+      }
+    },
     "/api/audit-logs" : {
       "get" : {
         "description" : "Lists a group's audit-log entries, newest first.",
@@ -2488,7 +2737,7 @@
     },
     "/api/users/{uid}" : {
       "delete" : {
-        "description" : "Soft-deletes a user account.",
+        "description" : "Soft-deletes a user account (platform admin action). Users deactivate their own account via\n <code>POST /api/account/deactivate</code>, which re-authenticates and revokes sessions.",
         "operationId" : "deleteUser",
         "parameters" : [ {
           "description" : "the user's public UID",
@@ -2526,7 +2775,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Soft-deletes a user account.",
+        "summary" : "Soft-deletes a user account (platform admin action).",
         "tags" : [ "Users" ]
       },
       "get" : {
@@ -2762,6 +3011,24 @@
           },
           "data" : {
             "$ref" : "#/components/schemas/CategoryResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseConnectionsResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/ConnectionsResponse"
           },
           "message" : {
             "type" : "string"
@@ -3334,6 +3601,43 @@
           }
         }
       },
+      "ChangePasswordRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"change password\": the current password plus the chosen new password.",
+        "properties" : {
+          "currentPassword" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "newPassword" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "currentPassword" ]
+      },
+      "ConnectionsResponse" : {
+        "type" : "object",
+        "description" : "The caller's sign-in methods: whether a password is set and whether a Google account is linked.\n At least one is always true for an active account (otherwise it couldn't sign in).",
+        "properties" : {
+          "googleLinked" : {
+            "type" : "boolean",
+            "description" : "true if a Google account is linked"
+          },
+          "passwordSet" : {
+            "type" : "boolean",
+            "description" : "true if the account has a password"
+          }
+        }
+      },
+      "DeactivateAccountRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"deactivate account\". The password is required for an account that has one\n (re-authentication) and ignored for a Google-only account, which the valid session confirms.",
+        "properties" : {
+          "password" : {
+            "type" : "string"
+          }
+        }
+      },
       "DeviceRequest" : {
         "type" : "object",
         "properties" : {
@@ -3780,6 +4084,15 @@
           }
         },
         "required" : [ "token" ]
+      },
+      "SetPasswordRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"set password\" on a Google-only account: the chosen new password.",
+        "properties" : {
+          "newPassword" : {
+            "type" : "string"
+          }
+        }
       },
       "TagRequest" : {
         "type" : "object",

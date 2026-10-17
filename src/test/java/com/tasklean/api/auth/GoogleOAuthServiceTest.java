@@ -242,6 +242,40 @@ class GoogleOAuthServiceTest {
         verify(userRepository, never()).findByGoogleSub(any());
     }
 
+    // --- verifyLinkToken (account linking) ---
+
+    @Test
+    void verifyLinkToken_validToken_returnsSubjectWithoutTouchingUsers() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", true));
+
+        GoogleIdentity identity = googleOAuthService.verifyLinkToken(request());
+
+        assertThat(identity.subject()).isEqualTo("sub-123");
+        assertThat(identity.email()).isEqualTo("jane@example.com");
+        verify(userRepository, never()).findByGoogleSub(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyLinkToken_unverifiedEmail_throwsBadCredentials() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", false));
+
+        assertThatThrownBy(() -> googleOAuthService.verifyLinkToken(request()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("not verified");
+    }
+
+    @Test
+    void verifyLinkToken_nonceMismatch_throwsBadCredentials() throws Exception {
+        GoogleIdToken.Payload payload = payload("sub-123", "jane@example.com", true);
+        payload.setNonce("not-the-expected-hash");
+        stubVerify(payload);
+
+        assertThatThrownBy(() -> googleOAuthService.verifyLinkToken(request()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("Invalid Google token");
+    }
+
     @Test
     void authenticate_deactivatedAccount_throwsBadCredentialsAndAuditsFailure() throws Exception {
         stubVerify(payload("sub-123", "jane@example.com", true));
