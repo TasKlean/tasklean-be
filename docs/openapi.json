@@ -13,6 +13,18 @@
     "bearerAuth" : [ ]
   } ],
   "tags" : [ {
+    "description" : "Immutable records of a task being completed, with optional photo proof.",
+    "name" : "Task completions"
+  }, {
+    "description" : "The caller's own account security: change/set password, connected accounts (Google), and deactivation.",
+    "name" : "Account"
+  }, {
+    "description" : "Append-only record of who changed what within a household.",
+    "name" : "Audit logs"
+  }, {
+    "description" : "The caller's own devices: list with session state, rename, per-device logout, remove, and push-notification registration.",
+    "name" : "Devices"
+  }, {
     "description" : "Registration, login, email verification, Google sign-in, token refresh and logout. Public - these endpoints need no token.",
     "name" : "Auth"
   }, {
@@ -21,9 +33,6 @@
   }, {
     "description" : "Group-scoped task tags.",
     "name" : "Tags"
-  }, {
-    "description" : "Immutable records of a task being completed, with optional photo proof.",
-    "name" : "Task completions"
   }, {
     "description" : "Membership of a household: add, list, change role, remove, or leave.",
     "name" : "Group members"
@@ -40,14 +49,8 @@
     "description" : "User profiles: the caller's own via /me, plus platform-admin listing and role management.",
     "name" : "Users"
   }, {
-    "description" : "The caller's own account security: change/set password, connected accounts (Google), and deactivation.",
-    "name" : "Account"
-  }, {
-    "description" : "Append-only record of who changed what within a household.",
-    "name" : "Audit logs"
-  }, {
-    "description" : "The caller's own devices: list with session state, rename, per-device logout, remove, and push-notification registration.",
-    "name" : "Devices"
+    "description" : "The caller's own UI settings: colour theme and language.",
+    "name" : "User settings"
   } ],
   "paths" : {
     "/api/account/change-password" : {
@@ -96,7 +99,7 @@
         "tags" : [ "Account" ]
       }
     },
-    "/api/account/connections" : {
+    "/api/account/connected-accounts" : {
       "get" : {
         "description" : "Returns the caller's active sign-in methods (password set, Google linked).",
         "operationId" : "getConnections",
@@ -105,11 +108,11 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseConnectionsResponse"
+                  "$ref" : "#/components/schemas/ApiResponseConnectedAccountsResponse"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the connections summary"
+            "description" : "<code>200 OK</code> with the connected-accounts summary"
           },
           "401" : {
             "$ref" : "#/components/responses/Unauthorized"
@@ -128,7 +131,7 @@
         "tags" : [ "Account" ]
       }
     },
-    "/api/account/connections/google" : {
+    "/api/account/connected-accounts/google" : {
       "delete" : {
         "description" : "Unlinks the caller's Google account (refused if it would leave no way to sign in).",
         "operationId" : "unlinkGoogle",
@@ -137,11 +140,11 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseConnectionsResponse"
+                  "$ref" : "#/components/schemas/ApiResponseConnectedAccountsResponse"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the updated connections summary"
+            "description" : "<code>200 OK</code> with the updated connected accounts summary"
           },
           "401" : {
             "$ref" : "#/components/responses/Unauthorized"
@@ -178,11 +181,11 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseConnectionsResponse"
+                  "$ref" : "#/components/schemas/ApiResponseConnectedAccountsResponse"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the updated connections summary"
+            "description" : "<code>200 OK</code> with the updated connected-accounts summary"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -2671,6 +2674,82 @@
         "tags" : [ "Tasks" ]
       }
     },
+    "/api/user-settings" : {
+      "get" : {
+        "description" : "Fetches the caller's settings, falling back to the defaults when none are saved yet.",
+        "operationId" : "getMySettings",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserSettingsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the caller's settings"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches the caller's settings, falling back to the defaults when none are saved yet.",
+        "tags" : [ "User settings" ]
+      },
+      "put" : {
+        "description" : "Replaces the caller's settings, creating them on the first write.",
+        "operationId" : "updateMySettings",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UserSettingsRequest"
+              }
+            }
+          },
+          "description" : "the new theme and locale",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserSettingsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the saved settings"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Replaces the caller's settings, creating them on the first write.",
+        "tags" : [ "User settings" ]
+      }
+    },
     "/api/users" : {
       "get" : {
         "description" : "Lists all users.",
@@ -3020,7 +3099,7 @@
           }
         }
       },
-      "ApiResponseConnectionsResponse" : {
+      "ApiResponseConnectedAccountsResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
         "properties" : {
@@ -3028,7 +3107,7 @@
             "type" : "string"
           },
           "data" : {
-            "$ref" : "#/components/schemas/ConnectionsResponse"
+            "$ref" : "#/components/schemas/ConnectedAccountsResponse"
           },
           "message" : {
             "type" : "string"
@@ -3468,6 +3547,24 @@
           }
         }
       },
+      "ApiResponseUserSettingsResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/UserSettingsResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseVoid" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -3615,7 +3712,7 @@
         },
         "required" : [ "currentPassword" ]
       },
-      "ConnectionsResponse" : {
+      "ConnectedAccountsResponse" : {
         "type" : "object",
         "description" : "The caller's sign-in methods: whether a password is set and whether a Google account is linked.\n At least one is always true for an active account (otherwise it couldn't sign in).",
         "properties" : {
@@ -4404,6 +4501,37 @@
           }
         },
         "required" : [ "role" ]
+      },
+      "UserSettingsRequest" : {
+        "type" : "object",
+        "description" : "Request body for replacing the caller's settings — a full PUT, so both fields are required.",
+        "properties" : {
+          "locale" : {
+            "type" : "string",
+            "enum" : [ "EN", "DE", "SL" ]
+          },
+          "theme" : {
+            "type" : "string",
+            "enum" : [ "LIGHT", "DARK", "SYSTEM" ]
+          }
+        },
+        "required" : [ "locale", "theme" ]
+      },
+      "UserSettingsResponse" : {
+        "type" : "object",
+        "description" : "The caller's UI settings.",
+        "properties" : {
+          "locale" : {
+            "type" : "string",
+            "description" : "the UI language (lowercase the name for the BCP-47 tag)",
+            "enum" : [ "EN", "DE", "SL" ]
+          },
+          "theme" : {
+            "type" : "string",
+            "description" : "the colour-scheme preference",
+            "enum" : [ "LIGHT", "DARK", "SYSTEM" ]
+          }
+        }
       },
       "VerifyEmailRequest" : {
         "type" : "object",

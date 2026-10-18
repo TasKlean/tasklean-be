@@ -333,3 +333,11 @@ JOIN group_member gm_charlie ON gm_charlie.user_id = (SELECT id_user FROM "user"
 WHERE gm_alice.user_id = (SELECT id_user FROM "user" WHERE email = 'alice@example.com')
     AND gm_alice.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002')
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'CREATE' AND entity_type = 'GROUP_MEMBER' AND entity_id = gm_alice.id_group_member);
+
+-- ============================================================================
+-- USER SETTINGS (only Alice has saved settings; Bob and Charlie exercise the
+-- lazy default path, where a read returns the defaults with no row present)
+-- ============================================================================
+INSERT INTO user_settings (user_id, theme, locale)
+SELECT id_user, 'DARK', 'SL' FROM "user" WHERE email = 'alice@example.com'
+ON CONFLICT (user_id) DO NOTHING;
