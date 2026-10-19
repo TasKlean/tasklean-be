@@ -56,6 +56,9 @@ GroupMember (*) ──── (1) Group
 
 User (1) ──── (*) Notification
 User (1) ──── (*) RefreshToken
+User (1) ──── (0..1) UserTwoFactor
+User (1) ──── (*) TwoFactorRecoveryCode
+User (1) ──── (*) TwoFactorChallenge (pending sign-ins)
 User (1) ──── (0..1) UserSettings
 User (1) ──── (*) NotificationSettings (one per notification type)
 ```
@@ -135,7 +138,7 @@ Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). No
 - **Types**: `BIGSERIAL` for PKs, `VARCHAR(N)` for bounded strings, `TEXT` for unbounded, `TIMESTAMP` for dates (no timezone in column — application enforces UTC via injected `Clock` bean), `BOOLEAN` for flags, `JSONB` for structured data.
 - **Defaults**: `is_active DEFAULT TRUE`, `date_created DEFAULT NOW()`, `date_updated DEFAULT NOW()`, `is_read DEFAULT FALSE`.
 - **Reserved words**: `user` and `group` are quoted as `"user"` and `"group"` everywhere — SQL, JPA `@Table`, and Spring Data queries.
-- **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, `refresh_token → user`, `refresh_token → device`, `user_settings → user`, and `notification_settings → user`. All other FKs have no cascade — application handles deletion logic.
+- **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, `refresh_token → user`, `refresh_token → device`, `user_settings → user`, `notification_settings → user`, and all three two-factor tables → `user`. All other FKs have no cascade — application handles deletion logic.
 
 ### Indexes
 
@@ -148,6 +151,9 @@ Every FK column is indexed. Additional indexes on:
 - `refresh_token`: `token` (unique, for lookup by hashed value), `user_id` (for bulk revocation), `device_id` (per-device revocation + active-session lookup)
 - `user_settings`: unique `user_id` (one row per user; the UNIQUE constraint backs every lookup, so no separate index)
 - `notification_settings`: unique `(user_id, type)` (one row per user per type; leftmost-prefixed on `user_id`, so it also backs the per-user list)
+- `user_two_factor`: unique `user_id` (one factor per user; the UNIQUE constraint backs every lookup)
+- `two_factor_recovery_code`: unique `(user_id, code_hash)` — per user, not global: two users colliding is not an error, one user holding the same code twice is
+- `two_factor_challenge`: unique `token_hash` (lookup by hashed token), `user_id`, `expires_at` (for scheduled cleanup)
 - `device`: unique `(user_id, client_device_id)` (one row per user per device; multiple NULLs allowed for push-only/legacy rows)
 
 ### Migration sequence (V1–V11)
@@ -176,8 +182,9 @@ Every FK column is indexed. Additional indexes on:
 
 | V20 | `user_settings` (one row per user: `theme`, `locale`; unique `user_id`, cascade on user delete) | `user` |
 | V21 | `notification_settings` (one row per user per notification type: `in_app`, `email`; unique `(user_id, type)`, cascade on user delete) | `user` |
+| V22 | `user_two_factor` (one factor per user: `provider`, `factor_ref`, `secret_encrypted`, `digest`, `is_enabled`, `confirmed_at`, `last_used_step`), `two_factor_recovery_code` (hashed, single-use), `two_factor_challenge` (hashed opaque token, `expires_at`, `attempts`, `consumed_at`); all cascade on user delete | `user` |
 
-Next available version: **V22**.
+Next available version: **V23**.
 
 ### Dev seed data
 
@@ -653,6 +660,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `RefreshTokenServiceTest` | 14 | createRefreshToken (no-device hashed storage, new device binds + alerts owner, known device no alert); refresh (valid rotation, keeps device + touches last-used, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (per-device revoke, legacy no-device revokes one, invalid throws); logoutAll (revokes all + audits, invalid throws) |
 | `AuditLogServiceTest` | 4 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup; `recordAccountEvent` stamps the subject as actor |
 | `PasswordResetServiceTest` | 7 | requestReset (password account issues token + email, unknown/deactivated no-op, Google-only sends info email); resetPassword (valid sets password + revokes sessions + marks used, unknown/used token throws, expired throws) |
+| `SecretCipherTest` | 9 | Round-trip; the same secret encrypts to different ciphertexts (fresh IV); output never contains the plaintext; tampered ciphertext, a value encrypted under another key, a malformed value and one shorter than the IV all rejected; a key of the wrong length or not Base64 fails construction rather than first use |
 | `LocalTotpProviderTest` | 23 | All six RFC 6238 Appendix B vectors through the adapter (proves step size, digit count, SHA-1 and start time are wired as authenticator apps expect); ±1-step skew accepted and ±2 rejected; the matched step reported is the code's own step, so replay stays detectable; whitespace-separated codes accepted; malformed codes, nulls, a non-Base32 credential and another secret's code all rejected without throwing; enroll produces a 32-char Base32 secret + labelled `otpauth://` URI, differs every time, and round-trips through verify |
 | `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 | `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
@@ -682,7 +690,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **367 tests** across 37 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **376 tests** across 38 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
