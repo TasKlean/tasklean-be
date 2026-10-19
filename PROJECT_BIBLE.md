@@ -653,6 +653,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `RefreshTokenServiceTest` | 14 | createRefreshToken (no-device hashed storage, new device binds + alerts owner, known device no alert); refresh (valid rotation, keeps device + touches last-used, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (per-device revoke, legacy no-device revokes one, invalid throws); logoutAll (revokes all + audits, invalid throws) |
 | `AuditLogServiceTest` | 4 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup; `recordAccountEvent` stamps the subject as actor |
 | `PasswordResetServiceTest` | 7 | requestReset (password account issues token + email, unknown/deactivated no-op, Google-only sends info email); resetPassword (valid sets password + revokes sessions + marks used, unknown/used token throws, expired throws) |
+| `LocalTotpProviderTest` | 23 | All six RFC 6238 Appendix B vectors through the adapter (proves step size, digit count, SHA-1 and start time are wired as authenticator apps expect); ±1-step skew accepted and ±2 rejected; the matched step reported is the code's own step, so replay stays detectable; whitespace-separated codes accepted; malformed codes, nulls, a non-Base32 credential and another secret's code all rejected without throwing; enroll produces a 32-char Base32 secret + labelled `otpauth://` URI, differs every time, and round-trips through verify |
 | `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 | `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
 | `GroupSecurityTest` | 12 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); `canManageMember`/`canViewMember`/`isSelfMember` by membership id |
@@ -681,7 +682,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **344 tests** across 36 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **367 tests** across 37 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
