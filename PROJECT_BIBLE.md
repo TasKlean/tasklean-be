@@ -57,6 +57,7 @@ GroupMember (*) ──── (1) Group
 User (1) ──── (*) Notification
 User (1) ──── (*) RefreshToken
 User (1) ──── (0..1) UserSettings
+User (1) ──── (*) NotificationSettings (one per notification type)
 ```
 
 ### Core aggregate: Group
@@ -76,7 +77,7 @@ Everything revolves around the Group. A User does nothing alone — they must be
 | TaskTag | `id_task_tag` | No | No | No (hard delete via CASCADE) | Junction; unique on `(task_id, tag_id)` |
 | TaskCompletion | `id_task_completion` | No | No | None | Immutable completion record |
 | Device | `id_device` | No | Yes | `is_active` | Per-device record: sign-in sessions + push tokens. `client_device_id` (stable id from `X-Device-Id`), `ip_address`, `user_agent`; push `device_token` nullable |
-| Notification | `id_notification` | No | No | None | Has `is_read` + `read_at` |
+| Notification | `id_notification` | No | No | None | Has `is_read` + `read_at`; `type` is a free-form column, but the canonical values live in the `NotificationType` enum (`TASK_ASSIGNED`, `TASK_COMPLETED`, `TASK_REMINDER`, `MEMBER_JOINED`), which is also what `notification_settings` is keyed by |
 | AuditLog | `id_audit_log` | No | No | None | Immutable; polymorphic via `entity_type` + `entity_id` |
 | RefreshToken | `id_refresh_token` | No | No | `is_revoked` | SHA-256 hashed token; 14-day expiry (configurable via `jwt.refresh-expiration`); `CASCADE` on user delete; nullable `device_id` (rotation keeps the same device = stable session identity) |
 
@@ -134,7 +135,7 @@ Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). No
 - **Types**: `BIGSERIAL` for PKs, `VARCHAR(N)` for bounded strings, `TEXT` for unbounded, `TIMESTAMP` for dates (no timezone in column — application enforces UTC via injected `Clock` bean), `BOOLEAN` for flags, `JSONB` for structured data.
 - **Defaults**: `is_active DEFAULT TRUE`, `date_created DEFAULT NOW()`, `date_updated DEFAULT NOW()`, `is_read DEFAULT FALSE`.
 - **Reserved words**: `user` and `group` are quoted as `"user"` and `"group"` everywhere — SQL, JPA `@Table`, and Spring Data queries.
-- **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, `refresh_token → user`, `refresh_token → device`, and `user_settings → user`. All other FKs have no cascade — application handles deletion logic.
+- **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, `refresh_token → user`, `refresh_token → device`, `user_settings → user`, and `notification_settings → user`. All other FKs have no cascade — application handles deletion logic.
 
 ### Indexes
 
@@ -146,6 +147,7 @@ Every FK column is indexed. Additional indexes on:
 - `audit_log`: `(entity_type, entity_id)` composite, `date_created` for time-range queries, `actor_user_id` for by-user activity queries
 - `refresh_token`: `token` (unique, for lookup by hashed value), `user_id` (for bulk revocation), `device_id` (per-device revocation + active-session lookup)
 - `user_settings`: unique `user_id` (one row per user; the UNIQUE constraint backs every lookup, so no separate index)
+- `notification_settings`: unique `(user_id, type)` (one row per user per type; leftmost-prefixed on `user_id`, so it also backs the per-user list)
 - `device`: unique `(user_id, client_device_id)` (one row per user per device; multiple NULLs allowed for push-only/legacy rows)
 
 ### Migration sequence (V1–V11)
@@ -173,14 +175,15 @@ Every FK column is indexed. Additional indexes on:
 | V19 | Repurposes `device` for sessions (nullable `device_token`; adds `client_device_id`/`ip_address`/`user_agent` + unique `(user_id, client_device_id)`); adds `refresh_token.device_id` FK (no new table) | `device`, `refresh_token` |
 
 | V20 | `user_settings` (one row per user: `theme`, `locale`; unique `user_id`, cascade on user delete) | `user` |
+| V21 | `notification_settings` (one row per user per notification type: `in_app`, `email`; unique `(user_id, type)`, cascade on user delete) | `user` |
 
-Next available version: **V21**.
+Next available version: **V22**.
 
 ### Dev seed data
 
 Dev-only seed data lives in `src/main/resources/db/seed/R__seed_data.sql` — a Flyway **repeatable migration** that runs after all versioned migrations. The dev profile adds `classpath:db/seed` to `spring.flyway.locations`; prod only has `classpath:db/migration`, so seed data never touches production.
 
-The seed creates a realistic dataset: 3 users (alice@ Google-linked; bob@/charlie@ email+password, dev password `DevPass1!`), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, and devices.
+The seed creates a realistic dataset: 3 users (alice@ Google-linked; bob@/charlie@ email+password, dev password `DevPass1!`), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, devices, and settings (only alice@ has saved user settings and two notification-settings rows — bob@/charlie@ exercise the lazy default path with no rows at all).
 
 All inserts use `ON CONFLICT DO NOTHING` or `NOT EXISTS` checks for idempotency. To add data, edit `R__seed_data.sql` — Flyway detects the checksum change and re-runs it on next startup.
 
@@ -224,6 +227,7 @@ The authoritative contract is **`docs/openapi.json`**, generated by springdoc (3
 | GroupMember | `/api/group-members` | `/{id}` | POST, GET, GET all, PATCH role, DELETE | GET all requires `?groupId=`; PATCH `/{id}/role?role=` |
 | Device | `/api/devices` | `/{id}` | GET (list mine), POST (register push token), PATCH (rename), POST `/{id}/logout`, DELETE | Self-scoped — caller resolved from the JWT, no `userId` param. GET returns the caller's devices with `activeSession`/`currentDevice` flags; `/{id}/logout` revokes that device's session; DELETE removes the device (+revokes) |
 | UserSettings | `/api/user-settings` | — | GET (own), PUT (own) | Self-scoped, no identifier in the path — caller from the JWT. `theme` (LIGHT/DARK/SYSTEM) + `locale` (EN/DE/SL). The row is created lazily on the first PUT; a GET for a user with none returns the defaults without writing. Two first-time PUTs racing is safe — the one losing the `unique(user_id)` insert retries in a fresh transaction and updates the winner's row |
+| NotificationSettings | `/api/notification-settings` | `/{type}` | GET (own matrix), PUT (own, one type), PUT `/batch` | Self-scoped, no user identifier in the path — caller from the JWT; the only path variable is the notification type. GET always returns one entry per `NotificationType` (`TASK_ASSIGNED`/`TASK_COMPLETED`/`TASK_REMINDER`/`MEMBER_JOINED`), merging the defaults for types with no row, so a client never needs to know them. PUT replaces one type's channels and creates the row lazily; a racing first write retries like `user-settings`. PUT `/batch` applies several entries in one transaction (type in the body, omitted types untouched, duplicate types → 400) and returns the whole matrix read back after the writes — the literal `/batch` outranks the `/{type}` template, so it is not parsed as a type. These are **preferences only** — nothing reads them yet, the delivery pipeline is a later phase |
 | TaskCompletion | `/api/task-completions` | — | POST, GET by task, GET by member | GET requires `?taskId=`; `/member/{id}` |
 | Notification | `/api/notifications` | — | GET, GET unread, count, PATCH read | All GETs require `?userId=`; PATCH `/{id}/read` |
 | AuditLog | `/api/audit-logs` | — | GET by group, entity, member | GET requires `?groupId=`; `/entity?entityType=&entityId=`; `/member/{id}` |
@@ -657,6 +661,8 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UserServiceTest` | 7 | updateUserRole (+ audit / unknown); get/getAll/update/delete + not-found |
 | `UserSettingsServiceTest` | 6 | getMySettings (existing row, no row returns defaults without writing); updateMySettings (creates the row on first write, updates an existing row in place without re-resolving the user, a lost unique-constraint race retries in a fresh transaction and updates the winner's row, unknown user → not found) |
 | `UserSettingsControllerSecurityTest` | 6 | `@WebMvcTest` slice — GET/PUT require authentication (anonymous denied); the acted-on user comes only from the token, and id fields smuggled into the body (`userId`/`idUserSettings`/`user`) are ignored |
+| `NotificationSettingsServiceTest` | 11 | getMySettings (no rows returns every type at the defaults without writing, saved rows merged over the defaults, types always in declaration order); updateMySetting (creates the row for the caller + type on first write, updates an existing row in place without re-resolving the user, a lost unique-constraint race retries in a fresh transaction and updates the winner's row, unknown user → not found); updateMySettings batch (applies every entry and returns the whole matrix, mixes create + update in a single transaction, a lost race retries the whole batch, unknown user → not found) |
+| `NotificationSettingsControllerSecurityTest` | 13 | `@WebMvcTest` slice — GET/PUT/PUT-batch require authentication (anonymous denied); the caller comes only from the token; an unknown `{type}`, a missing channel field, an empty batch, a batch entry missing a channel and duplicate types in a batch are all 400; `/batch` routes to the batch handler rather than being read as a type; id fields smuggled into the body are ignored |
 | `CategoryServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
 | `TagServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
 | `TaskServiceTest` | 13 | get/getByGroup/create/update/delete incl. assignee & category branches + not-found |
@@ -675,7 +681,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **320 tests** across 34 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **344 tests** across 36 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

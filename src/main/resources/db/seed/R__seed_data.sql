@@ -341,3 +341,15 @@ AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'CREATE' AND entity_type 
 INSERT INTO user_settings (user_id, theme, locale)
 SELECT id_user, 'DARK', 'SL' FROM "user" WHERE email = 'alice@example.com'
 ON CONFLICT (user_id) DO NOTHING;
+
+-- ============================================================================
+-- NOTIFICATION SETTINGS (only Alice has saved rows, and only for two types;
+-- every other user/type exercises the lazy default path with no row present)
+-- ============================================================================
+INSERT INTO notification_settings (user_id, type, in_app, email)
+SELECT id_user, 'TASK_COMPLETED', TRUE, FALSE FROM "user" WHERE email = 'alice@example.com'
+ON CONFLICT (user_id, type) DO NOTHING;
+
+INSERT INTO notification_settings (user_id, type, in_app, email)
+SELECT id_user, 'TASK_REMINDER', FALSE, FALSE FROM "user" WHERE email = 'alice@example.com'
+ON CONFLICT (user_id, type) DO NOTHING;

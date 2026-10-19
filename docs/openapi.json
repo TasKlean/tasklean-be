@@ -13,6 +13,9 @@
     "bearerAuth" : [ ]
   } ],
   "tags" : [ {
+    "description" : "The caller's own notification settings: which channels deliver which notification type.",
+    "name" : "Notification settings"
+  }, {
     "description" : "Immutable records of a task being completed, with optional photo proof.",
     "name" : "Task completions"
   }, {
@@ -1901,6 +1904,140 @@
         "tags" : [ "Groups" ]
       }
     },
+    "/api/notification-settings" : {
+      "get" : {
+        "description" : "Lists the caller's settings for every notification type, using the defaults for any type\n they have never saved.",
+        "operationId" : "getMyNotificationSettings",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListNotificationSettingResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with one entry per notification type"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists the caller's settings for every notification type, using the defaults for any type\n they have never saved.",
+        "tags" : [ "Notification settings" ]
+      }
+    },
+    "/api/notification-settings/batch" : {
+      "put" : {
+        "description" : "Applies a batch of entries at once — each one replaces that type's channels, and types the\n batch leaves out keep their current values. Declared above <code>/{type</code>} since it is the\n literal sibling of that template.",
+        "operationId" : "updateMyNotificationSettings",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/NotificationSettingsBatchRequest"
+              }
+            }
+          },
+          "description" : "the entries to apply",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListNotificationSettingResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the caller's whole matrix as persisted after the batch"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Applies a batch of entries at once — each one replaces that type's channels, and types the\n batch leaves out keep their current values.",
+        "tags" : [ "Notification settings" ]
+      }
+    },
+    "/api/notification-settings/{type}" : {
+      "put" : {
+        "description" : "Replaces the caller's channels for one notification type, creating the entry on first write.",
+        "operationId" : "updateMyNotificationSetting",
+        "parameters" : [ {
+          "description" : "the notification type to configure",
+          "in" : "path",
+          "name" : "type",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "TASK_ASSIGNED", "TASK_COMPLETED", "TASK_REMINDER", "MEMBER_JOINED" ]
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/NotificationSettingRequest"
+              }
+            }
+          },
+          "description" : "the channel preferences",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseNotificationSettingResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the saved entry"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Replaces the caller's channels for one notification type, creating the entry on first write.",
+        "tags" : [ "Notification settings" ]
+      }
+    },
     "/api/notifications" : {
       "get" : {
         "description" : "Lists a user's notifications, newest first.",
@@ -3318,6 +3455,27 @@
           }
         }
       },
+      "ApiResponseListNotificationSettingResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/NotificationSettingResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseListTagResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -3466,6 +3624,24 @@
           },
           "data" : {
             "$ref" : "#/components/schemas/NotificationResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseNotificationSettingResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/NotificationSettingResponse"
           },
           "message" : {
             "type" : "string"
@@ -4110,6 +4286,69 @@
             "format" : "int64"
           }
         }
+      },
+      "NotificationSettingEntry" : {
+        "type" : "object",
+        "description" : "One entry of a batch update — the same shape the GET returns, so a client can send back the\n list it rendered. Unlike the single-type endpoint, the type travels in the body.",
+        "properties" : {
+          "email" : {
+            "type" : "boolean"
+          },
+          "inApp" : {
+            "type" : "boolean"
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "TASK_ASSIGNED", "TASK_COMPLETED", "TASK_REMINDER", "MEMBER_JOINED" ]
+          }
+        },
+        "required" : [ "email", "inApp", "type" ]
+      },
+      "NotificationSettingRequest" : {
+        "type" : "object",
+        "description" : "Request body for one notification type's channels — a full replace of that entry, so both\n channels are required. The type itself comes from the path, never the body.",
+        "properties" : {
+          "email" : {
+            "type" : "boolean"
+          },
+          "inApp" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "email", "inApp" ]
+      },
+      "NotificationSettingResponse" : {
+        "type" : "object",
+        "description" : "One notification type's delivery channels for the caller.",
+        "properties" : {
+          "email" : {
+            "type" : "boolean",
+            "description" : "whether it is emailed"
+          },
+          "inApp" : {
+            "type" : "boolean",
+            "description" : "whether it appears in the in-app notification list"
+          },
+          "type" : {
+            "type" : "string",
+            "description" : "the notification type",
+            "enum" : [ "TASK_ASSIGNED", "TASK_COMPLETED", "TASK_REMINDER", "MEMBER_JOINED" ]
+          }
+        }
+      },
+      "NotificationSettingsBatchRequest" : {
+        "type" : "object",
+        "description" : "Request body for a batch update: each entry fully replaces that type's channels. Types the\n batch omits are left untouched.",
+        "properties" : {
+          "settings" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/NotificationSettingEntry"
+            },
+            "minItems" : 1
+          }
+        },
+        "required" : [ "settings" ]
       },
       "RefreshRequest" : {
         "type" : "object",
