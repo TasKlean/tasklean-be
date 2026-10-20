@@ -6,10 +6,12 @@ import com.tasklean.api.auth.twofactor.dto.*;
 import com.tasklean.api.auth.twofactor.provider.FactorEnrollment;
 import com.tasklean.api.auth.twofactor.provider.TwoFactorProvider;
 import com.tasklean.api.auth.twofactor.provider.TwoFactorVerification;
+import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecretCipher;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -141,7 +143,8 @@ public class TwoFactorService {
                 secretCipher.decrypt(factor.getSecretEncrypted()), request.getCode());
         if (!verification.valid()) {
             log.warn("Two-factor setup confirmation rejected: uid={}", user.getUid());
-            throw new BadCredentialsException("That code is not valid. Check the app and enter the current code.");
+            throw new AuthFailureException("That code is not valid. Check the app and enter the current code.",
+                    ErrorCodes.TWO_FACTOR_CODE_INVALID);
         }
 
         factor.setIsEnabled(true);
@@ -262,7 +265,8 @@ public class TwoFactorService {
     private void requireValidCode(User user, UserTwoFactor factor, String code) {
         if (consumeCode(user, factor, code) == TwoFactorCodeOutcome.INVALID) {
             log.warn("Two-factor code rejected: uid={}", user.getUid());
-            throw new BadCredentialsException("That code is not valid. Use a current code from your app or a recovery code.");
+            throw new AuthFailureException("That code is not valid. Use a current code from your app or a recovery code.",
+                    ErrorCodes.TWO_FACTOR_CODE_INVALID);
         }
     }
 
@@ -312,10 +316,10 @@ public class TwoFactorService {
             return;
         }
         if (password == null || password.isBlank()) {
-            throw new BadCredentialsException("Password is required to change two-factor settings");
+            throw new AuthFailureException("Password is required to change two-factor settings", ErrorCodes.PASSWORD_INVALID);
         }
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            throw new BadCredentialsException("Current password is incorrect");
+            throw new AuthFailureException("Current password is incorrect", ErrorCodes.PASSWORD_INVALID);
         }
     }
 

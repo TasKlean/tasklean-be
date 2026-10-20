@@ -7,7 +7,9 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
+import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -100,13 +102,14 @@ public class AuthService {
         if (user.getPasswordHash() == null
                 || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             recordFailedLogin(user, user.getPasswordHash() == null ? "oauth-only account" : "invalid password");
+            // No error code here: one would tell the caller which of the two failed.
             throw new BadCredentialsException("Invalid email or password");
         }
 
         // Past here the caller proved they own the account, so account-state reasons are safe to surface.
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             recordFailedLogin(user, "account deactivated");
-            throw new BadCredentialsException("Account is deactivated");
+            throw new AuthFailureException("Account is deactivated", ErrorCodes.ACCOUNT_DEACTIVATED);
         }
 
         if (!Boolean.TRUE.equals(user.getIsEmailVerified())) {

@@ -9,6 +9,8 @@ import com.tasklean.api.auth.twofactor.provider.TwoFactorProviderType;
 import com.tasklean.api.auth.twofactor.provider.TwoFactorVerification;
 import com.tasklean.api.common.SecretCipher;
 import com.tasklean.api.common.SecureTokens;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -382,9 +384,11 @@ class TwoFactorServiceTest {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user("$hash")));
         when(passwordEncoder.matches("wrong", "$hash")).thenReturn(false);
 
+        // The code tells the client which of the two fields to flag.
         assertThatThrownBy(() -> twoFactorService.disable(USER_ID,
                 TwoFactorConfirmRequest.builder().password("wrong").code(CODE).build()))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.PASSWORD_INVALID);
 
         verify(userTwoFactorRepository, never()).delete(any());
         verify(recoveryCodeRepository, never()).deleteByUserIdUser(any());
@@ -404,7 +408,8 @@ class TwoFactorServiceTest {
 
         assertThatThrownBy(() -> twoFactorService.disable(USER_ID,
                 TwoFactorConfirmRequest.builder().password("pw").code("000000").build()))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.TWO_FACTOR_CODE_INVALID);
 
         verify(userTwoFactorRepository, never()).delete(any());
         verify(sessionRotator, never()).rotateCurrentSession(any());

@@ -9,6 +9,8 @@ import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -243,8 +245,10 @@ class AuthServiceTest {
         when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrongPassword", "$2a$10$hashedpassword")).thenReturn(false);
 
+        // Deliberately uncoded: a code would tell a wrong password apart from an unknown email.
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
+                .isNotInstanceOf(AuthFailureException.class)
                 .hasMessageContaining("Invalid email or password");
 
         verifyLoginFailedRecordedFor(1L);
@@ -263,7 +267,8 @@ class AuthServiceTest {
         when(passwordEncoder.matches("password", "$2a$10$hashedpassword")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.login(request))
-                .isInstanceOf(BadCredentialsException.class)
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.ACCOUNT_DEACTIVATED)
                 .hasMessageContaining("deactivated");
 
         verifyLoginFailedRecordedFor(1L);

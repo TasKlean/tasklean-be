@@ -5,6 +5,8 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.dto.TwoFactorVerifyRequest;
 import com.tasklean.api.common.SecureTokens;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -189,8 +191,10 @@ class TwoFactorChallengeServiceTest {
         when(twoFactorService.consumeCode(eq(user), any(UserTwoFactor.class), eq("000000")))
                 .thenReturn(TwoFactorCodeOutcome.INVALID);
 
+        // CODE_INVALID means the client keeps the user on the prompt and lets them retry.
         assertThatThrownBy(() -> twoFactorChallengeService.verify(verifyRequest("000000")))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.TWO_FACTOR_CODE_INVALID);
 
         ArgumentCaptor<TwoFactorChallenge> captor = ArgumentCaptor.forClass(TwoFactorChallenge.class);
         verify(challengeRepository).save(captor.capture());
@@ -220,8 +224,10 @@ class TwoFactorChallengeServiceTest {
         when(challengeRepository.findByTokenHashAndConsumedAtIsNull(SecureTokens.sha256(RAW_TOKEN)))
                 .thenReturn(Optional.of(challenge(user(), LocalDateTime.now(ZoneOffset.UTC).minusSeconds(1), 0)));
 
+        // CHALLENGE_INVALID means the client sends the user back to sign-in instead.
         assertThatThrownBy(() -> twoFactorChallengeService.verify(verifyRequest(CODE)))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.TWO_FACTOR_CHALLENGE_INVALID);
 
         verify(twoFactorService, never()).consumeCode(any(), any(), anyString());
         verify(refreshTokenService, never()).createRefreshToken(any());
@@ -255,7 +261,8 @@ class TwoFactorChallengeServiceTest {
         stubLiveChallenge(deactivated, 0);
 
         assertThatThrownBy(() -> twoFactorChallengeService.verify(verifyRequest(CODE)))
-                .isInstanceOf(BadCredentialsException.class);
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.ACCOUNT_DEACTIVATED);
 
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.LOGIN_FAILED), anyString());
         verify(refreshTokenService, never()).createRefreshToken(any());

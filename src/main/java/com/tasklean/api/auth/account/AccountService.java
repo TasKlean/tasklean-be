@@ -10,8 +10,10 @@ import com.tasklean.api.auth.account.dto.SetPasswordRequest;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -62,7 +64,7 @@ public class AccountService {
             throw new BusinessRuleException("This account has no password yet. Set a password instead.");
         }
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
-            throw new BadCredentialsException("Current password is incorrect");
+            throw new AuthFailureException("Current password is incorrect", ErrorCodes.PASSWORD_INVALID);
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
@@ -197,10 +199,10 @@ public class AccountService {
         if (user.getPasswordHash() != null) {
             String password = request.getPassword();
             if (password == null || password.isBlank()) {
-                throw new BadCredentialsException("Password is required to deactivate your account");
+                throw new AuthFailureException("Password is required to deactivate your account", ErrorCodes.PASSWORD_INVALID);
             }
             if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-                throw new BadCredentialsException("Current password is incorrect");
+                throw new AuthFailureException("Current password is incorrect", ErrorCodes.PASSWORD_INVALID);
             }
         }
 

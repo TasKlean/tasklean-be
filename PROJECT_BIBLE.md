@@ -208,7 +208,30 @@ Every endpoint returns `ApiResponse<T>`:
 ```json
 { "success": true, "message": null, "data": { ... } }:
 { "success": false, "message": "User not found", "data": null }
+{ "success": false, "message": "Email not verified…", "code": "EMAIL_NOT_VERIFIED", "data": null }
 ```
+
+### Error codes
+
+An error envelope may carry a machine-readable `code` next to the human `message` (serialized only when
+set). Constants live in `common/ErrorCodes.java`; a 401 gets one by throwing
+`AuthFailureException(message, code)`.
+
+| Code | Thrown by | Meaning for the client |
+|---|---|---|
+| `EMAIL_NOT_VERIFIED` | login, after a correct password | send them to the verify-code screen |
+| `ACCOUNT_DEACTIVATED` | login / Google / 2FA verify, after credentials check out | account is soft-deleted, offer support |
+| `PASSWORD_INVALID` | `/api/account/**` re-auth (change password, deactivate, 2FA setup/disable/regenerate) | flag the password field, keep the form open |
+| `TWO_FACTOR_CODE_INVALID` | 2FA enable / verify / disable | flag the code field, let them retype |
+| `TWO_FACTOR_CHALLENGE_INVALID` | 2FA verify: unknown, expired, spent, out of attempts, factor removed | restart the sign-in |
+
+Rules for adding one:
+- A code is never finer-grained than the message it accompanies. The five unusable-challenge cases share
+  one code *and* one message on purpose, so a caller learns nothing about a token they don't hold.
+- The generic login failure (unknown email / wrong password / OAuth-only) stays **uncoded** — a code there
+  would be an account-enumeration oracle. `AuthServiceTest` asserts the thrown type carries no code.
+- Codes that name account state (`EMAIL_NOT_VERIFIED`, `ACCOUNT_DEACTIVATED`) are only reachable *after*
+  the caller proved ownership, which is why the login flow checks the password first.
 
 ### Generated contract
 
@@ -383,7 +406,7 @@ Authenticated, self-scoped (`AccountController` at `/api/account`, caller from t
 
 **Reset password**: look up the token by its hash (must be unused and unexpired) → set the new password (`@ValidPassword`) → mark the email verified (mailbox control is proven) → mark the token used → **revoke all refresh tokens** (kills every session) → email a "password changed" notice → audit `PASSWORD_RESET`. No JWT is issued; the user signs in again. Invalid/used/expired tokens return a generic error.
 
-**Email login**: find user by email (401 generic if not found) → **verify the password first** (401 generic "Invalid email or password" if wrong, or if the account is OAuth-only with no hash) → *only after a correct password* surface account state: `is_active` (401 "deactivated") then `is_email_verified` (401 `EmailNotVerifiedException`, whose envelope carries `code: "EMAIL_NOT_VERIFIED"` so clients branch on the code, not the message) → generate access JWT + refresh token → return `AuthResponse`. Checking the password before revealing any state keeps a wrong guess indistinguishable from an unknown email (anti-enumeration); the verify-prompt still reaches a legitimate user who proved ownership. An account that has **both** a password and a linked `google_sub` can sign in with either method (the old "different sign-in option" block was removed).
+**Email login**: find user by email (401 generic if not found) → **verify the password first** (401 generic "Invalid email or password" if wrong, or if the account is OAuth-only with no hash) → *only after a correct password* surface account state: `is_active` (401 "deactivated", code `ACCOUNT_DEACTIVATED`) then `is_email_verified` (401 `EmailNotVerifiedException`, whose envelope carries `code: "EMAIL_NOT_VERIFIED"` so clients branch on the code, not the message) → generate access JWT + refresh token → return `AuthResponse`. Checking the password before revealing any state keeps a wrong guess indistinguishable from an unknown email (anti-enumeration); the verify-prompt still reaches a legitimate user who proved ownership. An account that has **both** a password and a linked `google_sub` can sign in with either method (the old "different sign-in option" block was removed).
 
 **Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → check `is_active` (revoke **all** user tokens + 401 if deactivated) → revoke old token → generate new access JWT (carrying the user's current role) + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401. This is the point where a deactivation or role change made mid-session takes effect.
 
@@ -660,7 +683,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | Class | Tests | Covers |
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
-| `AuthServiceTest` | 13 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`) |
+| `AuthServiceTest` | 14 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`, two-factor enabled → challenge instead of tokens); error codes (deactivated carries `ACCOUNT_DEACTIVATED`, a wrong password carries none — enumeration guard) |
 | `EmailServiceTest` | 11 | Verification link (param names, URL-encoded email, trailing-slash safe); registration-attempt notice; password-reset link carries the token; Google-only reset notice (no link); password-changed notice; password-added notice; Google linked/unlinked notices; account-deactivated notice; new-sign-in notice (device + IP, IP omitted when blank) |
 | `GoogleOAuthServiceTest` | 12 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account; `verifyLinkToken` (valid returns subject+email without touching users, unverified email throws, nonce mismatch throws) |
 | `AccountServiceTest` | 17 | changePassword (success rotates + returns new tokens, wrong current pwd throws, Google-only throws); setPassword (success, already-has-pwd throws); getConnections; linkGoogle (success, already-linked, email mismatch, sub owned by another); unlinkGoogle (success, not-linked, no-password lockout); deactivate (password account ok/wrong/missing, Google-only no password needed) |
@@ -695,7 +718,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UserControllerSecurityTest` | 10 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, `/me` for any authenticated caller (also guarding route precedence over `/{uid}`), role change SUPER_ADMIN-only (ADMIN 403), delete SUPER_ADMIN-only (self 403), 403 envelope |
 | `GroupControllerSecurityTest` | 10 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`); `/mine` and `/join` open to any authenticated caller (also guarding `/mine` route precedence over `/{uid}`); invite-code rotation group-admin only (plain member and platform ADMIN 403) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
-| `GlobalExceptionHandlerTest` | 12 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join); 401 for unverified email carries the `EMAIL_NOT_VERIFIED` code |
+| `GlobalExceptionHandlerTest` | 13 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join); a coded `AuthFailureException` returns 401 with that code, unverified email with `EMAIL_NOT_VERIFIED` |
 | `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
 | `RateLimitFilterTest` | 10 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/normal) |
 | `PasswordPolicyValidatorTest` | 19 | Length bounds, each missing-class message/grammar, space-as-special, and the guessable variants (common/leet/tail/repeated/sequential); plus the `isValid` message wiring |
@@ -703,7 +726,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **431 tests** across 41 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **432 tests** across 41 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

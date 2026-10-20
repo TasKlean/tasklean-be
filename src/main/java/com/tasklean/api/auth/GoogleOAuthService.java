@@ -7,6 +7,8 @@ import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -136,7 +138,7 @@ public class GoogleOAuthService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
                     "Failed Google login: account deactivated");
-            throw new BadCredentialsException("Account is deactivated");
+            throw new AuthFailureException("Account is deactivated", ErrorCodes.ACCOUNT_DEACTIVATED);
         }
         return challengeOrTokens(user, AuditAction.LOGIN, "User logged in via Google");
     }
@@ -145,7 +147,7 @@ public class GoogleOAuthService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
                     "Failed Google login: account deactivated");
-            throw new BadCredentialsException("Account is deactivated");
+            throw new AuthFailureException("Account is deactivated", ErrorCodes.ACCOUNT_DEACTIVATED);
         }
         user.setGoogleSub(payload.getSubject());
         // Google has verified this mailbox, so a previously unverified password account is now trusted.
