@@ -6,6 +6,7 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -39,13 +40,15 @@ public class GoogleOAuthService {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
+    private final TwoFactorChallengeService twoFactorChallengeService;
 
     /**
      * Authenticates a user from a Google ID token, provisioning or linking an account as needed,
      * and issues access and refresh tokens.
      *
      * @param request the request carrying the Google ID token and the nonce secret
-     * @return the auth response with access and refresh tokens
+     * @return the auth response with access and refresh tokens, or a two-factor challenge (no
+     *         tokens) when the matched account has a second factor enabled
      * @throws BadCredentialsException if the token is invalid, the nonce doesn't match, the Google
      *                                 email is unverified, or the matched account is deactivated
      */
@@ -135,7 +138,7 @@ public class GoogleOAuthService {
                     "Failed Google login: account deactivated");
             throw new BadCredentialsException("Account is deactivated");
         }
-        return issueTokens(user, AuditAction.LOGIN, "User logged in via Google");
+        return challengeOrTokens(user, AuditAction.LOGIN, "User logged in via Google");
     }
 
     private AuthResponse linkGoogleAccount(User user, GoogleIdToken.Payload payload) {
@@ -152,7 +155,7 @@ public class GoogleOAuthService {
         }
         user = userRepository.save(user);
         log.info("Linked Google sign-in to existing account: uid={}", user.getUid());
-        return issueTokens(user, AuditAction.LOGIN, "Linked Google sign-in to existing account");
+        return challengeOrTokens(user, AuditAction.LOGIN, "Linked Google sign-in to existing account");
     }
 
     private AuthResponse createGoogleUser(GoogleIdToken.Payload payload) {
@@ -169,6 +172,13 @@ public class GoogleOAuthService {
         user = userRepository.save(user);
         log.info("User registered via Google: uid={}", user.getUid());
         return issueTokens(user, AuditAction.REGISTER, "Account created via Google");
+    }
+
+    // A second factor applies to an existing account signing in; a freshly provisioned one can't
+    // have one yet, so it goes straight to issueTokens.
+    private AuthResponse challengeOrTokens(User user, AuditAction action, String auditMessage) {
+        return twoFactorChallengeService.challenge(user)
+                .orElseGet(() -> issueTokens(user, action, auditMessage));
     }
 
     private AuthResponse issueTokens(User user, AuditAction action, String auditMessage) {

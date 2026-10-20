@@ -200,6 +200,22 @@ public class EmailService {
     }
 
     /**
+     * Alerts the account owner that a recovery code was just used to sign in, which is the one
+     * two-factor path that needs no phone - so an unrecognised use must be noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendRecoveryCodeUsedEmail(String to) {
+        send(to, "TasKlean - A recovery code was used to sign in", """
+                Someone signed in to your TasKlean account with a two-factor recovery code instead of
+                your authenticator app. That code is now used up.
+
+                If this was you, no further action is needed - you can generate a fresh set of codes
+                in your account settings.
+                If it wasn't you, change your password and generate new recovery codes right away - your account may be compromised.""");
+    }
+
+    /**
      * Alerts the account owner that their account was signed into from a new device, so an
      * unrecognised sign-in is noticeable. Carries only the device label and IP, never credentials.
      *

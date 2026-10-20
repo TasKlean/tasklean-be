@@ -9,6 +9,8 @@ import com.tasklean.api.auth.passwordreset.dto.ForgotPasswordRequest;
 import com.tasklean.api.auth.passwordreset.dto.ResetPasswordRequest;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
+import com.tasklean.api.auth.twofactor.dto.TwoFactorVerifyRequest;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
@@ -25,10 +27,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Public authentication endpoints — registration, login, email verification,
- * token refresh, and logout. Not protected by the JWT filter.
+ * Public authentication endpoints — registration, login, email verification, two-factor
+ * verification, token refresh, and logout. Not protected by the JWT filter.
  */
-@Tag(name = "Auth", description = "Registration, login, email verification, Google sign-in, token refresh and logout. Public - these endpoints need no token.")
+@Tag(name = "Auth", description = "Registration, login, email verification, Google sign-in, two-factor verification, token refresh and logout. Public - these endpoints need no token.")
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -40,6 +42,7 @@ public class AuthController {
     private final VerificationService verificationService;
     private final RefreshTokenService refreshTokenService;
     private final PasswordResetService passwordResetService;
+    private final TwoFactorChallengeService twoFactorChallengeService;
 
     /**
      * Registers a new user and sends a verification code. No JWT is issued until verified.
@@ -120,6 +123,19 @@ public class AuthController {
     public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         passwordResetService.resetPassword(request);
         return ResponseEntity.ok(ApiResponse.success("Password reset. You can now sign in with your new password.", null));
+    }
+
+    /**
+     * Finishes a sign-in that returned a two-factor challenge, exchanging the challenge token plus
+     * a code from the authenticator app (or a recovery code) for the access and refresh tokens.
+     *
+     * @param request the challenge token and the code
+     * @return {@code 200 OK} with the auth response carrying both tokens
+     */
+    @PostMapping("/2fa/verify")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyTwoFactor(
+            @Valid @RequestBody TwoFactorVerifyRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(twoFactorChallengeService.verify(request)));
     }
 
     /**

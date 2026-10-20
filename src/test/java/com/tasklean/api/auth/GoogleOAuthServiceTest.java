@@ -6,6 +6,7 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -48,6 +49,9 @@ class GoogleOAuthServiceTest {
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private TwoFactorChallengeService twoFactorChallengeService;
 
     @InjectMocks
     private GoogleOAuthService googleOAuthService;
@@ -144,6 +148,21 @@ class GoogleOAuthServiceTest {
         verify(userRepository, never()).save(any());
         verify(auditLogService).recordAccountEvent(eq(7L),
                 eq(AuditAction.LOGIN), anyString());
+    }
+
+    @Test
+    void authenticate_returningUserWithTwoFactor_returnsChallengeAndWithholdsTokens() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", true));
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.of(buildUser(true)));
+        when(twoFactorChallengeService.challenge(any(User.class)))
+                .thenReturn(Optional.of(AuthResponse.twoFactorRequired("challenge-token")));
+
+        AuthResponse response = googleOAuthService.authenticate(request());
+
+        assertThat(response.isTwoFactorRequired()).isTrue();
+        assertThat(response.getToken()).isNull();
+        verify(refreshTokenService, never()).createRefreshToken(any());
+        verify(auditLogService, never()).recordAccountEvent(any(), eq(AuditAction.LOGIN), anyString());
     }
 
     // --- Linking a password account ---

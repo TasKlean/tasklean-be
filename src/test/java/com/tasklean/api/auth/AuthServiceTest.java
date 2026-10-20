@@ -5,6 +5,7 @@ import com.tasklean.api.auth.dto.LoginRequest;
 import com.tasklean.api.auth.dto.RegisterRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
@@ -53,6 +54,9 @@ class AuthServiceTest {
 
     @Mock
     private EmailService emailService;
+
+    @Mock
+    private TwoFactorChallengeService twoFactorChallengeService;
 
     @InjectMocks
     private AuthService authService;
@@ -188,6 +192,29 @@ class AuthServiceTest {
         assertThat(response.getEmail()).isEqualTo("bob@example.com");
         verify(auditLogService).recordAccountEvent(eq(1L),
                 eq(AuditAction.LOGIN), anyString());
+    }
+
+    @Test
+    void login_twoFactorEnabled_returnsChallengeAndWithholdsTokens() {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("bob@example.com");
+        request.setPassword("correctPassword");
+
+        User user = buildExistingUser();
+        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("correctPassword", "$2a$10$hashedpassword")).thenReturn(true);
+        when(twoFactorChallengeService.challenge(user))
+                .thenReturn(Optional.of(AuthResponse.twoFactorRequired("challenge-token")));
+
+        AuthResponse response = authService.login(request);
+
+        assertThat(response.isTwoFactorRequired()).isTrue();
+        assertThat(response.getChallengeToken()).isEqualTo("challenge-token");
+        assertThat(response.getToken()).isNull();
+        assertThat(response.getRefreshToken()).isNull();
+        // No session and no LOGIN entry yet - the user isn't signed in until the code step.
+        verify(refreshTokenService, never()).createRefreshToken(any());
+        verify(auditLogService, never()).recordAccountEvent(any(), eq(AuditAction.LOGIN), anyString());
     }
 
     @Test

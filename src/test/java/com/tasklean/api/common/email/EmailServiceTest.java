@@ -138,6 +138,62 @@ class EmailServiceTest {
     }
 
     @Test
+    void sendTwoFactorEnabledEmail_notifiesOwnerAndPointsAtRecoveryCodes() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendTwoFactorEnabledEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("Two-factor authentication was just turned on");
+    }
+
+    @Test
+    void sendTwoFactorDisabledEmail_notifiesOwnerOfWeakenedSignIn() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendTwoFactorDisabledEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("just turned off");
+    }
+
+    @Test
+    void sendRecoveryCodesRegeneratedEmail_notifiesOwnerPreviousCodesAreDead() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendRecoveryCodesRegeneratedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("previous codes no longer work");
+    }
+
+    @Test
+    void sendRecoveryCodeUsedEmail_notifiesOwnerOfAppFreeSignIn() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendRecoveryCodeUsedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("recovery code");
+    }
+
+    @Test
     void sendNewSignInEmail_includesDeviceAndIp() {
         EmailService service = new EmailService(mailSender, "http://localhost:3000");
 

@@ -38,6 +38,12 @@ public class RateLimitProperties {
     /** Reset-password — keyed by IP (caps token-guessing attempts). */
     private Tier resetPassword = new Tier(10, Duration.ofMinutes(1));
 
+    /**
+     * Two-factor code verification — keyed by IP. The per-challenge attempt cap already limits one
+     * sign-in; this caps guessing across fresh challenges.
+     */
+    private Tier twoFactor = new Tier(10, Duration.ofMinutes(1));
+
     /** Authenticated API calls — keyed by user id. */
     private Tier apiPerUser = new Tier(120, Duration.ofMinutes(1));
 

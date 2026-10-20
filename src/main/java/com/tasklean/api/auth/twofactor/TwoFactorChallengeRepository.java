@@ -1,5 +1,6 @@
 package com.tasklean.api.auth.twofactor;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -15,6 +16,9 @@ import java.util.Optional;
 @Repository
 public interface TwoFactorChallengeRepository extends JpaRepository<TwoFactorChallenge, Long> {
 
+    // Verification runs outside a transaction (so a failed attempt still commits), so the owning
+    // user is fetched with the challenge rather than left as a lazy proxy.
+    @EntityGraph(attributePaths = "user")
     Optional<TwoFactorChallenge> findByTokenHashAndConsumedAtIsNull(String tokenHash);
 
     void deleteByUserIdUser(Long userId);
@@ -23,9 +27,8 @@ public interface TwoFactorChallengeRepository extends JpaRepository<TwoFactorCha
      * Deletes challenges that are expired or already consumed.
      *
      * @param now the cutoff to compare expiry against
-     * @return how many rows were removed
      */
     @Modifying
     @Query("DELETE FROM TwoFactorChallenge c WHERE c.expiresAt < :now OR c.consumedAt IS NOT NULL")
-    int deleteExpiredAndConsumed(LocalDateTime now);
+    void deleteExpiredAndConsumed(LocalDateTime now);
 }
