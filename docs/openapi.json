@@ -28,7 +28,7 @@
     "description" : "The caller's own devices: list with session state, rename, per-device logout, remove, and push-notification registration.",
     "name" : "Devices"
   }, {
-    "description" : "Registration, login, email verification, Google sign-in, token refresh and logout. Public - these endpoints need no token.",
+    "description" : "Registration, login, email verification, Google sign-in, two-factor verification, token refresh and logout. Public - these endpoints need no token.",
     "name" : "Auth"
   }, {
     "description" : "Households: create one, discover your own, join by invite code, rotate the code, update and delete.",
@@ -52,10 +52,229 @@
     "description" : "User profiles: the caller's own via /me, plus platform-admin listing and role management.",
     "name" : "Users"
   }, {
+    "description" : "The caller's own two-factor setup: enroll an authenticator app, turn it on or off, and manage recovery codes.",
+    "name" : "Two-factor authentication"
+  }, {
     "description" : "The caller's own UI settings: colour theme and language.",
     "name" : "User settings"
   } ],
   "paths" : {
+    "/api/account/2fa" : {
+      "get" : {
+        "description" : "Returns the caller's two-factor state.",
+        "operationId" : "getStatus",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTwoFactorStatusResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with whether two-factor is on or pending and how many recovery codes\n         are left"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns the caller's two-factor state.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/disable" : {
+      "post" : {
+        "description" : "Turns two-factor off, removing the factor and every recovery code.",
+        "operationId" : "disable",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorConfirmRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account) and a\n                  current authenticator or recovery code",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with fresh tokens for this device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Turns two-factor off, removing the factor and every recovery code.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/enable" : {
+      "post" : {
+        "description" : "Confirms the pending setup with a code from the app, turning two-factor on and signing out\n other devices.",
+        "operationId" : "enable",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorEnableRequest"
+              }
+            }
+          },
+          "description" : "the code currently shown by the authenticator app",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTwoFactorEnableResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the one-time recovery codes and fresh tokens for this device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Confirms the pending setup with a code from the app, turning two-factor on and signing out\n other devices.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/recovery-codes" : {
+      "post" : {
+        "description" : "Issues a new set of recovery codes, invalidating the previous set.",
+        "operationId" : "regenerateRecoveryCodes",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorConfirmRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account) and a\n                  current authenticator or recovery code",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseRecoveryCodesResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the new one-time recovery codes"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Issues a new set of recovery codes, invalidating the previous set.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/setup" : {
+      "post" : {
+        "description" : "Starts setup by enrolling a new, unconfirmed factor for the caller's authenticator app.",
+        "operationId" : "startSetup",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorSetupRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTwoFactorSetupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the secret and the <code>otpauth://</code> URI to show as a QR code"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Starts setup by enrolling a new, unconfirmed factor for the caller's authenticator app.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
     "/api/account/change-password" : {
       "post" : {
         "description" : "Changes the caller's password, signing out other devices and keeping this one.",
@@ -443,6 +662,50 @@
         },
         "summary" : "Lists audit-log entries recorded for a specific group member, newest first.",
         "tags" : [ "Audit logs" ]
+      }
+    },
+    "/api/auth/2fa/verify" : {
+      "post" : {
+        "description" : "Finishes a sign-in that returned a two-factor challenge, exchanging the challenge token plus\n a code from the authenticator app (or a recovery code) for the access and refresh tokens.",
+        "operationId" : "verifyTwoFactor",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorVerifyRequest"
+              }
+            }
+          },
+          "description" : "the challenge token and the code",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the auth response carrying both tokens"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Finishes a sign-in that returned a two-factor challenge, exchanging the challenge token plus\n a code from the authenticator app (or a recovery code) for the access and refresh tokens.",
+        "tags" : [ "Auth" ]
       }
     },
     "/api/auth/forgot-password" : {
@@ -3651,6 +3914,24 @@
           }
         }
       },
+      "ApiResponseRecoveryCodesResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/RecoveryCodesResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseTagResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -3696,6 +3977,60 @@
           },
           "data" : {
             "$ref" : "#/components/schemas/TaskResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTwoFactorEnableResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TwoFactorEnableResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTwoFactorSetupResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TwoFactorSetupResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTwoFactorStatusResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TwoFactorStatusResponse"
           },
           "message" : {
             "type" : "string"
@@ -3801,6 +4136,9 @@
       "AuthResponse" : {
         "type" : "object",
         "properties" : {
+          "challengeToken" : {
+            "type" : "string"
+          },
           "email" : {
             "type" : "string"
           },
@@ -3815,6 +4153,9 @@
           },
           "token" : {
             "type" : "string"
+          },
+          "twoFactorRequired" : {
+            "type" : "boolean"
           },
           "uid" : {
             "type" : "string"
@@ -4350,6 +4691,19 @@
         },
         "required" : [ "settings" ]
       },
+      "RecoveryCodesResponse" : {
+        "type" : "object",
+        "description" : "A freshly generated set of recovery codes. Only ever returned once - they are stored hashed, so\n they cannot be shown again.",
+        "properties" : {
+          "recoveryCodes" : {
+            "type" : "array",
+            "description" : "the single-use codes, in the order they should be displayed",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
+      },
       "RefreshRequest" : {
         "type" : "object",
         "properties" : {
@@ -4661,6 +5015,114 @@
             "type" : "string"
           }
         }
+      },
+      "TwoFactorConfirmRequest" : {
+        "type" : "object",
+        "description" : "Request body for an operation that weakens or replaces an active second factor (turning it off,\n regenerating recovery codes): both the account password and a current second-factor code, so\n neither a stolen session nor a stolen password is enough on its own. The password is required\n for an account that has one and ignored for a Google-only account.",
+        "properties" : {
+          "code" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "password" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "code" ]
+      },
+      "TwoFactorEnableRequest" : {
+        "type" : "object",
+        "description" : "Request body for confirming setup: the code currently shown by the authenticator app that was\n just enrolled. No password - the pending secret itself is the proof.",
+        "properties" : {
+          "code" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "code" ]
+      },
+      "TwoFactorEnableResponse" : {
+        "type" : "object",
+        "description" : "The result of turning two-factor on: the one-time recovery codes, plus a fresh session for the\n current device because enabling signs every other device out.",
+        "properties" : {
+          "recoveryCodes" : {
+            "type" : "array",
+            "description" : "the single-use codes, shown to the user only here",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "refreshToken" : {
+            "type" : "string",
+            "description" : "the new refresh token for the current device"
+          },
+          "token" : {
+            "type" : "string",
+            "description" : "the new access token for the current device"
+          }
+        }
+      },
+      "TwoFactorSetupRequest" : {
+        "type" : "object",
+        "description" : "Request body for starting two-factor setup. The password re-authenticates the caller; it is\n required for an account that has one and ignored for a Google-only account, which the valid\n session confirms.",
+        "properties" : {
+          "password" : {
+            "type" : "string"
+          }
+        }
+      },
+      "TwoFactorSetupResponse" : {
+        "type" : "object",
+        "description" : "What the client needs to enroll an authenticator app. The factor is not active yet - it becomes\n active only once a code from it is confirmed.",
+        "properties" : {
+          "otpauthUri" : {
+            "type" : "string",
+            "description" : "the <code>otpauth://totp/...</code> URI to render as a QR code"
+          },
+          "secret" : {
+            "type" : "string",
+            "description" : "the Base32 secret, for manual entry when a QR code can't be scanned"
+          }
+        }
+      },
+      "TwoFactorStatusResponse" : {
+        "type" : "object",
+        "description" : "The caller's two-factor state, enough for the settings screen to decide what to show.",
+        "properties" : {
+          "confirmedAt" : {
+            "type" : "string",
+            "format" : "date-time",
+            "description" : "when the factor was confirmed; null while it isn't enabled"
+          },
+          "enabled" : {
+            "type" : "boolean",
+            "description" : "true if a confirmed second factor is required at sign-in"
+          },
+          "pendingSetup" : {
+            "type" : "boolean",
+            "description" : "true if setup was started but never confirmed, so the client can\n                                offer to resume it"
+          },
+          "recoveryCodesRemaining" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "how many unused recovery codes are left; 0 when not enabled"
+          }
+        }
+      },
+      "TwoFactorVerifyRequest" : {
+        "type" : "object",
+        "description" : "Request body for finishing a sign-in that needs a second factor: the opaque challenge token the\n login response returned, plus a code from the authenticator app or one recovery code.",
+        "properties" : {
+          "challengeToken" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "code" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "challengeToken", "code" ]
       },
       "UserRequest" : {
         "type" : "object",
