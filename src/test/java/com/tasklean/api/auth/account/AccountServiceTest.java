@@ -2,10 +2,10 @@ package com.tasklean.api.auth.account;
 
 import com.tasklean.api.auth.GoogleIdentity;
 import com.tasklean.api.auth.GoogleOAuthService;
+import com.tasklean.api.auth.SessionRotator;
 import com.tasklean.api.auth.account.dto.*;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
-import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -37,9 +37,9 @@ class AccountServiceTest {
     @Mock
     private PasswordEncoder passwordEncoder;
     @Mock
-    private JwtService jwtService;
-    @Mock
     private RefreshTokenService refreshTokenService;
+    @Mock
+    private SessionRotator sessionRotator;
     @Mock
     private GoogleOAuthService googleOAuthService;
     @Mock
@@ -64,8 +64,7 @@ class AccountServiceTest {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("current", "$old")).thenReturn(true);
         when(passwordEncoder.encode("NewPass1!")).thenReturn("$new");
-        when(jwtService.generateToken(user)).thenReturn("access");
-        when(refreshTokenService.createRefreshToken(user)).thenReturn("refresh");
+        when(sessionRotator.rotateCurrentSession(user)).thenReturn(AuthResponse.from(user, "access", "refresh"));
 
         AuthResponse response = accountService.changePassword(USER_ID,
                 new ChangePasswordRequest("current", "NewPass1!"));
@@ -73,7 +72,7 @@ class AccountServiceTest {
         assertThat(response.getToken()).isEqualTo("access");
         assertThat(response.getRefreshToken()).isEqualTo("refresh");
         assertThat(user.getPasswordHash()).isEqualTo("$new");
-        verify(refreshTokenService).revokeAllUserTokens(user);
+        verify(sessionRotator).rotateCurrentSession(user);
         verify(emailService).sendPasswordChangedEmail("bob@example.com");
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.PASSWORD_CHANGED), anyString());
     }
@@ -89,7 +88,7 @@ class AccountServiceTest {
                 .isInstanceOf(BadCredentialsException.class);
 
         verify(userRepository, never()).save(any());
-        verify(refreshTokenService, never()).revokeAllUserTokens(any());
+        verify(sessionRotator, never()).rotateCurrentSession(any());
     }
 
     @Test
@@ -108,14 +107,13 @@ class AccountServiceTest {
         User user = user(null, "sub-1");
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(passwordEncoder.encode("NewPass1!")).thenReturn("$new");
-        when(jwtService.generateToken(user)).thenReturn("access");
-        when(refreshTokenService.createRefreshToken(user)).thenReturn("refresh");
+        when(sessionRotator.rotateCurrentSession(user)).thenReturn(AuthResponse.from(user, "access", "refresh"));
 
         AuthResponse response = accountService.setPassword(USER_ID, new SetPasswordRequest("NewPass1!"));
 
         assertThat(response.getRefreshToken()).isEqualTo("refresh");
         assertThat(user.getPasswordHash()).isEqualTo("$new");
-        verify(refreshTokenService).revokeAllUserTokens(user);
+        verify(sessionRotator).rotateCurrentSession(user);
         verify(emailService).sendPasswordSetEmail("bob@example.com");
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.PASSWORD_SET), anyString());
     }

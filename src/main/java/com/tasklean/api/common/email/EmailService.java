@@ -156,6 +156,50 @@ public class EmailService {
     }
 
     /**
+     * Confirms that two-factor authentication was just turned on, so an unauthorized change is
+     * noticeable. Never carries the secret or any recovery code.
+     *
+     * @param to the recipient email address
+     */
+    public void sendTwoFactorEnabledEmail(String to) {
+        send(to, "TasKlean - Two-factor authentication is on", """
+                Two-factor authentication was just turned on for your TasKlean account. From now on
+                you'll enter a code from your authenticator app when you sign in, and your other
+                sessions have been signed out.
+
+                Keep your recovery codes somewhere safe - they're the only way back in if you lose your phone.
+
+                If this wasn't you, contact support right away - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that two-factor authentication was just turned off, so an unauthorized change is
+     * noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendTwoFactorDisabledEmail(String to) {
+        send(to, "TasKlean - Two-factor authentication is off", """
+                Two-factor authentication was just turned off for your TasKlean account, and your
+                other sessions have been signed out. You'll now sign in with your password alone.
+
+                If this wasn't you, turn it back on and change your password immediately - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that a fresh set of recovery codes was issued, which invalidated the previous set.
+     *
+     * @param to the recipient email address
+     */
+    public void sendRecoveryCodesRegeneratedEmail(String to) {
+        send(to, "TasKlean - New recovery codes were generated", """
+                A new set of two-factor recovery codes was just generated for your TasKlean account.
+                Your previous codes no longer work.
+
+                If this wasn't you, contact support right away - your account may be compromised.""");
+    }
+
+    /**
      * Alerts the account owner that their account was signed into from a new device, so an
      * unrecognised sign-in is noticeable. Carries only the device label and IP, never credentials.
      *

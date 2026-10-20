@@ -2,13 +2,13 @@ package com.tasklean.api.auth.account;
 
 import com.tasklean.api.auth.GoogleIdentity;
 import com.tasklean.api.auth.GoogleOAuthService;
+import com.tasklean.api.auth.SessionRotator;
 import com.tasklean.api.auth.account.dto.ChangePasswordRequest;
 import com.tasklean.api.auth.account.dto.ConnectedAccountsResponse;
 import com.tasklean.api.auth.account.dto.DeactivateAccountRequest;
 import com.tasklean.api.auth.account.dto.SetPasswordRequest;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
-import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
@@ -39,8 +39,8 @@ public class AccountService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
+    private final SessionRotator sessionRotator;
     private final GoogleOAuthService googleOAuthService;
     private final EmailService emailService;
     private final AuditLogService auditLogService;
@@ -67,7 +67,7 @@ public class AccountService {
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
-        AuthResponse response = rotateCurrentSession(user);
+        AuthResponse response = sessionRotator.rotateCurrentSession(user);
 
         emailService.sendPasswordChangedEmail(user.getEmail());
         auditLogService.recordAccountEvent(userId, AuditAction.PASSWORD_CHANGED, "Password changed");
@@ -93,7 +93,7 @@ public class AccountService {
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
-        AuthResponse response = rotateCurrentSession(user);
+        AuthResponse response = sessionRotator.rotateCurrentSession(user);
 
         emailService.sendPasswordSetEmail(user.getEmail());
         auditLogService.recordAccountEvent(userId, AuditAction.PASSWORD_SET, "Password set");
@@ -211,16 +211,6 @@ public class AccountService {
         emailService.sendAccountDeactivatedEmail(user.getEmail());
         auditLogService.recordAccountEvent(userId, AuditAction.ACCOUNT_DELETED, "Account deactivated");
         log.info("Account deactivated: uid={}", user.getUid());
-    }
-
-    // Revokes every session, then issues a fresh pair bound to the caller's current device so this
-    // device stays signed in while all others must re-authenticate. The new token is inserted after
-    // the bulk revoke, so it is not caught by it.
-    private AuthResponse rotateCurrentSession(User user) {
-        refreshTokenService.revokeAllUserTokens(user);
-        String accessToken = jwtService.generateToken(user);
-        String refreshToken = refreshTokenService.createRefreshToken(user);
-        return AuthResponse.from(user, accessToken, refreshToken);
     }
 
     private ConnectedAccountsResponse connectionsOf(User user) {
