@@ -8,6 +8,7 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -60,7 +61,7 @@ public class GoogleOAuthService {
         verifyNonce(payload, request.getNonce());
 
         if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
-            throw new BadCredentialsException("Google account email is not verified");
+            throw new BadCredentialsException(ErrorMessages.GOOGLE_EMAIL_UNVERIFIED);
         }
 
         String googleSub = payload.getSubject();
@@ -97,7 +98,7 @@ public class GoogleOAuthService {
         GoogleIdToken.Payload payload = verifyToken(request.getIdToken());
         verifyNonce(payload, request.getNonce());
         if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
-            throw new BadCredentialsException("Google account email is not verified");
+            throw new BadCredentialsException(ErrorMessages.GOOGLE_EMAIL_UNVERIFIED);
         }
         return new GoogleIdentity(payload.getSubject(), payload.getEmail());
     }
@@ -107,7 +108,7 @@ public class GoogleOAuthService {
     private void verifyNonce(GoogleIdToken.Payload payload, String nonce) {
         String expected = sha256Hex(nonce);
         if (!expected.equals(payload.getNonce())) {
-            throw new BadCredentialsException("Invalid Google token");
+            throw new BadCredentialsException(ErrorMessages.INVALID_GOOGLE_TOKEN);
         }
     }
 
@@ -125,7 +126,7 @@ public class GoogleOAuthService {
         try {
             GoogleIdToken verified = googleIdTokenVerifier.verify(idToken);
             if (verified == null) {
-                throw new BadCredentialsException("Invalid Google token");
+                throw new BadCredentialsException(ErrorMessages.INVALID_GOOGLE_TOKEN);
             }
             return verified.getPayload();
         } catch (GeneralSecurityException | IOException e) {
@@ -138,7 +139,7 @@ public class GoogleOAuthService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
                     "Failed Google login: account deactivated");
-            throw new AuthFailureException("Account is deactivated", ErrorCodes.ACCOUNT_DEACTIVATED);
+            throw new AuthFailureException(ErrorMessages.ACCOUNT_DEACTIVATED, ErrorCodes.ACCOUNT_DEACTIVATED);
         }
         return challengeOrTokens(user, AuditAction.LOGIN, "User logged in via Google");
     }
@@ -147,7 +148,7 @@ public class GoogleOAuthService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
                     "Failed Google login: account deactivated");
-            throw new AuthFailureException("Account is deactivated", ErrorCodes.ACCOUNT_DEACTIVATED);
+            throw new AuthFailureException(ErrorMessages.ACCOUNT_DEACTIVATED, ErrorCodes.ACCOUNT_DEACTIVATED);
         }
         user.setGoogleSub(payload.getSubject());
         // Google has verified this mailbox, so a previously unverified password account is now trusted.

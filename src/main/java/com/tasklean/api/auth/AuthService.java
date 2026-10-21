@@ -8,6 +8,7 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
@@ -94,7 +95,7 @@ public class AuthService {
      */
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
+                .orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_CREDENTIALS));
 
         // Check the password before revealing any account state, so a wrong guess is
         // indistinguishable from an unknown email (no account enumeration). A null hash is
@@ -103,13 +104,13 @@ public class AuthService {
                 || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             recordFailedLogin(user, user.getPasswordHash() == null ? "oauth-only account" : "invalid password");
             // No error code here: one would tell the caller which of the two failed.
-            throw new BadCredentialsException("Invalid email or password");
+            throw new BadCredentialsException(ErrorMessages.INVALID_CREDENTIALS);
         }
 
         // Past here the caller proved they own the account, so account-state reasons are safe to surface.
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             recordFailedLogin(user, "account deactivated");
-            throw new AuthFailureException("Account is deactivated", ErrorCodes.ACCOUNT_DEACTIVATED);
+            throw new AuthFailureException(ErrorMessages.ACCOUNT_DEACTIVATED, ErrorCodes.ACCOUNT_DEACTIVATED);
         }
 
         if (!Boolean.TRUE.equals(user.getIsEmailVerified())) {

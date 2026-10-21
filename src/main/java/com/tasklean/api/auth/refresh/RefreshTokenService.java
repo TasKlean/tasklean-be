@@ -3,6 +3,7 @@ package com.tasklean.api.auth.refresh;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.config.JwtConfig;
@@ -92,7 +93,7 @@ public class RefreshTokenService {
         String hashedToken = SecureTokens.sha256(request.getRefreshToken());
 
         RefreshToken existing = refreshTokenRepository.findByTokenAndIsRevokedFalse(hashedToken)
-                .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
+                .orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_REFRESH_TOKEN));
 
         if (existing.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
             existing.setIsRevoked(true);
@@ -105,7 +106,7 @@ public class RefreshTokenService {
         // Deny refresh if user is deactivated
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             refreshTokenRepository.revokeAllByUserId(user.getIdUser());
-            throw new BadCredentialsException("Account is deactivated");
+            throw new BadCredentialsException(ErrorMessages.ACCOUNT_DEACTIVATED);
         }
 
         // Rotate: revoke old, issue a new token on the same device (session identity is preserved).
@@ -137,7 +138,7 @@ public class RefreshTokenService {
         String hashedToken = SecureTokens.sha256(request.getRefreshToken());
 
         RefreshToken token = refreshTokenRepository.findByTokenAndIsRevokedFalse(hashedToken)
-                .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
+                .orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_REFRESH_TOKEN));
 
         Device device = token.getDevice();
         if (device != null) {
@@ -162,7 +163,7 @@ public class RefreshTokenService {
         String hashedToken = SecureTokens.sha256(request.getRefreshToken());
 
         RefreshToken token = refreshTokenRepository.findByTokenAndIsRevokedFalse(hashedToken)
-                .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
+                .orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_REFRESH_TOKEN));
         Long userId = token.getUser().getIdUser();
 
         refreshTokenRepository.revokeAllByUserId(userId);

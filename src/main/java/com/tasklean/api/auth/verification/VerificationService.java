@@ -5,6 +5,7 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -75,11 +76,11 @@ public class VerificationService {
     public AuthResponse verifyEmail(VerifyEmailRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
                 .filter(u -> !u.getIsEmailVerified())
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or code"));
+                .orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_EMAIL_OR_CODE));
 
         verificationRepository.findTopByUserIdUserAndCodeAndExpiresAtAfterOrderByDateCreatedDesc(
                 user.getIdUser(), request.getCode(), LocalDateTime.now(clock)
-        ).orElseThrow(() -> new BadCredentialsException("Invalid email or code"));
+        ).orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_EMAIL_OR_CODE));
 
         user.setIsEmailVerified(true);
         userRepository.save(user);

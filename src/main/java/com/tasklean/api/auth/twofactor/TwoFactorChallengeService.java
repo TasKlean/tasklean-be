@@ -5,6 +5,7 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.dto.TwoFactorVerifyRequest;
 import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.AuthFailureException;
@@ -37,10 +38,6 @@ public class TwoFactorChallengeService {
     private static final Duration CHALLENGE_TTL = Duration.ofMinutes(5);
 
     private static final int MAX_ATTEMPTS = 5;
-
-    // One message for every unusable challenge (unknown, expired, already spent, factor removed),
-    // so a caller learns nothing about which it was.
-    private static final String INVALID_CHALLENGE = "This sign-in request is no longer valid. Please sign in again.";
 
     private final TwoFactorChallengeRepository challengeRepository;
     private final UserTwoFactorRepository userTwoFactorRepository;
@@ -94,11 +91,13 @@ public class TwoFactorChallengeService {
     public AuthResponse verify(TwoFactorVerifyRequest request) {
         TwoFactorChallenge challenge = challengeRepository
                 .findByTokenHashAndConsumedAtIsNull(SecureTokens.sha256(request.getChallengeToken()))
-                .orElseThrow(() -> new AuthFailureException(INVALID_CHALLENGE, ErrorCodes.TWO_FACTOR_CHALLENGE_INVALID));
+                .orElseThrow(() -> new AuthFailureException(ErrorMessages.TWO_FACTOR_CHALLENGE_INVALID,
+                        ErrorCodes.TWO_FACTOR_CHALLENGE_INVALID));
         User user = challenge.getUser();
 
         if (challenge.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
-            throw new AuthFailureException(INVALID_CHALLENGE, ErrorCodes.TWO_FACTOR_CHALLENGE_INVALID);
+            throw new AuthFailureException(ErrorMessages.TWO_FACTOR_CHALLENGE_INVALID,
+                    ErrorCodes.TWO_FACTOR_CHALLENGE_INVALID);
         }
         if (challenge.getAttempts() >= MAX_ATTEMPTS) {
             // Spend it, so a caller out of attempts can't keep the row alive by trying again.
@@ -111,12 +110,13 @@ public class TwoFactorChallengeService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             consume(challenge);
             recordFailure(user, "account deactivated");
-            throw new AuthFailureException("Account is deactivated", ErrorCodes.ACCOUNT_DEACTIVATED);
+            throw new AuthFailureException(ErrorMessages.ACCOUNT_DEACTIVATED, ErrorCodes.ACCOUNT_DEACTIVATED);
         }
 
         UserTwoFactor factor = userTwoFactorRepository.findByUserIdUser(user.getIdUser())
                 .filter(enabled -> Boolean.TRUE.equals(enabled.getIsEnabled()))
-                .orElseThrow(() -> new AuthFailureException(INVALID_CHALLENGE, ErrorCodes.TWO_FACTOR_CHALLENGE_INVALID));
+                .orElseThrow(() -> new AuthFailureException(ErrorMessages.TWO_FACTOR_CHALLENGE_INVALID,
+                        ErrorCodes.TWO_FACTOR_CHALLENGE_INVALID));
 
         TwoFactorCodeOutcome outcome = twoFactorService.consumeCode(user, factor, request.getCode());
         if (outcome == TwoFactorCodeOutcome.INVALID) {
@@ -124,7 +124,7 @@ public class TwoFactorChallengeService {
             challengeRepository.save(challenge);
             recordFailure(user, "invalid two-factor code");
             log.warn("Two-factor verification failed: uid={}", user.getUid());
-            throw new AuthFailureException("That code is not valid. Use a current code from your app or a recovery code.",
+            throw new AuthFailureException(ErrorMessages.TWO_FACTOR_CODE_INVALID,
                     ErrorCodes.TWO_FACTOR_CODE_INVALID);
         }
 

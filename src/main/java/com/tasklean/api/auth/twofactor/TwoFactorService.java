@@ -265,7 +265,7 @@ public class TwoFactorService {
     private void requireValidCode(User user, UserTwoFactor factor, String code) {
         if (consumeCode(user, factor, code) == TwoFactorCodeOutcome.INVALID) {
             log.warn("Two-factor code rejected: uid={}", user.getUid());
-            throw new AuthFailureException("That code is not valid. Use a current code from your app or a recovery code.",
+            throw new AuthFailureException(ErrorMessages.TWO_FACTOR_CODE_INVALID,
                     ErrorCodes.TWO_FACTOR_CODE_INVALID);
         }
     }
@@ -319,7 +319,7 @@ public class TwoFactorService {
             throw new AuthFailureException("Password is required to change two-factor settings", ErrorCodes.PASSWORD_INVALID);
         }
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            throw new AuthFailureException("Current password is incorrect", ErrorCodes.PASSWORD_INVALID);
+            throw new AuthFailureException(ErrorMessages.PASSWORD_INCORRECT, ErrorCodes.PASSWORD_INVALID);
         }
     }
 

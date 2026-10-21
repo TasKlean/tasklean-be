@@ -64,7 +64,7 @@ public class AccountService {
             throw new BusinessRuleException("This account has no password yet. Set a password instead.");
         }
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
-            throw new AuthFailureException("Current password is incorrect", ErrorCodes.PASSWORD_INVALID);
+            throw new AuthFailureException(ErrorMessages.PASSWORD_INCORRECT, ErrorCodes.PASSWORD_INVALID);
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
@@ -202,7 +202,7 @@ public class AccountService {
                 throw new AuthFailureException("Password is required to deactivate your account", ErrorCodes.PASSWORD_INVALID);
             }
             if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-                throw new AuthFailureException("Current password is incorrect", ErrorCodes.PASSWORD_INVALID);
+                throw new AuthFailureException(ErrorMessages.PASSWORD_INCORRECT, ErrorCodes.PASSWORD_INVALID);
             }
         }
 
