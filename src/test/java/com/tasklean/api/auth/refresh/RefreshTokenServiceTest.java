@@ -3,8 +3,13 @@ package com.tasklean.api.auth.refresh;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
+import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.config.JwtConfig;
+import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.device.Device;
+import com.tasklean.api.domain.device.DeviceLoginOutcome;
+import com.tasklean.api.domain.device.DeviceService;
 import com.tasklean.api.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,6 +46,12 @@ class RefreshTokenServiceTest {
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private DeviceService deviceService;
+
+    @Mock
+    private EmailService emailService;
 
     @Spy
     private Clock clock = Clock.systemUTC();
@@ -58,15 +70,25 @@ class RefreshTokenServiceTest {
                 .build();
     }
 
+    private Device buildDevice(Long id) {
+        return Device.builder()
+                .idDevice(id)
+                .deviceName("Chrome on Windows")
+                .ipAddress("203.0.113.5")
+                .isActive(true)
+                .build();
+    }
+
     // --- createRefreshToken ---
 
     @Test
-    void createRefreshToken_generatesAndPersistsHashedToken() {
+    void createRefreshToken_noDeviceId_persistsTokenWithoutDeviceOrEmail() {
         User user = buildUser();
 
+        // A login carrying no device id resolves to no device.
+        when(deviceService.resolveLoginDevice(user)).thenReturn(new DeviceLoginOutcome(null, false));
         when(jwtConfig.getRefreshExpiration()).thenReturn(1209600000L);
-        when(refreshTokenRepository.save(any(RefreshToken.class)))
-                .thenAnswer(i -> i.getArgument(0));
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
 
         String rawToken = refreshTokenService.createRefreshToken(user);
 
@@ -74,13 +96,47 @@ class RefreshTokenServiceTest {
 
         ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
         verify(refreshTokenRepository).save(captor.capture());
-
         RefreshToken saved = captor.getValue();
         assertThat(saved.getToken()).isNotEqualTo(rawToken);
-        assertThat(saved.getToken()).isNotBlank();
-        assertThat(saved.getUser()).isEqualTo(user);
+        assertThat(saved.getDevice()).isNull();
         assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC).plusDays(13));
         assertThat(saved.getIsRevoked()).isFalse();
+
+        verify(emailService, never()).sendNewSignInEmail(any(), any(), any());
+    }
+
+    @Test
+    void createRefreshToken_newDevice_bindsDeviceAndAlertsOwner() {
+        User user = buildUser();
+        Device device = buildDevice(5L);
+
+        when(deviceService.resolveLoginDevice(user)).thenReturn(new DeviceLoginOutcome(device, true));
+        when(jwtConfig.getRefreshExpiration()).thenReturn(1209600000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
+
+        refreshTokenService.createRefreshToken(user);
+
+        ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository).save(captor.capture());
+        assertThat(captor.getValue().getDevice()).isEqualTo(device);
+
+        verify(emailService).sendNewSignInEmail("test@example.com", "Chrome on Windows", "203.0.113.5");
+        verify(auditLogService).recordAccountEvent(eq(1L), eq(AuditAction.NEW_DEVICE_LOGIN), anyString());
+    }
+
+    @Test
+    void createRefreshToken_knownDevice_bindsDeviceWithoutEmail() {
+        User user = buildUser();
+        Device device = buildDevice(5L);
+
+        when(deviceService.resolveLoginDevice(user)).thenReturn(new DeviceLoginOutcome(device, false));
+        when(jwtConfig.getRefreshExpiration()).thenReturn(1209600000L);
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
+
+        refreshTokenService.createRefreshToken(user);
+
+        verify(emailService, never()).sendNewSignInEmail(any(), any(), any());
+        verify(auditLogService, never()).recordAccountEvent(any(), eq(AuditAction.NEW_DEVICE_LOGIN), anyString());
     }
 
     // --- refresh ---
@@ -111,6 +167,41 @@ class RefreshTokenServiceTest {
         assertThat(response.getToken()).isEqualTo("new-access-token");
         assertThat(response.getRefreshToken()).isNotBlank();
         assertThat(existing.getIsRevoked()).isTrue();
+        // Rotation doesn't go through device resolution (keeps the same device).
+        verify(deviceService, never()).resolveLoginDevice(any());
+    }
+
+    @Test
+    void refresh_withDevice_keepsDeviceAndTouchesLastUsed() {
+        User user = buildUser();
+        Device device = buildDevice(5L);
+        device.setLastUsed(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
+        RefreshToken existing = RefreshToken.builder()
+                .idRefreshToken(1L)
+                .user(user)
+                .device(device)
+                .token("hashed-value")
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(3))
+                .isRevoked(false)
+                .build();
+
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("raw-refresh-token");
+
+        when(refreshTokenRepository.findByTokenAndIsRevokedFalse(anyString()))
+                .thenReturn(Optional.of(existing));
+        when(jwtConfig.getRefreshExpiration()).thenReturn(1209600000L);
+        when(jwtService.generateToken(user)).thenReturn("new-access-token");
+        when(refreshTokenRepository.save(any(RefreshToken.class))).thenAnswer(i -> i.getArgument(0));
+
+        refreshTokenService.refresh(request);
+
+        ArgumentCaptor<RefreshToken> captor = ArgumentCaptor.forClass(RefreshToken.class);
+        verify(refreshTokenRepository, times(2)).save(captor.capture());
+        // Second save is the new token; it stays on the same device.
+        RefreshToken issued = captor.getAllValues().get(1);
+        assertThat(issued.getDevice()).isEqualTo(device);
+        assertThat(device.getLastUsed()).isAfter(LocalDateTime.now(ZoneOffset.UTC).minusHours(1));
     }
 
     @Test
@@ -189,10 +280,36 @@ class RefreshTokenServiceTest {
                 .hasMessageContaining("Invalid refresh token");
     }
 
-    // --- logout ---
+    // --- logout (per-device) ---
 
     @Test
-    void logout_validToken_revokesAllUserTokens() {
+    void logout_withDevice_revokesThatDeviceSessions() {
+        User user = buildUser();
+        Device device = buildDevice(5L);
+        RefreshToken token = RefreshToken.builder()
+                .idRefreshToken(1L)
+                .user(user)
+                .device(device)
+                .token("hashed-value")
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(3))
+                .isRevoked(false)
+                .build();
+
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("raw-token");
+
+        when(refreshTokenRepository.findByTokenAndIsRevokedFalse(anyString()))
+                .thenReturn(Optional.of(token));
+
+        refreshTokenService.logout(request);
+
+        verify(refreshTokenRepository).revokeAllByDeviceId(5L);
+        verify(refreshTokenRepository, never()).revokeAllByUserId(any());
+        verify(auditLogService).recordAccountEvent(eq(1L), eq(AuditAction.LOGOUT), anyString());
+    }
+
+    @Test
+    void logout_legacyNoDevice_revokesOnlyThatToken() {
         User user = buildUser();
         RefreshToken token = RefreshToken.builder()
                 .idRefreshToken(1L)
@@ -210,7 +327,10 @@ class RefreshTokenServiceTest {
 
         refreshTokenService.logout(request);
 
-        verify(refreshTokenRepository).revokeAllByUserId(1L);
+        assertThat(token.getIsRevoked()).isTrue();
+        verify(refreshTokenRepository).save(token);
+        verify(refreshTokenRepository, never()).revokeAllByDeviceId(any());
+        verify(refreshTokenRepository, never()).revokeAllByUserId(any());
     }
 
     @Test
@@ -222,6 +342,44 @@ class RefreshTokenServiceTest {
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> refreshTokenService.logout(request))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("Invalid refresh token");
+    }
+
+    // --- logoutAll ---
+
+    @Test
+    void logoutAll_validToken_revokesAllUserTokensAndAudits() {
+        User user = buildUser();
+        RefreshToken token = RefreshToken.builder()
+                .idRefreshToken(1L)
+                .user(user)
+                .token("hashed-value")
+                .expiresAt(LocalDateTime.now(ZoneOffset.UTC).plusDays(3))
+                .isRevoked(false)
+                .build();
+
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("raw-token");
+
+        when(refreshTokenRepository.findByTokenAndIsRevokedFalse(anyString()))
+                .thenReturn(Optional.of(token));
+
+        refreshTokenService.logoutAll(request);
+
+        verify(refreshTokenRepository).revokeAllByUserId(1L);
+        verify(auditLogService).recordAccountEvent(eq(1L), eq(AuditAction.ALL_SESSIONS_REVOKED), anyString());
+    }
+
+    @Test
+    void logoutAll_invalidToken_throws() {
+        RefreshRequest request = new RefreshRequest();
+        request.setRefreshToken("bad-token");
+
+        when(refreshTokenRepository.findByTokenAndIsRevokedFalse(anyString()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> refreshTokenService.logoutAll(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("Invalid refresh token");
     }

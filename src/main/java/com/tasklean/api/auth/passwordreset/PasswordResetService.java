@@ -3,6 +3,7 @@ package com.tasklean.api.auth.passwordreset;
 import com.tasklean.api.auth.passwordreset.dto.ForgotPasswordRequest;
 import com.tasklean.api.auth.passwordreset.dto.ResetPasswordRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -87,10 +88,10 @@ public class PasswordResetService {
     @Transactional
     public void resetPassword(ResetPasswordRequest request) {
         PasswordResetToken token = tokenRepository.findByTokenAndUsedFalse(SecureTokens.sha256(request.getToken()))
-                .orElseThrow(() -> new BadCredentialsException("Invalid or expired reset token"));
+                .orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_RESET_TOKEN));
 
         if (token.getExpiresAt().isBefore(LocalDateTime.now(clock))) {
-            throw new BadCredentialsException("Invalid or expired reset token");
+            throw new BadCredentialsException(ErrorMessages.INVALID_RESET_TOKEN);
         }
 
         User user = token.getUser();

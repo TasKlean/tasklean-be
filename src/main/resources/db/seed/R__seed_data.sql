@@ -29,6 +29,26 @@ VALUES
      (SELECT id_user FROM "user" WHERE email = 'bob@example.com'))
 ON CONFLICT DO NOTHING;
 
+-- Give the seeded devices a stable client id + IP/UA so they list as real sign-in sessions in
+-- settings (done as UPDATEs so existing dev DBs pick them up, not only a fresh one).
+UPDATE device SET client_device_id = 'seed-alice-pixel', ip_address = '203.0.113.20',
+    user_agent = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126.0 Mobile'
+WHERE device_token = 'fcm-token-alice-phone-001';
+UPDATE device SET client_device_id = 'seed-bob-chrome', ip_address = '203.0.113.10',
+    user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0 Safari/537.36'
+WHERE device_token = 'fcm-token-bob-browser-001';
+
+-- A live (non-revoked, unexpired) refresh token on Bob's device so the devices list shows an
+-- active session on a non-current device, to exercise per-device logout / remove. The token value
+-- is a placeholder - it can't authenticate (it isn't the SHA-256 of any real token), it only
+-- populates the session state.
+INSERT INTO refresh_token (user_id, device_id, token, expires_at, is_revoked)
+SELECT d.user_id, d.id_device, 'seed-session-bob-chrome-placeholder',
+       NOW() + INTERVAL '14 days', FALSE
+FROM device d
+WHERE d.device_token = 'fcm-token-bob-browser-001'
+ON CONFLICT DO NOTHING;
+
 -- ============================================================================
 -- GROUPS (2 groups: "Apartment 4B" and "Family Home")
 -- ============================================================================
@@ -313,3 +333,23 @@ JOIN group_member gm_charlie ON gm_charlie.user_id = (SELECT id_user FROM "user"
 WHERE gm_alice.user_id = (SELECT id_user FROM "user" WHERE email = 'alice@example.com')
     AND gm_alice.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002')
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'CREATE' AND entity_type = 'GROUP_MEMBER' AND entity_id = gm_alice.id_group_member);
+
+-- ============================================================================
+-- USER SETTINGS (only Alice has saved settings; Bob and Charlie exercise the
+-- lazy default path, where a read returns the defaults with no row present)
+-- ============================================================================
+INSERT INTO user_settings (user_id, theme, locale)
+SELECT id_user, 'DARK', 'SL' FROM "user" WHERE email = 'alice@example.com'
+ON CONFLICT (user_id) DO NOTHING;
+
+-- ============================================================================
+-- NOTIFICATION SETTINGS (only Alice has saved rows, and only for two types;
+-- every other user/type exercises the lazy default path with no row present)
+-- ============================================================================
+INSERT INTO notification_settings (user_id, type, in_app, email)
+SELECT id_user, 'TASK_COMPLETED', TRUE, FALSE FROM "user" WHERE email = 'alice@example.com'
+ON CONFLICT (user_id, type) DO NOTHING;
+
+INSERT INTO notification_settings (user_id, type, in_app, email)
+SELECT id_user, 'TASK_REMINDER', FALSE, FALSE FROM "user" WHERE email = 'alice@example.com'
+ON CONFLICT (user_id, type) DO NOTHING;

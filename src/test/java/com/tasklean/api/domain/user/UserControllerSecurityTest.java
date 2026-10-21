@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -127,6 +128,21 @@ class UserControllerSecurityTest {
                         .with(as(UserRole.SUPER_ADMIN, "usr-1"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isOk());
+    }
+
+    // --- delete user: SUPER_ADMIN only (self-service deactivation moved to /api/account) ---
+
+    @Test
+    void deleteUser_self_forbidden() throws Exception {
+        // A user can no longer self-delete here; they deactivate via /api/account/deactivate.
+        mockMvc.perform(delete("/api/users/usr-1").with(as(UserRole.USER, "usr-1")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void deleteUser_asSuperAdmin_ok() throws Exception {
+        mockMvc.perform(delete("/api/users/usr-2").with(as(UserRole.SUPER_ADMIN, "usr-1")))
                 .andExpect(status().isOk());
     }
 }

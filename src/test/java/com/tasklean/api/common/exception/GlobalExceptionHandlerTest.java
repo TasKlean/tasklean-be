@@ -1,6 +1,7 @@
 package com.tasklean.api.common.exception;
 
 import com.tasklean.api.common.ApiResponse;
+import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
@@ -59,15 +60,27 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void handleEmailNotVerified_returns401WithCode() {
+    void handleAuthFailure_emailNotVerified_returns401WithCode() {
         ResponseEntity<ApiResponse<Void>> response =
-                handler.handleEmailNotVerified(new EmailNotVerifiedException("Email not verified. Check your inbox for a verification code"));
+                handler.handleAuthFailure(new EmailNotVerifiedException("Email not verified. Check your inbox for a verification code"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody())
                 .isNotNull()
                 .extracting(ApiResponse::isSuccess, ApiResponse::getMessage, ApiResponse::getCode)
                 .containsExactly(false, "Email not verified. Check your inbox for a verification code", "EMAIL_NOT_VERIFIED");
+    }
+
+    @Test
+    void handleAuthFailure_codedFailure_returns401WithThatCode() {
+        ResponseEntity<ApiResponse<Void>> response = handler.handleAuthFailure(
+                new AuthFailureException("That code is not valid.", ErrorCodes.TWO_FACTOR_CODE_INVALID));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::isSuccess, ApiResponse::getMessage, ApiResponse::getCode)
+                .containsExactly(false, "That code is not valid.", "TWO_FACTOR_CODE_INVALID");
     }
 
     @Test

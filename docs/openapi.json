@@ -13,7 +13,22 @@
     "bearerAuth" : [ ]
   } ],
   "tags" : [ {
-    "description" : "Registration, login, email verification, Google sign-in, token refresh and logout. Public - these endpoints need no token.",
+    "description" : "The caller's own notification settings: which channels deliver which notification type.",
+    "name" : "Notification settings"
+  }, {
+    "description" : "Immutable records of a task being completed, with optional photo proof.",
+    "name" : "Task completions"
+  }, {
+    "description" : "The caller's own account security: change/set password, connected accounts (Google), and deactivation.",
+    "name" : "Account"
+  }, {
+    "description" : "Append-only record of who changed what within a household.",
+    "name" : "Audit logs"
+  }, {
+    "description" : "The caller's own devices: list with session state, rename, per-device logout, remove, and push-notification registration.",
+    "name" : "Devices"
+  }, {
+    "description" : "Registration, login, email verification, Google sign-in, two-factor verification, token refresh and logout. Public - these endpoints need no token.",
     "name" : "Auth"
   }, {
     "description" : "Households: create one, discover your own, join by invite code, rotate the code, update and delete.",
@@ -22,17 +37,11 @@
     "description" : "Group-scoped task tags.",
     "name" : "Tags"
   }, {
-    "description" : "Immutable records of a task being completed, with optional photo proof.",
-    "name" : "Task completions"
-  }, {
     "description" : "Membership of a household: add, list, change role, remove, or leave.",
     "name" : "Group members"
   }, {
     "description" : "In-app notifications for the signed-in user.",
     "name" : "Notifications"
-  }, {
-    "description" : "Devices registered for push notifications.",
-    "name" : "Devices"
   }, {
     "description" : "Group-scoped task categories.",
     "name" : "Categories"
@@ -43,10 +52,475 @@
     "description" : "User profiles: the caller's own via /me, plus platform-admin listing and role management.",
     "name" : "Users"
   }, {
-    "description" : "Append-only record of who changed what within a household.",
-    "name" : "Audit logs"
+    "description" : "The caller's own two-factor setup: enroll an authenticator app, turn it on or off, and manage recovery codes.",
+    "name" : "Two-factor authentication"
+  }, {
+    "description" : "The caller's own UI settings: colour theme and language.",
+    "name" : "User settings"
   } ],
   "paths" : {
+    "/api/account/2fa" : {
+      "get" : {
+        "description" : "Returns the caller's two-factor state.",
+        "operationId" : "getStatus",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTwoFactorStatusResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with whether two-factor is on or pending and how many recovery codes\n         are left"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns the caller's two-factor state.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/disable" : {
+      "post" : {
+        "description" : "Turns two-factor off, removing the factor and every recovery code.",
+        "operationId" : "disable",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorConfirmRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account) and a\n                  current authenticator or recovery code",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with fresh tokens for this device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Turns two-factor off, removing the factor and every recovery code.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/enable" : {
+      "post" : {
+        "description" : "Confirms the pending setup with a code from the app, turning two-factor on and signing out\n other devices.",
+        "operationId" : "enable",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorEnableRequest"
+              }
+            }
+          },
+          "description" : "the code currently shown by the authenticator app",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTwoFactorEnableResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the one-time recovery codes and fresh tokens for this device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Confirms the pending setup with a code from the app, turning two-factor on and signing out\n other devices.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/recovery-codes" : {
+      "post" : {
+        "description" : "Issues a new set of recovery codes, invalidating the previous set.",
+        "operationId" : "regenerateRecoveryCodes",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorConfirmRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account) and a\n                  current authenticator or recovery code",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseRecoveryCodesResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the new one-time recovery codes"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Issues a new set of recovery codes, invalidating the previous set.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/2fa/setup" : {
+      "post" : {
+        "description" : "Starts setup by enrolling a new, unconfirmed factor for the caller's authenticator app.",
+        "operationId" : "startSetup",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorSetupRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTwoFactorSetupResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the secret and the <code>otpauth://</code> URI to show as a QR code"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Starts setup by enrolling a new, unconfirmed factor for the caller's authenticator app.",
+        "tags" : [ "Two-factor authentication" ]
+      }
+    },
+    "/api/account/change-password" : {
+      "post" : {
+        "description" : "Changes the caller's password, signing out other devices and keeping this one.",
+        "operationId" : "changePassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "description" : "the current and new passwords",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a fresh auth response (new tokens) for the current device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Changes the caller's password, signing out other devices and keeping this one.",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/connected-accounts" : {
+      "get" : {
+        "description" : "Returns the caller's active sign-in methods (password set, Google linked).",
+        "operationId" : "getConnections",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseConnectedAccountsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the connected-accounts summary"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns the caller's active sign-in methods (password set, Google linked).",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/connected-accounts/google" : {
+      "delete" : {
+        "description" : "Unlinks the caller's Google account (refused if it would leave no way to sign in).",
+        "operationId" : "unlinkGoogle",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseConnectedAccountsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated connected accounts summary"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Unlinks the caller's Google account (refused if it would leave no way to sign in).",
+        "tags" : [ "Account" ]
+      },
+      "post" : {
+        "description" : "Links a Google account to the caller after verifying the Google ID token.",
+        "operationId" : "linkGoogle",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GoogleAuthRequest"
+              }
+            }
+          },
+          "description" : "the Google ID token and nonce secret",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseConnectedAccountsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the updated connected-accounts summary"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Links a Google account to the caller after verifying the Google ID token.",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/deactivate" : {
+      "post" : {
+        "description" : "Deactivates the caller's account and signs out every session.",
+        "operationId" : "deactivate",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/DeactivateAccountRequest"
+              }
+            }
+          },
+          "description" : "the confirmation password (required only for a password account)",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Deactivates the caller's account and signs out every session.",
+        "tags" : [ "Account" ]
+      }
+    },
+    "/api/account/set-password" : {
+      "post" : {
+        "description" : "Sets a password on a Google-only account, signing out other devices and keeping this one.",
+        "operationId" : "setPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          },
+          "description" : "the new password",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a fresh auth response (new tokens) for the current device"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Sets a password on a Google-only account, signing out other devices and keeping this one.",
+        "tags" : [ "Account" ]
+      }
+    },
     "/api/audit-logs" : {
       "get" : {
         "description" : "Lists a group's audit-log entries, newest first.",
@@ -190,6 +664,50 @@
         "tags" : [ "Audit logs" ]
       }
     },
+    "/api/auth/2fa/verify" : {
+      "post" : {
+        "description" : "Finishes a sign-in that returned a two-factor challenge, exchanging the challenge token plus\n a code from the authenticator app (or a recovery code) for the access and refresh tokens.",
+        "operationId" : "verifyTwoFactor",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/TwoFactorVerifyRequest"
+              }
+            }
+          },
+          "description" : "the challenge token and the code",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseAuthResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the auth response carrying both tokens"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Finishes a sign-in that returned a two-factor challenge, exchanging the challenge token plus\n a code from the authenticator app (or a recovery code) for the access and refresh tokens.",
+        "tags" : [ "Auth" ]
+      }
+    },
     "/api/auth/forgot-password" : {
       "post" : {
         "description" : "Starts a password reset by emailing a single-use reset link.",
@@ -324,8 +842,52 @@
     },
     "/api/auth/logout" : {
       "post" : {
-        "description" : "Revokes all refresh tokens for the user (logout).",
+        "description" : "Logs out the current device by revoking the session the presented refresh token belongs to.",
         "operationId" : "logout",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "description" : "the refresh token identifying the device/session",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "security" : [ ],
+        "summary" : "Logs out the current device by revoking the session the presented refresh token belongs to.",
+        "tags" : [ "Auth" ]
+      }
+    },
+    "/api/auth/logout-all" : {
+      "post" : {
+        "description" : "Logs out everywhere by revoking every refresh token for the user the presented token\n identifies.",
+        "operationId" : "logoutAll",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -362,7 +924,7 @@
           }
         },
         "security" : [ ],
-        "summary" : "Revokes all refresh tokens for the user (logout).",
+        "summary" : "Logs out everywhere by revoking every refresh token for the user the presented token\n identifies.",
         "tags" : [ "Auth" ]
       }
     },
@@ -819,31 +1381,18 @@
     },
     "/api/devices" : {
       "get" : {
-        "description" : "Lists a user's active devices.",
-        "operationId" : "getDevicesByUser",
-        "parameters" : [ {
-          "description" : "the user id",
-          "in" : "query",
-          "name" : "userId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
+        "description" : "Lists the caller's devices, flagging which have a live session and which is the current one.",
+        "operationId" : "getMyDevices",
         "responses" : {
           "200" : {
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListDeviceResponse"
+                  "$ref" : "#/components/schemas/ApiResponseListMyDeviceResponse"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the devices"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
+            "description" : "<code>200 OK</code> with the caller's devices"
           },
           "401" : {
             "$ref" : "#/components/responses/Unauthorized"
@@ -858,11 +1407,11 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists a user's active devices.",
+        "summary" : "Lists the caller's devices, flagging which have a live session and which is the current one.",
         "tags" : [ "Devices" ]
       },
       "post" : {
-        "description" : "Registers a device for push notifications.",
+        "description" : "Registers a push-notification token for the caller's current device.",
         "operationId" : "registerDevice",
         "requestBody" : {
           "content" : {
@@ -872,7 +1421,7 @@
               }
             }
           },
-          "description" : "the device details (token, type, user)",
+          "description" : "the push device details (token, type)",
           "required" : true
         },
         "responses" : {
@@ -902,14 +1451,14 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Registers a device for push notifications.",
+        "summary" : "Registers a push-notification token for the caller's current device.",
         "tags" : [ "Devices" ]
       }
     },
     "/api/devices/{id}" : {
       "delete" : {
-        "description" : "Soft-deletes (deactivates) a device.",
-        "operationId" : "deactivateDevice",
+        "description" : "Removes one of the caller's devices (soft-delete) and revokes any session on it.",
+        "operationId" : "removeDevice",
         "parameters" : [ {
           "description" : "the device id",
           "in" : "path",
@@ -947,55 +1496,12 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Soft-deletes (deactivates) a device.",
+        "summary" : "Removes one of the caller's devices (soft-delete) and revokes any session on it.",
         "tags" : [ "Devices" ]
       },
-      "get" : {
-        "description" : "Fetches a device by id.",
-        "operationId" : "getDevice",
-        "parameters" : [ {
-          "description" : "the device id",
-          "in" : "path",
-          "name" : "id",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseDeviceResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the device"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Fetches a device by id.",
-        "tags" : [ "Devices" ]
-      },
-      "put" : {
-        "description" : "Updates a device's descriptive fields.",
-        "operationId" : "updateDevice",
+      "patch" : {
+        "description" : "Renames one of the caller's devices.",
+        "operationId" : "renameDevice",
         "parameters" : [ {
           "description" : "the device id",
           "in" : "path",
@@ -1010,11 +1516,11 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/DeviceRequest"
+                "$ref" : "#/components/schemas/RenameDeviceRequest"
               }
             }
           },
-          "description" : "the new device details",
+          "description" : "the new display name",
           "required" : true
         },
         "responses" : {
@@ -1022,7 +1528,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseDeviceResponse"
+                  "$ref" : "#/components/schemas/ApiResponseMyDeviceResponse"
                 }
               }
             },
@@ -1044,7 +1550,52 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Updates a device's descriptive fields.",
+        "summary" : "Renames one of the caller's devices.",
+        "tags" : [ "Devices" ]
+      }
+    },
+    "/api/devices/{id}/logout" : {
+      "post" : {
+        "description" : "Logs out a single device by revoking its session; the device stays listed as inactive.",
+        "operationId" : "logoutDevice",
+        "parameters" : [ {
+          "description" : "the device id",
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Logs out a single device by revoking its session; the device stays listed as inactive.",
         "tags" : [ "Devices" ]
       }
     },
@@ -1614,6 +2165,140 @@
         },
         "summary" : "Issues a new invite code for a group, invalidating the previous one.",
         "tags" : [ "Groups" ]
+      }
+    },
+    "/api/notification-settings" : {
+      "get" : {
+        "description" : "Lists the caller's settings for every notification type, using the defaults for any type\n they have never saved.",
+        "operationId" : "getMyNotificationSettings",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListNotificationSettingResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with one entry per notification type"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists the caller's settings for every notification type, using the defaults for any type\n they have never saved.",
+        "tags" : [ "Notification settings" ]
+      }
+    },
+    "/api/notification-settings/batch" : {
+      "put" : {
+        "description" : "Applies a batch of entries at once — each one replaces that type's channels, and types the\n batch leaves out keep their current values. Declared above <code>/{type</code>} since it is the\n literal sibling of that template.",
+        "operationId" : "updateMyNotificationSettings",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/NotificationSettingsBatchRequest"
+              }
+            }
+          },
+          "description" : "the entries to apply",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListNotificationSettingResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the caller's whole matrix as persisted after the batch"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Applies a batch of entries at once — each one replaces that type's channels, and types the\n batch leaves out keep their current values.",
+        "tags" : [ "Notification settings" ]
+      }
+    },
+    "/api/notification-settings/{type}" : {
+      "put" : {
+        "description" : "Replaces the caller's channels for one notification type, creating the entry on first write.",
+        "operationId" : "updateMyNotificationSetting",
+        "parameters" : [ {
+          "description" : "the notification type to configure",
+          "in" : "path",
+          "name" : "type",
+          "required" : true,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "TASK_ASSIGNED", "TASK_COMPLETED", "TASK_REMINDER", "MEMBER_JOINED" ]
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/NotificationSettingRequest"
+              }
+            }
+          },
+          "description" : "the channel preferences",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseNotificationSettingResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the saved entry"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Replaces the caller's channels for one notification type, creating the entry on first write.",
+        "tags" : [ "Notification settings" ]
       }
     },
     "/api/notifications" : {
@@ -2389,6 +3074,82 @@
         "tags" : [ "Tasks" ]
       }
     },
+    "/api/user-settings" : {
+      "get" : {
+        "description" : "Fetches the caller's settings, falling back to the defaults when none are saved yet.",
+        "operationId" : "getMySettings",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserSettingsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the caller's settings"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Fetches the caller's settings, falling back to the defaults when none are saved yet.",
+        "tags" : [ "User settings" ]
+      },
+      "put" : {
+        "description" : "Replaces the caller's settings, creating them on the first write.",
+        "operationId" : "updateMySettings",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UserSettingsRequest"
+              }
+            }
+          },
+          "description" : "the new theme and locale",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUserSettingsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the saved settings"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Replaces the caller's settings, creating them on the first write.",
+        "tags" : [ "User settings" ]
+      }
+    },
     "/api/users" : {
       "get" : {
         "description" : "Lists all users.",
@@ -2455,7 +3216,7 @@
     },
     "/api/users/{uid}" : {
       "delete" : {
-        "description" : "Soft-deletes a user account.",
+        "description" : "Soft-deletes a user account (platform admin action). Users deactivate their own account via\n <code>POST /api/account/deactivate</code>, which re-authenticates and revokes sessions.",
         "operationId" : "deleteUser",
         "parameters" : [ {
           "description" : "the user's public UID",
@@ -2493,7 +3254,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Soft-deletes a user account.",
+        "summary" : "Soft-deletes a user account (platform admin action).",
         "tags" : [ "Users" ]
       },
       "get" : {
@@ -2738,6 +3499,24 @@
           }
         }
       },
+      "ApiResponseConnectedAccountsResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/ConnectedAccountsResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseDeviceResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -2834,27 +3613,6 @@
           }
         }
       },
-      "ApiResponseListDeviceResponse" : {
-        "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "data" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/DeviceResponse"
-            }
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "success" : {
-            "type" : "boolean"
-          }
-        }
-      },
       "ApiResponseListGroupMemberResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -2897,6 +3655,27 @@
           }
         }
       },
+      "ApiResponseListMyDeviceResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/MyDeviceResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseListMyGroupResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -2929,6 +3708,27 @@
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/NotificationResponse"
+            }
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseListNotificationSettingResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/NotificationSettingResponse"
             }
           },
           "message" : {
@@ -3042,6 +3842,24 @@
           }
         }
       },
+      "ApiResponseMyDeviceResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/MyDeviceResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseMyGroupResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -3069,6 +3887,42 @@
           },
           "data" : {
             "$ref" : "#/components/schemas/NotificationResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseNotificationSettingResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/NotificationSettingResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseRecoveryCodesResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/RecoveryCodesResponse"
           },
           "message" : {
             "type" : "string"
@@ -3132,6 +3986,60 @@
           }
         }
       },
+      "ApiResponseTwoFactorEnableResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TwoFactorEnableResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTwoFactorSetupResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TwoFactorSetupResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseTwoFactorStatusResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TwoFactorStatusResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseUserResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -3141,6 +4049,24 @@
           },
           "data" : {
             "$ref" : "#/components/schemas/UserResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseUserSettingsResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/UserSettingsResponse"
           },
           "message" : {
             "type" : "string"
@@ -3210,6 +4136,9 @@
       "AuthResponse" : {
         "type" : "object",
         "properties" : {
+          "challengeToken" : {
+            "type" : "string"
+          },
           "email" : {
             "type" : "string"
           },
@@ -3224,6 +4153,9 @@
           },
           "token" : {
             "type" : "string"
+          },
+          "twoFactorRequired" : {
+            "type" : "boolean"
           },
           "uid" : {
             "type" : "string"
@@ -3283,6 +4215,43 @@
           }
         }
       },
+      "ChangePasswordRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"change password\": the current password plus the chosen new password.",
+        "properties" : {
+          "currentPassword" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "newPassword" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "currentPassword" ]
+      },
+      "ConnectedAccountsResponse" : {
+        "type" : "object",
+        "description" : "The caller's sign-in methods: whether a password is set and whether a Google account is linked.\n At least one is always true for an active account (otherwise it couldn't sign in).",
+        "properties" : {
+          "googleLinked" : {
+            "type" : "boolean",
+            "description" : "true if a Google account is linked"
+          },
+          "passwordSet" : {
+            "type" : "boolean",
+            "description" : "true if the account has a password"
+          }
+        }
+      },
+      "DeactivateAccountRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"deactivate account\". The password is required for an account that has one\n (re-authentication) and ignored for a Google-only account, which the valid session confirms.",
+        "properties" : {
+          "password" : {
+            "type" : "string"
+          }
+        }
+      },
       "DeviceRequest" : {
         "type" : "object",
         "properties" : {
@@ -3305,13 +4274,9 @@
           },
           "osVersion" : {
             "type" : "string"
-          },
-          "userId" : {
-            "type" : "integer",
-            "format" : "int64"
           }
         },
-        "required" : [ "deviceToken", "deviceType", "userId" ]
+        "required" : [ "deviceToken", "deviceType" ]
       },
       "DeviceResponse" : {
         "type" : "object",
@@ -3539,6 +4504,44 @@
         },
         "required" : [ "email", "password" ]
       },
+      "MyDeviceResponse" : {
+        "type" : "object",
+        "properties" : {
+          "activeSession" : {
+            "type" : "boolean"
+          },
+          "browserInfo" : {
+            "type" : "string"
+          },
+          "currentDevice" : {
+            "type" : "boolean"
+          },
+          "dateCreated" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "deviceName" : {
+            "type" : "string"
+          },
+          "deviceType" : {
+            "type" : "string"
+          },
+          "id" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "ipAddress" : {
+            "type" : "string"
+          },
+          "lastUsed" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "osVersion" : {
+            "type" : "string"
+          }
+        }
+      },
       "MyGroupResponse" : {
         "type" : "object",
         "description" : "A group as seen by one of its members, carrying that member's own role so a client can decide\n which admin controls to show. The invite code is present only for a group admin.",
@@ -3625,6 +4628,82 @@
           }
         }
       },
+      "NotificationSettingEntry" : {
+        "type" : "object",
+        "description" : "One entry of a batch update — the same shape the GET returns, so a client can send back the\n list it rendered. Unlike the single-type endpoint, the type travels in the body.",
+        "properties" : {
+          "email" : {
+            "type" : "boolean"
+          },
+          "inApp" : {
+            "type" : "boolean"
+          },
+          "type" : {
+            "type" : "string",
+            "enum" : [ "TASK_ASSIGNED", "TASK_COMPLETED", "TASK_REMINDER", "MEMBER_JOINED" ]
+          }
+        },
+        "required" : [ "email", "inApp", "type" ]
+      },
+      "NotificationSettingRequest" : {
+        "type" : "object",
+        "description" : "Request body for one notification type's channels — a full replace of that entry, so both\n channels are required. The type itself comes from the path, never the body.",
+        "properties" : {
+          "email" : {
+            "type" : "boolean"
+          },
+          "inApp" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "email", "inApp" ]
+      },
+      "NotificationSettingResponse" : {
+        "type" : "object",
+        "description" : "One notification type's delivery channels for the caller.",
+        "properties" : {
+          "email" : {
+            "type" : "boolean",
+            "description" : "whether it is emailed"
+          },
+          "inApp" : {
+            "type" : "boolean",
+            "description" : "whether it appears in the in-app notification list"
+          },
+          "type" : {
+            "type" : "string",
+            "description" : "the notification type",
+            "enum" : [ "TASK_ASSIGNED", "TASK_COMPLETED", "TASK_REMINDER", "MEMBER_JOINED" ]
+          }
+        }
+      },
+      "NotificationSettingsBatchRequest" : {
+        "type" : "object",
+        "description" : "Request body for a batch update: each entry fully replaces that type's channels. Types the\n batch omits are left untouched.",
+        "properties" : {
+          "settings" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/NotificationSettingEntry"
+            },
+            "minItems" : 1
+          }
+        },
+        "required" : [ "settings" ]
+      },
+      "RecoveryCodesResponse" : {
+        "type" : "object",
+        "description" : "A freshly generated set of recovery codes. Only ever returned once - they are stored hashed, so\n they cannot be shown again.",
+        "properties" : {
+          "recoveryCodes" : {
+            "type" : "array",
+            "description" : "the single-use codes, in the order they should be displayed",
+            "items" : {
+              "type" : "string"
+            }
+          }
+        }
+      },
       "RefreshRequest" : {
         "type" : "object",
         "properties" : {
@@ -3660,6 +4739,17 @@
         },
         "required" : [ "email", "lastName", "name" ]
       },
+      "RenameDeviceRequest" : {
+        "type" : "object",
+        "properties" : {
+          "name" : {
+            "type" : "string",
+            "maxLength" : 255,
+            "minLength" : 0
+          }
+        },
+        "required" : [ "name" ]
+      },
       "ResendVerificationRequest" : {
         "type" : "object",
         "properties" : {
@@ -3684,6 +4774,15 @@
           }
         },
         "required" : [ "token" ]
+      },
+      "SetPasswordRequest" : {
+        "type" : "object",
+        "description" : "Request body for \"set password\" on a Google-only account: the chosen new password.",
+        "properties" : {
+          "newPassword" : {
+            "type" : "string"
+          }
+        }
       },
       "TagRequest" : {
         "type" : "object",
@@ -3917,6 +5016,114 @@
           }
         }
       },
+      "TwoFactorConfirmRequest" : {
+        "type" : "object",
+        "description" : "Request body for an operation that weakens or replaces an active second factor (turning it off,\n regenerating recovery codes): both the account password and a current second-factor code, so\n neither a stolen session nor a stolen password is enough on its own. The password is required\n for an account that has one and ignored for a Google-only account.",
+        "properties" : {
+          "code" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "password" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "code" ]
+      },
+      "TwoFactorEnableRequest" : {
+        "type" : "object",
+        "description" : "Request body for confirming setup: the code currently shown by the authenticator app that was\n just enrolled. No password - the pending secret itself is the proof.",
+        "properties" : {
+          "code" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "code" ]
+      },
+      "TwoFactorEnableResponse" : {
+        "type" : "object",
+        "description" : "The result of turning two-factor on: the one-time recovery codes, plus a fresh session for the\n current device because enabling signs every other device out.",
+        "properties" : {
+          "recoveryCodes" : {
+            "type" : "array",
+            "description" : "the single-use codes, shown to the user only here",
+            "items" : {
+              "type" : "string"
+            }
+          },
+          "refreshToken" : {
+            "type" : "string",
+            "description" : "the new refresh token for the current device"
+          },
+          "token" : {
+            "type" : "string",
+            "description" : "the new access token for the current device"
+          }
+        }
+      },
+      "TwoFactorSetupRequest" : {
+        "type" : "object",
+        "description" : "Request body for starting two-factor setup. The password re-authenticates the caller; it is\n required for an account that has one and ignored for a Google-only account, which the valid\n session confirms.",
+        "properties" : {
+          "password" : {
+            "type" : "string"
+          }
+        }
+      },
+      "TwoFactorSetupResponse" : {
+        "type" : "object",
+        "description" : "What the client needs to enroll an authenticator app. The factor is not active yet - it becomes\n active only once a code from it is confirmed.",
+        "properties" : {
+          "otpauthUri" : {
+            "type" : "string",
+            "description" : "the <code>otpauth://totp/...</code> URI to render as a QR code"
+          },
+          "secret" : {
+            "type" : "string",
+            "description" : "the Base32 secret, for manual entry when a QR code can't be scanned"
+          }
+        }
+      },
+      "TwoFactorStatusResponse" : {
+        "type" : "object",
+        "description" : "The caller's two-factor state, enough for the settings screen to decide what to show.",
+        "properties" : {
+          "confirmedAt" : {
+            "type" : "string",
+            "format" : "date-time",
+            "description" : "when the factor was confirmed; null while it isn't enabled"
+          },
+          "enabled" : {
+            "type" : "boolean",
+            "description" : "true if a confirmed second factor is required at sign-in"
+          },
+          "pendingSetup" : {
+            "type" : "boolean",
+            "description" : "true if setup was started but never confirmed, so the client can\n                                offer to resume it"
+          },
+          "recoveryCodesRemaining" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "how many unused recovery codes are left; 0 when not enabled"
+          }
+        }
+      },
+      "TwoFactorVerifyRequest" : {
+        "type" : "object",
+        "description" : "Request body for finishing a sign-in that needs a second factor: the opaque challenge token the\n login response returned, plus a code from the authenticator app or one recovery code.",
+        "properties" : {
+          "challengeToken" : {
+            "type" : "string",
+            "minLength" : 1
+          },
+          "code" : {
+            "type" : "string",
+            "minLength" : 1
+          }
+        },
+        "required" : [ "challengeToken", "code" ]
+      },
       "UserRequest" : {
         "type" : "object",
         "properties" : {
@@ -3995,6 +5202,37 @@
           }
         },
         "required" : [ "role" ]
+      },
+      "UserSettingsRequest" : {
+        "type" : "object",
+        "description" : "Request body for replacing the caller's settings — a full PUT, so both fields are required.",
+        "properties" : {
+          "locale" : {
+            "type" : "string",
+            "enum" : [ "EN", "DE", "SL" ]
+          },
+          "theme" : {
+            "type" : "string",
+            "enum" : [ "LIGHT", "DARK", "SYSTEM" ]
+          }
+        },
+        "required" : [ "locale", "theme" ]
+      },
+      "UserSettingsResponse" : {
+        "type" : "object",
+        "description" : "The caller's UI settings.",
+        "properties" : {
+          "locale" : {
+            "type" : "string",
+            "description" : "the UI language (lowercase the name for the BCP-47 tag)",
+            "enum" : [ "EN", "DE", "SL" ]
+          },
+          "theme" : {
+            "type" : "string",
+            "description" : "the colour-scheme preference",
+            "enum" : [ "LIGHT", "DARK", "SYSTEM" ]
+          }
+        }
       },
       "VerifyEmailRequest" : {
         "type" : "object",

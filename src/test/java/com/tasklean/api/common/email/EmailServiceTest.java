@@ -92,4 +92,131 @@ class EmailServiceTest {
         assertThat(message.getTo()).containsExactly("bob@example.com");
         assertThat(message.getText()).contains("password was just changed");
     }
+
+    @Test
+    void sendPasswordSetEmail_notifiesOwnerOfAddedPassword() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendPasswordSetEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("password was just added");
+    }
+
+    @Test
+    void sendGoogleLinkedEmail_notifiesOwner() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendGoogleLinkedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("Google account was just linked");
+    }
+
+    @Test
+    void sendGoogleUnlinkedEmail_notifiesOwner() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendGoogleUnlinkedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("Google sign-in was just removed");
+    }
+
+    @Test
+    void sendAccountDeactivatedEmail_notifiesOwner() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendAccountDeactivatedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        assertThat(captor.getValue().getText()).contains("account was just deactivated");
+    }
+
+    @Test
+    void sendTwoFactorEnabledEmail_notifiesOwnerAndPointsAtRecoveryCodes() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendTwoFactorEnabledEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("Two-factor authentication was just turned on");
+    }
+
+    @Test
+    void sendTwoFactorDisabledEmail_notifiesOwnerOfWeakenedSignIn() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendTwoFactorDisabledEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("just turned off");
+    }
+
+    @Test
+    void sendRecoveryCodesRegeneratedEmail_notifiesOwnerPreviousCodesAreDead() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendRecoveryCodesRegeneratedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("previous codes no longer work");
+    }
+
+    @Test
+    void sendRecoveryCodeUsedEmail_notifiesOwnerOfAppFreeSignIn() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendRecoveryCodeUsedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("recovery code");
+    }
+
+    @Test
+    void sendNewSignInEmail_includesDeviceAndIp() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendNewSignInEmail("bob@example.com", "Chrome on Windows", "203.0.113.5");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getTo()).containsExactly("bob@example.com");
+        assertThat(message.getText()).contains("Chrome on Windows").contains("203.0.113.5");
+    }
+
+    @Test
+    void sendNewSignInEmail_blankIp_omitsIpClause() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+
+        service.sendNewSignInEmail("bob@example.com", "Chrome on Windows", null);
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+
+        assertThat(message.getText()).contains("Chrome on Windows").doesNotContain("IP ");
+    }
 }

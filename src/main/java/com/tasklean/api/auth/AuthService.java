@@ -5,8 +5,12 @@ import com.tasklean.api.auth.dto.LoginRequest;
 import com.tasklean.api.auth.dto.RegisterRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -19,11 +23,13 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Handles user registration and login. Creates new accounts with hashed passwords
- * and issues JWT tokens on successful authentication.
+ * Handles user registration and login. Creates new accounts with hashed passwords and issues JWT
+ * tokens on successful authentication - unless the account has two-factor enabled, in which case
+ * login returns a challenge and the tokens come from the verification step instead.
  */
 @Slf4j
 @Service
@@ -37,6 +43,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
     private final EmailService emailService;
+    private final TwoFactorChallengeService twoFactorChallengeService;
 
     /**
      * Creates a new user account, hashes the password, and sends a verification code.
@@ -80,14 +87,15 @@ public class AuthService {
      * with both a password and a linked Google identity can sign in with either.
      *
      * @param request the login credentials (email, password)
-     * @return the auth response with access and refresh tokens
+     * @return the auth response with access and refresh tokens, or a two-factor challenge (no
+     *         tokens) when the account has a second factor enabled
      * @throws EmailNotVerifiedException if the password is correct but the email is unverified
      * @throws BadCredentialsException   if the email is unknown, the password is wrong, the account
      *                                   is OAuth-only, or (after a correct password) it is deactivated
      */
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
+                .orElseThrow(() -> new BadCredentialsException(ErrorMessages.INVALID_CREDENTIALS));
 
         // Check the password before revealing any account state, so a wrong guess is
         // indistinguishable from an unknown email (no account enumeration). A null hash is
@@ -95,19 +103,27 @@ public class AuthService {
         if (user.getPasswordHash() == null
                 || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
             recordFailedLogin(user, user.getPasswordHash() == null ? "oauth-only account" : "invalid password");
-            throw new BadCredentialsException("Invalid email or password");
+            // No error code here: one would tell the caller which of the two failed.
+            throw new BadCredentialsException(ErrorMessages.INVALID_CREDENTIALS);
         }
 
         // Past here the caller proved they own the account, so account-state reasons are safe to surface.
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             recordFailedLogin(user, "account deactivated");
-            throw new BadCredentialsException("Account is deactivated");
+            throw new AuthFailureException(ErrorMessages.ACCOUNT_DEACTIVATED, ErrorCodes.ACCOUNT_DEACTIVATED);
         }
 
         if (!Boolean.TRUE.equals(user.getIsEmailVerified())) {
             recordFailedLogin(user, "email not verified");
             // Specific subclass so the response carries the EMAIL_NOT_VERIFIED code (still a 401).
             throw new EmailNotVerifiedException("Email not verified. Check your inbox for a verification code");
+        }
+
+        // Credentials are proven, but with two-factor on the session is withheld until the code
+        // step; no LOGIN audit entry here either, since the user isn't signed in yet.
+        Optional<AuthResponse> challenge = twoFactorChallengeService.challenge(user);
+        if (challenge.isPresent()) {
+            return challenge.get();
         }
 
         String token = jwtService.generateToken(user);

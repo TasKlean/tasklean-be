@@ -108,6 +108,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (path.equals("/api/auth/reset-password")) {
             return List.of(new LimitCheck("resetPassword", "resetPassword:" + ip, properties.getResetPassword()));
         }
+        if (path.equals("/api/auth/2fa/verify")) {
+            return List.of(new LimitCheck("twoFactor", "twoFactor:" + ip, properties.getTwoFactor()));
+        }
         if (path.startsWith("/api/auth/")) {
             return List.of(new LimitCheck("auth", "auth:" + ip, properties.getAuth()));
         }

@@ -21,20 +21,32 @@ public class Device extends BaseEntity {
     @Column(name = "id_device")
     private Long idDevice;
 
-    @Column(name = "device_token", unique = true, nullable = false, length = 500)
+    // Nullable: a device created at sign-in has no push token until the client registers for push.
+    @Column(name = "device_token", unique = true, length = 500)
     private String deviceToken;
+
+    // Stable, client-generated id (X-Device-Id header) that identifies this device across logins
+    // and token rotation. Unique per user. Null for push-only or legacy rows.
+    @Column(name = "client_device_id")
+    private String clientDeviceId;
 
     @Column(name = "device_type", nullable = false, length = 50)
     private String deviceType;
 
-    @Column(name = "device_name", length = 255)
+    @Column(name = "device_name")
     private String deviceName;
 
-    @Column(name = "browser_info", length = 255)
+    @Column(name = "browser_info")
     private String browserInfo;
 
     @Column(name = "os_version", length = 50)
     private String osVersion;
+
+    @Column(name = "ip_address", length = 45)
+    private String ipAddress;
+
+    @Column(name = "user_agent", length = 512)
+    private String userAgent;
 
     @Column(name = "app_version", length = 50)
     private String appVersion;

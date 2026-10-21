@@ -87,6 +87,29 @@ class RateLimitFilterTest {
         verify(chain, times(1)).doFilter(any(), any());     // only the first request passed
     }
 
+    @Test
+    void twoFactorVerify_overLimit_returns429WithoutTouchingTheAuthTier() throws Exception {
+        props.setTwoFactor(tier(1));
+        props.setAuth(tier(100));
+
+        run("/api/auth/2fa/verify");
+        MockHttpServletResponse response = run("/api/auth/2fa/verify");
+
+        assertThat(response.getStatus()).isEqualTo(429);
+        verify(chain, times(1)).doFilter(any(), any());
+    }
+
+    @Test
+    void twoFactorLimit_doesNotApplyToOtherAuthEndpoints() throws Exception {
+        props.setTwoFactor(tier(1));
+        props.setAuth(tier(5));
+
+        run("/api/auth/2fa/verify");                        // exhausts the two-factor tier
+        MockHttpServletResponse response = run("/api/auth/login");
+
+        assertThat(response.getStatus()).isEqualTo(200);
+    }
+
     // --- authenticated (per-user AND per-IP) ---
 
     @Test

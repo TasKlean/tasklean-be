@@ -4,8 +4,9 @@ import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
 /**
- * Centralized user-facing error message constants — "not found" strings plus the generic
- * endpoint-not-found and internal-error messages. Reference these instead of inlining strings.
+ * Centralized user-facing error message constants — "not found" strings, the generic platform
+ * messages, and the auth-failure messages that more than one service throws. Reference these
+ * instead of inlining strings.
  */
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class ErrorMessages {
@@ -28,4 +29,26 @@ public final class ErrorMessages {
     public static final String RATE_LIMITED = "Too many requests, please try again later";
     public static final String MALFORMED_REQUEST = "Malformed or invalid request body";
     public static final String INTERNAL_ERROR = "An unexpected error occurred";
+
+    // Auth failures thrown from more than one service. They are centralized because the copies
+    // must stay identical: each is the human half of an ErrorCodes value.
+    public static final String INVALID_CREDENTIALS = "Invalid email or password";
+    public static final String ACCOUNT_DEACTIVATED = "Account is deactivated";
+    public static final String PASSWORD_INCORRECT = "Current password is incorrect";
+    public static final String INVALID_EMAIL_OR_CODE = "Invalid email or code";
+    public static final String INVALID_GOOGLE_TOKEN = "Invalid Google token";
+    public static final String GOOGLE_EMAIL_UNVERIFIED = "Google account email is not verified";
+    public static final String INVALID_RESET_TOKEN = "Invalid or expired reset token";
+
+    // One message for an unknown and an already-revoked token alike, so a caller learns nothing
+    // about a token it does not hold.
+    public static final String INVALID_REFRESH_TOKEN = "Invalid refresh token";
+
+    public static final String TWO_FACTOR_CODE_INVALID =
+            "That code is not valid. Use a current code from your app or a recovery code.";
+
+    // One message for every unusable challenge (unknown, expired, already spent, factor removed),
+    // so a caller learns nothing about which it was.
+    public static final String TWO_FACTOR_CHALLENGE_INVALID =
+            "This sign-in request is no longer valid. Please sign in again.";
 }
