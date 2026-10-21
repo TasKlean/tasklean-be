@@ -9,6 +9,8 @@ import com.tasklean.api.auth.passwordreset.dto.ForgotPasswordRequest;
 import com.tasklean.api.auth.passwordreset.dto.ResetPasswordRequest;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
+import com.tasklean.api.auth.twofactor.dto.TwoFactorVerifyRequest;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
@@ -25,10 +27,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Public authentication endpoints — registration, login, email verification,
- * token refresh, and logout. Not protected by the JWT filter.
+ * Public authentication endpoints — registration, login, email verification, two-factor
+ * verification, token refresh, and logout. Not protected by the JWT filter.
  */
-@Tag(name = "Auth", description = "Registration, login, email verification, Google sign-in, token refresh and logout. Public - these endpoints need no token.")
+@Tag(name = "Auth", description = "Registration, login, email verification, Google sign-in, two-factor verification, token refresh and logout. Public - these endpoints need no token.")
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -40,6 +42,7 @@ public class AuthController {
     private final VerificationService verificationService;
     private final RefreshTokenService refreshTokenService;
     private final PasswordResetService passwordResetService;
+    private final TwoFactorChallengeService twoFactorChallengeService;
 
     /**
      * Registers a new user and sends a verification code. No JWT is issued until verified.
@@ -123,6 +126,19 @@ public class AuthController {
     }
 
     /**
+     * Finishes a sign-in that returned a two-factor challenge, exchanging the challenge token plus
+     * a code from the authenticator app (or a recovery code) for the access and refresh tokens.
+     *
+     * @param request the challenge token and the code
+     * @return {@code 200 OK} with the auth response carrying both tokens
+     */
+    @PostMapping("/2fa/verify")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyTwoFactor(
+            @Valid @RequestBody TwoFactorVerifyRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(twoFactorChallengeService.verify(request)));
+    }
+
+    /**
      * Issues a new access + refresh token pair using a valid refresh token (rotation).
      *
      * @param request the current refresh token
@@ -134,14 +150,27 @@ public class AuthController {
     }
 
     /**
-     * Revokes all refresh tokens for the user (logout).
+     * Logs out the current device by revoking the session the presented refresh token belongs to.
      *
-     * @param request the refresh token identifying the user
+     * @param request the refresh token identifying the device/session
      * @return {@code 200 OK} with a confirmation message
      */
     @PostMapping("/logout")
     public ResponseEntity<ApiResponse<Void>> logout(@Valid @RequestBody RefreshRequest request) {
         refreshTokenService.logout(request);
         return ResponseEntity.ok(ApiResponse.success("Logged out successfully", null));
+    }
+
+    /**
+     * Logs out everywhere by revoking every refresh token for the user the presented token
+     * identifies.
+     *
+     * @param request the refresh token identifying the user
+     * @return {@code 200 OK} with a confirmation message
+     */
+    @PostMapping("/logout-all")
+    public ResponseEntity<ApiResponse<Void>> logoutAll(@Valid @RequestBody RefreshRequest request) {
+        refreshTokenService.logoutAll(request);
+        return ResponseEntity.ok(ApiResponse.success("Logged out of all sessions", null));
     }
 }

@@ -100,6 +100,139 @@ public class EmailService {
                 If it wasn't you, reset your password immediately and contact support - your account may be compromised.""");
     }
 
+    /**
+     * Confirms to a (previously Google-only) account holder that a password was just added, so an
+     * unauthorized change is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendPasswordSetEmail(String to) {
+        send(to, "TasKlean - A password was added to your account", """
+                A password was just added to your TasKlean account. You can now sign in with your
+                email and password, or keep using Google. For your security, your other sessions
+                have been signed out.
+
+                If this was you, you can ignore this email.
+                If it wasn't you, reset your password immediately and contact support - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that a Google account was just linked, so an unauthorized link is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendGoogleLinkedEmail(String to) {
+        send(to, "TasKlean - Google was linked to your account", """
+                A Google account was just linked to your TasKlean account, so you can now sign in with Google.
+
+                If this was you, you can ignore this email.
+                If it wasn't you, unlink Google and change your password from your account settings - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that a Google account was just unlinked, so an unauthorized change is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendGoogleUnlinkedEmail(String to) {
+        send(to, "TasKlean - Google was unlinked from your account", """
+                Google sign-in was just removed from your TasKlean account. You'll now sign in with your email and password.
+
+                If this was you, you can ignore this email.
+                If it wasn't you, change your password immediately and contact support - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that the account was just deactivated, so an unauthorized deactivation is noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendAccountDeactivatedEmail(String to) {
+        send(to, "TasKlean - Your account was deactivated", """
+                Your TasKlean account was just deactivated and you've been signed out everywhere.
+
+                If this was you, no further action is needed.
+                If it wasn't you, contact support right away - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that two-factor authentication was just turned on, so an unauthorized change is
+     * noticeable. Never carries the secret or any recovery code.
+     *
+     * @param to the recipient email address
+     */
+    public void sendTwoFactorEnabledEmail(String to) {
+        send(to, "TasKlean - Two-factor authentication is on", """
+                Two-factor authentication was just turned on for your TasKlean account. From now on
+                you'll enter a code from your authenticator app when you sign in, and your other
+                sessions have been signed out.
+
+                Keep your recovery codes somewhere safe - they're the only way back in if you lose your phone.
+
+                If this wasn't you, contact support right away - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that two-factor authentication was just turned off, so an unauthorized change is
+     * noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendTwoFactorDisabledEmail(String to) {
+        send(to, "TasKlean - Two-factor authentication is off", """
+                Two-factor authentication was just turned off for your TasKlean account, and your
+                other sessions have been signed out. You'll now sign in with your password alone.
+
+                If this wasn't you, turn it back on and change your password immediately - your account may be compromised.""");
+    }
+
+    /**
+     * Confirms that a fresh set of recovery codes was issued, which invalidated the previous set.
+     *
+     * @param to the recipient email address
+     */
+    public void sendRecoveryCodesRegeneratedEmail(String to) {
+        send(to, "TasKlean - New recovery codes were generated", """
+                A new set of two-factor recovery codes was just generated for your TasKlean account.
+                Your previous codes no longer work.
+
+                If this wasn't you, contact support right away - your account may be compromised.""");
+    }
+
+    /**
+     * Alerts the account owner that a recovery code was just used to sign in, which is the one
+     * two-factor path that needs no phone - so an unrecognised use must be noticeable.
+     *
+     * @param to the recipient email address
+     */
+    public void sendRecoveryCodeUsedEmail(String to) {
+        send(to, "TasKlean - A recovery code was used to sign in", """
+                Someone signed in to your TasKlean account with a two-factor recovery code instead of
+                your authenticator app. That code is now used up.
+
+                If this was you, no further action is needed - you can generate a fresh set of codes
+                in your account settings.
+                If it wasn't you, change your password and generate new recovery codes right away - your account may be compromised.""");
+    }
+
+    /**
+     * Alerts the account owner that their account was signed into from a new device, so an
+     * unrecognised sign-in is noticeable. Carries only the device label and IP, never credentials.
+     *
+     * @param to         the recipient email address
+     * @param deviceName the friendly device label (e.g. "Chrome on Windows")
+     * @param ipAddress  the IP the sign-in came from; omitted from the message when null/blank
+     */
+    public void sendNewSignInEmail(String to, String deviceName, String ipAddress) {
+        String fromIp = (ipAddress != null && !ipAddress.isBlank()) ? " (IP " + ipAddress + ")" : "";
+        send(to, "TasKlean - New sign-in to your account", """
+                Your TasKlean account was just signed into from a new device:
+                %s%s
+
+                If this was you, you can ignore this email.
+                If it wasn't you, change your password and sign out everywhere from your account settings.""".formatted(deviceName, fromIp));
+    }
+
     private void send(String to, String subject, String body) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(to);

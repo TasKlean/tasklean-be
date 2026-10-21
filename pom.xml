@@ -120,6 +120,13 @@
 			<artifactId>google-api-client</artifactId>
 			<version>2.7.2</version>
 		</dependency>
+		<!-- RFC 6238 TOTP (authenticator-app two-factor codes). Kotlin library, used only
+		     behind the TwoFactorProvider port so a hosted factor service can replace it. -->
+		<dependency>
+			<groupId>com.atlassian</groupId>
+			<artifactId>onetime</artifactId>
+			<version>2.2.0</version>
+		</dependency>
 		<!-- OpenAPI 3 spec generation + Swagger UI. The 3.x line tracks Spring Boot 4.x. -->
 		<dependency>
 			<groupId>org.springdoc</groupId>

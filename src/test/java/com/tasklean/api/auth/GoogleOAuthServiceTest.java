@@ -6,6 +6,7 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -48,6 +49,9 @@ class GoogleOAuthServiceTest {
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private TwoFactorChallengeService twoFactorChallengeService;
 
     @InjectMocks
     private GoogleOAuthService googleOAuthService;
@@ -146,6 +150,21 @@ class GoogleOAuthServiceTest {
                 eq(AuditAction.LOGIN), anyString());
     }
 
+    @Test
+    void authenticate_returningUserWithTwoFactor_returnsChallengeAndWithholdsTokens() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", true));
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.of(buildUser(true)));
+        when(twoFactorChallengeService.challenge(any(User.class)))
+                .thenReturn(Optional.of(AuthResponse.twoFactorRequired("challenge-token")));
+
+        AuthResponse response = googleOAuthService.authenticate(request());
+
+        assertThat(response.isTwoFactorRequired()).isTrue();
+        assertThat(response.getToken()).isNull();
+        verify(refreshTokenService, never()).createRefreshToken(any());
+        verify(auditLogService, never()).recordAccountEvent(any(), eq(AuditAction.LOGIN), anyString());
+    }
+
     // --- Linking a password account ---
 
     @Test
@@ -240,6 +259,40 @@ class GoogleOAuthServiceTest {
                 .hasMessageContaining("Invalid Google token");
 
         verify(userRepository, never()).findByGoogleSub(any());
+    }
+
+    // --- verifyLinkToken (account linking) ---
+
+    @Test
+    void verifyLinkToken_validToken_returnsSubjectWithoutTouchingUsers() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", true));
+
+        GoogleIdentity identity = googleOAuthService.verifyLinkToken(request());
+
+        assertThat(identity.subject()).isEqualTo("sub-123");
+        assertThat(identity.email()).isEqualTo("jane@example.com");
+        verify(userRepository, never()).findByGoogleSub(any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void verifyLinkToken_unverifiedEmail_throwsBadCredentials() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", false));
+
+        assertThatThrownBy(() -> googleOAuthService.verifyLinkToken(request()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("not verified");
+    }
+
+    @Test
+    void verifyLinkToken_nonceMismatch_throwsBadCredentials() throws Exception {
+        GoogleIdToken.Payload payload = payload("sub-123", "jane@example.com", true);
+        payload.setNonce("not-the-expected-hash");
+        stubVerify(payload);
+
+        assertThatThrownBy(() -> googleOAuthService.verifyLinkToken(request()))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("Invalid Google token");
     }
 
     @Test

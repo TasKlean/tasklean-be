@@ -56,6 +56,11 @@ GroupMember (*) ──── (1) Group
 
 User (1) ──── (*) Notification
 User (1) ──── (*) RefreshToken
+User (1) ──── (0..1) UserTwoFactor
+User (1) ──── (*) TwoFactorRecoveryCode
+User (1) ──── (*) TwoFactorChallenge (pending sign-ins)
+User (1) ──── (0..1) UserSettings
+User (1) ──── (*) NotificationSettings (one per notification type)
 ```
 
 ### Core aggregate: Group
@@ -74,10 +79,10 @@ Everything revolves around the Group. A User does nothing alone — they must be
 | Tag | `id_tag` | No | Yes | `is_active` | Scoped to group; unique on `(group_id, name)` |
 | TaskTag | `id_task_tag` | No | No | No (hard delete via CASCADE) | Junction; unique on `(task_id, tag_id)` |
 | TaskCompletion | `id_task_completion` | No | No | None | Immutable completion record |
-| Device | `id_device` | No | Yes | `is_active` | Push notification tokens |
-| Notification | `id_notification` | No | No | None | Has `is_read` + `read_at` |
+| Device | `id_device` | No | Yes | `is_active` | Per-device record: sign-in sessions + push tokens. `client_device_id` (stable id from `X-Device-Id`), `ip_address`, `user_agent`; push `device_token` nullable |
+| Notification | `id_notification` | No | No | None | Has `is_read` + `read_at`; `type` is a free-form column, but the canonical values live in the `NotificationType` enum (`TASK_ASSIGNED`, `TASK_COMPLETED`, `TASK_REMINDER`, `MEMBER_JOINED`), which is also what `notification_settings` is keyed by |
 | AuditLog | `id_audit_log` | No | No | None | Immutable; polymorphic via `entity_type` + `entity_id` |
-| RefreshToken | `id_refresh_token` | No | No | `is_revoked` | SHA-256 hashed token; 14-day expiry (configurable via `jwt.refresh-expiration`); `CASCADE` on user delete |
+| RefreshToken | `id_refresh_token` | No | No | `is_revoked` | SHA-256 hashed token; 14-day expiry (configurable via `jwt.refresh-expiration`); `CASCADE` on user delete; nullable `device_id` (rotation keeps the same device = stable session identity) |
 
 ### Ownership chain
 
@@ -133,7 +138,7 @@ Polymorphic audit trail using `entity_type` (VARCHAR) + `entity_id` (BIGINT). No
 - **Types**: `BIGSERIAL` for PKs, `VARCHAR(N)` for bounded strings, `TEXT` for unbounded, `TIMESTAMP` for dates (no timezone in column — application enforces UTC via injected `Clock` bean), `BOOLEAN` for flags, `JSONB` for structured data.
 - **Defaults**: `is_active DEFAULT TRUE`, `date_created DEFAULT NOW()`, `date_updated DEFAULT NOW()`, `is_read DEFAULT FALSE`.
 - **Reserved words**: `user` and `group` are quoted as `"user"` and `"group"` everywhere — SQL, JPA `@Table`, and Spring Data queries.
-- **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, and `refresh_token → user`. All other FKs have no cascade — application handles deletion logic.
+- **Cascades**: `ON DELETE CASCADE` on `device → user`, `task_tag` FKs, `refresh_token → user`, `refresh_token → device`, `user_settings → user`, `notification_settings → user`, and all three two-factor tables → `user`. All other FKs have no cascade — application handles deletion logic.
 
 ### Indexes
 
@@ -143,7 +148,13 @@ Every FK column is indexed. Additional indexes on:
 - `task`: `group_id`, `assigned_to`, `status`, `priority`, `uid`
 - `notification`: `(user_id, is_read)` composite for unread queries
 - `audit_log`: `(entity_type, entity_id)` composite, `date_created` for time-range queries, `actor_user_id` for by-user activity queries
-- `refresh_token`: `token` (unique, for lookup by hashed value), `user_id` (for bulk revocation)
+- `refresh_token`: `token` (unique, for lookup by hashed value), `user_id` (for bulk revocation), `device_id` (per-device revocation + active-session lookup)
+- `user_settings`: unique `user_id` (one row per user; the UNIQUE constraint backs every lookup, so no separate index)
+- `notification_settings`: unique `(user_id, type)` (one row per user per type; leftmost-prefixed on `user_id`, so it also backs the per-user list)
+- `user_two_factor`: unique `user_id` (one factor per user; the UNIQUE constraint backs every lookup)
+- `two_factor_recovery_code`: unique `(user_id, code_hash)` — per user, not global: two users colliding is not an error, one user holding the same code twice is
+- `two_factor_challenge`: unique `token_hash` (lookup by hashed token), `user_id`, `expires_at` (for scheduled cleanup)
+- `device`: unique `(user_id, client_device_id)` (one row per user per device; multiple NULLs allowed for push-only/legacy rows)
 
 ### Migration sequence (V1–V11)
 
@@ -166,14 +177,20 @@ Every FK column is indexed. Additional indexes on:
 | V15 | Adds `audit_log.actor_user_id` column + index (no new table) | `user` |
 | V16 | Adds `user.role` column (platform role, CHECK-constrained; no new table) | `user` |
 | V17 | Renames `group_member.role` values `ADMIN`/`MEMBER` → `GROUP_ADMIN`/`GROUP_MEMBER` (migrates data + CHECK) | `group_member` |
+| V18 | `password_reset_token` | `user` |
+| V19 | Repurposes `device` for sessions (nullable `device_token`; adds `client_device_id`/`ip_address`/`user_agent` + unique `(user_id, client_device_id)`); adds `refresh_token.device_id` FK (no new table) | `device`, `refresh_token` |
 
-Next available version: **V19**.
+| V20 | `user_settings` (one row per user: `theme`, `locale`; unique `user_id`, cascade on user delete) | `user` |
+| V21 | `notification_settings` (one row per user per notification type: `in_app`, `email`; unique `(user_id, type)`, cascade on user delete) | `user` |
+| V22 | `user_two_factor` (one factor per user: `provider`, `factor_ref`, `secret_encrypted`, `digest`, `is_enabled`, `confirmed_at`, `last_used_step`), `two_factor_recovery_code` (hashed, single-use), `two_factor_challenge` (hashed opaque token, `expires_at`, `attempts`, `consumed_at`); all cascade on user delete | `user` |
+
+Next available version: **V23**.
 
 ### Dev seed data
 
 Dev-only seed data lives in `src/main/resources/db/seed/R__seed_data.sql` — a Flyway **repeatable migration** that runs after all versioned migrations. The dev profile adds `classpath:db/seed` to `spring.flyway.locations`; prod only has `classpath:db/migration`, so seed data never touches production.
 
-The seed creates a realistic dataset: 3 users (alice@ Google-linked; bob@/charlie@ email+password, dev password `DevPass1!`), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, and devices.
+The seed creates a realistic dataset: 3 users (alice@ Google-linked; bob@/charlie@ email+password, dev password `DevPass1!`), 2 groups, 5 group members (including a multi-group user), categories, tags, 8 tasks with varied statuses/priorities/recurrence, task-tag associations, completions (one with photo proof), notifications (read/unread mix), audit log entries, devices, and settings (only alice@ has saved user settings and two notification-settings rows — bob@/charlie@ exercise the lazy default path with no rows at all).
 
 All inserts use `ON CONFLICT DO NOTHING` or `NOT EXISTS` checks for idempotency. To add data, edit `R__seed_data.sql` — Flyway detects the checksum change and re-runs it on next startup.
 
@@ -191,7 +208,30 @@ Every endpoint returns `ApiResponse<T>`:
 ```json
 { "success": true, "message": null, "data": { ... } }:
 { "success": false, "message": "User not found", "data": null }
+{ "success": false, "message": "Email not verified…", "code": "EMAIL_NOT_VERIFIED", "data": null }
 ```
+
+### Error codes
+
+An error envelope may carry a machine-readable `code` next to the human `message` (serialized only when
+set). Constants live in `common/ErrorCodes.java`; a 401 gets one by throwing
+`AuthFailureException(message, code)`.
+
+| Code | Thrown by | Meaning for the client |
+|---|---|---|
+| `EMAIL_NOT_VERIFIED` | login, after a correct password | send them to the verify-code screen |
+| `ACCOUNT_DEACTIVATED` | login / Google / 2FA verify, after credentials check out | account is soft-deleted, offer support |
+| `PASSWORD_INVALID` | `/api/account/**` re-auth (change password, deactivate, 2FA setup/disable/regenerate) | flag the password field, keep the form open |
+| `TWO_FACTOR_CODE_INVALID` | 2FA enable / verify / disable | flag the code field, let them retype |
+| `TWO_FACTOR_CHALLENGE_INVALID` | 2FA verify: unknown, expired, spent, out of attempts, factor removed | restart the sign-in |
+
+Rules for adding one:
+- A code is never finer-grained than the message it accompanies. The five unusable-challenge cases share
+  one code *and* one message on purpose, so a caller learns nothing about a token they don't hold.
+- The generic login failure (unknown email / wrong password / OAuth-only) stays **uncoded** — a code there
+  would be an account-enumeration oracle. `AuthServiceTest` asserts the thrown type carries no code.
+- Codes that name account state (`EMAIL_NOT_VERIFIED`, `ACCOUNT_DEACTIVATED`) are only reachable *after*
+  the caller proved ownership, which is why the login flow checks the password first.
 
 ### Generated contract
 
@@ -208,13 +248,16 @@ The authoritative contract is **`docs/openapi.json`**, generated by springdoc (3
 
 | Resource | Base path | Identifier | CRUD | Notes |
 |---|---|---|---|---|
-| User | `/api/users` | `/{uid}` | GET `/me`, GET, GET all, PUT, DELETE, PUT `/{uid}/role` | No POST — creation via auth flow; `/me` is the caller's own profile (no identifier, resolved from the JWT); role change is SUPER_ADMIN-only |
+| User | `/api/users` | `/{uid}` | GET `/me`, GET, GET all, PUT, DELETE, PUT `/{uid}/role` | No POST — creation via auth flow; `/me` is the caller's own profile (no identifier, resolved from the JWT); role change and DELETE are SUPER_ADMIN-only (users deactivate their own account via `/api/account/deactivate`) |
+| Account | `/api/account` | — | POST `/change-password`, POST `/set-password`, GET + POST + DELETE `/connected-accounts`, POST `/deactivate`, GET `/2fa`, POST `/2fa/setup`, POST `/2fa/enable`, POST `/2fa/disable`, POST `/2fa/recovery-codes` | Self-scoped account security — caller from the JWT. Change/set password rotate sessions (revoke all, keep current device, return new tokens); `/connected-accounts` lists + links/unlinks Google (link requires the Google email match the account email; unlink blocked without a password — lockout guard); `/deactivate` soft-deletes + revokes all sessions; `/2fa*` enrolls and manages the authenticator second factor (not yet enforced at sign-in) |
 | Group | `/api/groups` | `/{uid}` | Full CRUD, GET `/mine`, POST `/join`, POST `/{uid}/invite-code` | POST generates uid + invite code, and makes the creator GROUP_ADMIN. `/mine` lists the caller's own groups with their `myRole`; `/join` redeems an invite code; `/{uid}/invite-code` rotates the code (GROUP_ADMIN) |
 | Task | `/api/tasks` | `/{uid}` | Full CRUD | GET all requires `?groupId=` |
 | Category | `/api/categories` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
 | Tag | `/api/tags` | `/{id}` | Full CRUD | GET all requires `?groupId=` |
 | GroupMember | `/api/group-members` | `/{id}` | POST, GET, GET all, PATCH role, DELETE | GET all requires `?groupId=`; PATCH `/{id}/role?role=` |
-| Device | `/api/devices` | `/{id}` | POST, GET, GET all, PUT, DELETE | GET all requires `?userId=` |
+| Device | `/api/devices` | `/{id}` | GET (list mine), POST (register push token), PATCH (rename), POST `/{id}/logout`, DELETE | Self-scoped — caller resolved from the JWT, no `userId` param. GET returns the caller's devices with `activeSession`/`currentDevice` flags; `/{id}/logout` revokes that device's session; DELETE removes the device (+revokes) |
+| UserSettings | `/api/user-settings` | — | GET (own), PUT (own) | Self-scoped, no identifier in the path — caller from the JWT. `theme` (LIGHT/DARK/SYSTEM) + `locale` (EN/DE/SL). The row is created lazily on the first PUT; a GET for a user with none returns the defaults without writing. Two first-time PUTs racing is safe — the one losing the `unique(user_id)` insert retries in a fresh transaction and updates the winner's row |
+| NotificationSettings | `/api/notification-settings` | `/{type}` | GET (own matrix), PUT (own, one type), PUT `/batch` | Self-scoped, no user identifier in the path — caller from the JWT; the only path variable is the notification type. GET always returns one entry per `NotificationType` (`TASK_ASSIGNED`/`TASK_COMPLETED`/`TASK_REMINDER`/`MEMBER_JOINED`), merging the defaults for types with no row, so a client never needs to know them. PUT replaces one type's channels and creates the row lazily; a racing first write retries like `user-settings`. PUT `/batch` applies several entries in one transaction (type in the body, omitted types untouched, duplicate types → 400) and returns the whole matrix read back after the writes — the literal `/batch` outranks the `/{type}` template, so it is not parsed as a type. These are **preferences only** — nothing reads them yet, the delivery pipeline is a later phase |
 | TaskCompletion | `/api/task-completions` | — | POST, GET by task, GET by member | GET requires `?taskId=`; `/member/{id}` |
 | Notification | `/api/notifications` | — | GET, GET unread, count, PATCH read | All GETs require `?userId=`; PATCH `/{id}/read` |
 | AuditLog | `/api/audit-logs` | — | GET by group, entity, member | GET requires `?groupId=`; `/entity?entityType=&entityId=`; `/member/{id}` |
@@ -241,7 +284,7 @@ Entities with a `uid` field (User, Group, Task) use `/{uid}` as the path variabl
 
 ### Current state
 
-Email/password and Google sign-in are both implemented. All endpoints except `/api/auth/**` require a valid JWT Bearer token.
+Email/password and Google sign-in are both implemented. All endpoints except `/api/auth/**` require a valid JWT Bearer token. Two-factor (authenticator-app TOTP) can be enrolled at `/api/account/2fa` and **is enforced at sign-in**: login and Google sign-in return a challenge instead of tokens, and `POST /api/auth/2fa/verify` completes it.
 
 ### Row Level Security (Supabase)
 
@@ -311,7 +354,7 @@ Registration passwords are enforced by a custom Bean Validation constraint — `
 Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the security chain right after `JwtAuthenticationFilter` so it can key by user id. In-memory (Caffeine) — fine for a single instance; the `BucketRegistry` interface is the seam to swap in Redis if the app ever runs more than one instance.
 
 - **Keying:** an **authenticated** request must pass **both** a per-user bucket and a per-IP bucket; an **unauthenticated** request is limited per IP by the endpoint's tier.
-- **Tiers** (`ratelimit.*` in `RateLimitProperties`, overridable per env): auth 10/min, register 5/hour, refresh 20/min, forgot-password 5/hour, reset-password 10/min, api 120/min per user + 300/min per IP, join 10/hour per user.
+- **Tiers** (`ratelimit.*` in `RateLimitProperties`, overridable per env): auth 10/min, register 5/hour, refresh 20/min, forgot-password 5/hour, reset-password 10/min, two-factor verify 10/min, api 120/min per user + 300/min per IP, join 10/hour per user. The two-factor tier is keyed by IP and caps code guessing across fresh challenges; the 5-attempt cap only covers one challenge.
 - **The join tier is additive, not alternative.** `POST /api/groups/join` is authenticated, so it passes the per-user and per-IP api buckets *and* its own tighter `join` bucket. Every other tier replaces the default; this one stacks, so a guessable 8-character invite code keeps the general api protections as well.
 - **Client IP** comes from `X-Forwarded-For` via `server.forward-headers-strategy=native` (Render sits behind a proxy).
 - **Rejection:** 429 with a `Retry-After` header and the JSON `ApiResponse` envelope (written directly — filters run before Spring MVC). Skips `/actuator/**` and `/error`; disable entirely with `ratelimit.enabled=false`.
@@ -327,9 +370,29 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 | `POST /api/auth/resend-verification` | 200 | Generic success message (enumeration-safe, always 200) |
 | `POST /api/auth/forgot-password` | 200 | Neutral message — emails a reset link if the account exists (enumeration-safe, always 200) |
 | `POST /api/auth/reset-password` | 200 | Sets the new password from a valid token; revokes all sessions (then sign in again) |
-| `POST /api/auth/refresh` | 200 | New access JWT + new refresh token (rotates old refresh token) |
-| `POST /api/auth/logout` | 200 | "Logged out successfully" (revokes all user refresh tokens) |
+| `POST /api/auth/refresh` | 200 | New access JWT + new refresh token (rotates old refresh token; keeps the same device) |
+| `POST /api/auth/logout` | 200 | "Logged out successfully" (revokes the current device's refresh tokens — per-device) |
+| `POST /api/auth/logout-all` | 200 | "Logged out of all sessions" (revokes every refresh token for the user the token identifies) |
 | `POST /api/auth/google` | 200 | Access JWT + refresh token + user info (verifies a Google ID token; provisions or links the account) |
+| `POST /api/auth/2fa/verify` | 200 | Completes a challenged sign-in: challenge token + authenticator or recovery code → access JWT + refresh token (401 for a wrong code, an expired/spent challenge, or 5 failed attempts) |
+
+### Account (settings) endpoints
+
+Authenticated, self-scoped (`AccountController` at `/api/account`, caller from the JWT — not public, so bearer is required).
+
+| Endpoint | Status | Response |
+|---|---|---|
+| `POST /api/account/change-password` | 200 | Verifies the current password, sets the new one, rotates sessions (revoke all, keep current device); returns a fresh access + refresh pair |
+| `POST /api/account/set-password` | 200 | Sets a password on a Google-only account (none yet); same session rotation + new tokens |
+| `GET /api/account/connected-accounts` | 200 | `{passwordSet, googleLinked}` |
+| `POST /api/account/connected-accounts/google` | 200 | Links Google (verified token; refused if already linked, the Google email differs from the account email, or the Google account belongs to another user) |
+| `DELETE /api/account/connected-accounts/google` | 200 | Unlinks Google (refused if no password is set — would leave no way to sign in) |
+| `POST /api/account/deactivate` | 200 | Soft-deletes the account + revokes all sessions; a password account must confirm its password, a Google-only account is confirmed by the session |
+| `GET /api/account/2fa` | 200 | `{enabled, pendingSetup, confirmedAt, recoveryCodesRemaining}` |
+| `POST /api/account/2fa/setup` | 200 | `{secret, otpauthUri}` for the authenticator app; stores the secret unconfirmed (409 if two-factor is already on) |
+| `POST /api/account/2fa/enable` | 200 | Confirms setup with a code → 10 one-time recovery codes + a fresh access/refresh pair (all other sessions revoked) |
+| `POST /api/account/2fa/disable` | 200 | Removes the factor + every recovery code; returns a fresh pair (other sessions revoked) |
+| `POST /api/account/2fa/recovery-codes` | 200 | 10 new recovery codes, invalidating the previous set; sessions untouched |
 
 ### Authentication flows
 
@@ -343,13 +406,21 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 
 **Reset password**: look up the token by its hash (must be unused and unexpired) → set the new password (`@ValidPassword`) → mark the email verified (mailbox control is proven) → mark the token used → **revoke all refresh tokens** (kills every session) → email a "password changed" notice → audit `PASSWORD_RESET`. No JWT is issued; the user signs in again. Invalid/used/expired tokens return a generic error.
 
-**Email login**: find user by email (401 generic if not found) → **verify the password first** (401 generic "Invalid email or password" if wrong, or if the account is OAuth-only with no hash) → *only after a correct password* surface account state: `is_active` (401 "deactivated") then `is_email_verified` (401 `EmailNotVerifiedException`, whose envelope carries `code: "EMAIL_NOT_VERIFIED"` so clients branch on the code, not the message) → generate access JWT + refresh token → return `AuthResponse`. Checking the password before revealing any state keeps a wrong guess indistinguishable from an unknown email (anti-enumeration); the verify-prompt still reaches a legitimate user who proved ownership. An account that has **both** a password and a linked `google_sub` can sign in with either method (the old "different sign-in option" block was removed).
+**Email login**: find user by email (401 generic if not found) → **verify the password first** (401 generic "Invalid email or password" if wrong, or if the account is OAuth-only with no hash) → *only after a correct password* surface account state: `is_active` (401 "deactivated", code `ACCOUNT_DEACTIVATED`) then `is_email_verified` (401 `EmailNotVerifiedException`, whose envelope carries `code: "EMAIL_NOT_VERIFIED"` so clients branch on the code, not the message) → generate access JWT + refresh token → return `AuthResponse`. Checking the password before revealing any state keeps a wrong guess indistinguishable from an unknown email (anti-enumeration); the verify-prompt still reaches a legitimate user who proved ownership. An account that has **both** a password and a linked `google_sub` can sign in with either method (the old "different sign-in option" block was removed).
 
 **Token refresh**: hash incoming refresh token (SHA-256) → look up non-revoked match in DB → check expiry (revoke + 401 if expired) → check `is_active` (revoke **all** user tokens + 401 if deactivated) → revoke old token → generate new access JWT (carrying the user's current role) + new refresh token → return `AuthResponse`. Unknown/revoked tokens return 401. This is the point where a deactivation or role change made mid-session takes effect.
 
-**Logout**: hash incoming refresh token → look up non-revoked match → revoke all refresh tokens for that user. Invalid token returns 401.
+**Logout (per-device)**: hash incoming refresh token → look up non-revoked match → revoke every refresh token on **that token's device** (a legacy token with no device revokes only itself). Invalid token returns 401. **Logout everywhere** (`/api/auth/logout-all`) is the same lookup but revokes every token for the user — the explicit "sign out all sessions" action from settings.
+
+**Sessions & devices**: a sign-in is modelled as a `device` row plus its live refresh token. On login/verify/Google, `DeviceService.resolveLoginDevice` finds-or-creates the user's device by the `X-Device-Id` header (parsing the user-agent into a "Chrome on Windows"-style name via `UserAgentParser`, recording IP); the refresh token is bound to it, and rotation reissues on the same device so identity survives. A first sign-in on an unseen `(user, device)` emails a new-sign-in alert (keyed on device/UA, not IP, to avoid mobile-IP noise). A login carrying no device id simply has no device (degraded, no alert) — the Next.js BFF forwards `X-Device-Id` (a stable per-browser id it keeps), `X-Device-User-Agent` (the real browser UA; the transport `User-Agent` on the server→backend hop is the BFF's) and `X-Forwarded-For` on login/google/verify/refresh. The caller manages their devices via the self-scoped `/api/devices` endpoints (list with session state, rename, per-device logout, remove).
+
+**Two-factor at sign-in**: when the account has a confirmed factor, the password and Google paths stop short of issuing tokens — `TwoFactorChallengeService.challengeIfEnabled` deletes any earlier pending challenge, stores a new one (opaque 256-bit token, SHA-256 hashed, 5-minute TTL) and returns `{twoFactorRequired: true, challengeToken}` with no tokens, no profile fields and **no `LOGIN` audit entry** (nobody is signed in yet). `POST /api/auth/2fa/verify` then rejects an unknown, expired, spent or out-of-attempts challenge with one generic message, re-checks `is_active` (the account may have been deactivated since the password step), re-reads the factor (two-factor turned off meanwhile invalidates the challenge), and spends the code through `TwoFactorService.consumeCode`. A wrong code increments `attempts` (cap 5), audits `LOGIN_FAILED` and 401s; success consumes the challenge, issues the access + refresh pair (which creates the device row and any new-sign-in alert), audits `LOGIN`, and — if a recovery code was used — emails the owner. The challenge is deliberately not a JWT: `JwtAuthenticationFilter` accepts any validly-signed token and defaults a missing role claim to `USER`, so a purpose-scoped JWT would authenticate as a full session. `verify` is not `@Transactional` (so the attempt counter and `LOGIN_FAILED` survive the throw), which is why the challenge lookup fetches its user via `@EntityGraph`. Token refresh is **not** gated — it is already past the factor.
 
 **Google sign-in**: the client runs Google Sign-In itself and posts the resulting **ID token** plus the raw per-login nonce secret `N` to `POST /api/auth/google` → `GoogleIdTokenVerifier` validates signature (JWKS), issuer, expiry, and audience (`google.client-id`) → verify the OIDC **nonce**: the token's `nonce` claim must equal `lowercaseHex(SHA-256(N))`, binding the token to this login (anti-replay, OIDC §3.2.2.1/§16.11); mismatch or missing → 401 generic → require `email_verified` (401 otherwise) → resolve the account: (1) match `google_sub` → log in; (2) match email → **link** Google to the existing password account and mark it verified; (3) no match → **provision** a new already-verified, password-less account → generate access JWT + refresh token → return `AuthResponse`. Deactivated accounts are rejected (401) with a `LOGIN_FAILED` audit entry; success writes `LOGIN` (returning/linked) or `REGISTER` (new). The backend needs only the client id (the token audience); no client secret is used for verification.
+
+**Account settings (password, connected accounts, deactivation)**: self-service security actions on `/api/account`, all resolving the caller from the JWT. **Change password**: verify the current password (409 if the account has none — set instead; 401 if wrong) → set new (`@ValidPassword`) → **revoke every session, then reissue the current device** a fresh access + refresh pair (so this device stays signed in while others must re-authenticate) → "password changed" email → audit `PASSWORD_CHANGED`. **Set password** (Google-only account, no hash): same rotation + tokens → "password added" email → audit `PASSWORD_SET`. **Connected accounts**: `GET` returns `{passwordSet, googleLinked}`; **link** verifies a Google ID token (`GoogleOAuthService.verifyLinkToken`, mutating nothing) then refuses if a Google account is already linked, the Google-verified email differs from the account email, or the Google subject already belongs to another user — else sets `google_sub`, emails, audits `GOOGLE_LINKED`; **unlink** clears `google_sub` but is refused when no password is set (lockout guard), emails, audits `GOOGLE_UNLINKED`. **Deactivate**: a password account re-authenticates with its password (401 if missing/wrong), a Google-only account is confirmed by the session alone → set `is_active=false` → revoke all sessions → "account deactivated" email → audit `ACCOUNT_DELETED`. Self-service deactivation lives here (not the SUPER_ADMIN-only `DELETE /api/users/{uid}`).
+
+**Two-factor (enrollment)**: authenticator-app TOTP on `/api/account/2fa`, caller from the JWT. **Setup**: re-authenticate (password required when the account has one; a Google-only account is confirmed by the session alone, as with deactivation) → refuse if two-factor is already on (409) → `TwoFactorProvider.enroll` → store the secret **encrypted and unconfirmed** (`is_enabled=false`) and return `{secret, otpauthUri}`. Re-running setup replaces an abandoned attempt, so nothing stale survives. **Enable**: verify a code against the pending secret (401 if wrong; no recovery codes exist until this step succeeds) → `is_enabled=true`, `confirmed_at`, and `last_used_step` set to the confirming code's step so it can't be replayed later → issue 10 recovery codes (stored SHA-256, returned once) → revoke all sessions and reissue this device → "two-factor is on" email → audit `TWO_FACTOR_ENABLED`. **Disable**: password + a current authenticator *or* recovery code → delete the factor row and all codes (credential tables have no `is_active`, and keeping a dead secret at rest would be worse) → rotate sessions → email → audit `TWO_FACTOR_DISABLED`. **Regenerate recovery codes**: same confirmation, replaces the whole set, leaves sessions alone → email → audit `RECOVERY_CODES_REGENERATED`. All code checking goes through `TwoFactorService.consumeCode`, which spends what it accepts: an authenticator code at or below `last_used_step` is rejected as a replay, and a recovery code is marked used and audited `TWO_FACTOR_RECOVERY_USED`. Recovery codes are 10 x 8 characters from a no-look-alike alphabet, shown as `abcd-efgh` but hashed separator-free and lowercase, so any formatting the user types matches. A wrong code answers **401**, like a wrong current password on `/change-password` — a client must not read it as an expired session.
 
 **Staging/prod checklist** (the common  traps — all config, not code):
 - `GOOGLE_CLIENT_ID` on the backend **exactly matches** the Client ID the frontend's button uses (a mismatch fails on token audience).
@@ -360,7 +431,6 @@ Token-bucket rate limiting (Bucket4j) in `RateLimitFilter`, added to the securit
 ### Still to implement
 
 - **Mobile Google login**: when native apps are added, each gets its own OAuth client id — widen the audience list in `GoogleOAuthConfig`. Use the system browser + PKCE (AppAuth), not an embedded webview (OWASP/IETF standard for native OAuth).
-- **Per-device logout**: `logout` currently revokes **all** the user's refresh tokens (`revokeAllByUserId`). With multiple clients (web + mobile) this signs the user out everywhere. **When logout work resumes**, change it to revoke only the presented refresh token (this device), and keep revoke-all as a separate explicit "sign out everywhere" action (and on password change).
 - Web-side httpOnly cookies live in the **Next.js BFF**, not Spring (see *Client session architecture* above) — no Spring change needed; the JSON-body token response is what the BFF/mobile consume.
 
 ### Authorization model
@@ -612,29 +682,42 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | Class | Tests | Covers |
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
-| `AuthServiceTest` | 13 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`) |
-| `EmailServiceTest` | 5 | Verification link (param names, URL-encoded email, trailing-slash safe); registration-attempt notice; password-reset link carries the token; Google-only reset notice (no link); password-changed notice |
-| `GoogleOAuthServiceTest` | 9 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account |
+| `AuthServiceTest` | 14 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`, two-factor enabled → challenge instead of tokens); error codes (deactivated carries `ACCOUNT_DEACTIVATED`, a wrong password carries none — enumeration guard) |
+| `EmailServiceTest` | 11 | Verification link (param names, URL-encoded email, trailing-slash safe); registration-attempt notice; password-reset link carries the token; Google-only reset notice (no link); password-changed notice; password-added notice; Google linked/unlinked notices; account-deactivated notice; new-sign-in notice (device + IP, IP omitted when blank) |
+| `GoogleOAuthServiceTest` | 12 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account; `verifyLinkToken` (valid returns subject+email without touching users, unverified email throws, nonce mismatch throws) |
+| `AccountServiceTest` | 17 | changePassword (success rotates + returns new tokens, wrong current pwd throws, Google-only throws); setPassword (success, already-has-pwd throws); getConnections; linkGoogle (success, already-linked, email mismatch, sub owned by another); unlinkGoogle (success, not-linked, no-password lockout); deactivate (password account ok/wrong/missing, Google-only no password needed) |
+| `AccountControllerSecurityTest` | 4 | `@WebMvcTest` slice — connected-accounts/change-password/deactivate require authentication (anonymous denied), authenticated caller OK |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
 | `VerificationServiceTest` | 8 | createAndSend (code generation + email); verifyEmail (valid code, invalid code, already verified, unknown email — all enumeration-safe); resendVerification (unverified sends, already verified silent, unknown email silent) |
-| `RefreshTokenServiceTest` | 8 | createRefreshToken (hashed storage); refresh (valid rotation, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (valid revokes all, invalid throws) |
+| `RefreshTokenServiceTest` | 14 | createRefreshToken (no-device hashed storage, new device binds + alerts owner, known device no alert); refresh (valid rotation, keeps device + touches last-used, deactivated revoke-all+throw, expired revoke+throw, revoked throw, unknown throw); logout (per-device revoke, legacy no-device revokes one, invalid throws); logoutAll (revokes all + audits, invalid throws) |
 | `AuditLogServiceTest` | 4 | `record` write path — group present (actor/member/IP stamped), null group (group+member unset), null group skips membership lookup; `recordAccountEvent` stamps the subject as actor |
 | `PasswordResetServiceTest` | 7 | requestReset (password account issues token + email, unknown/deactivated no-op, Google-only sends info email); resetPassword (valid sets password + revokes sessions + marks used, unknown/used token throws, expired throws) |
+| `SecretCipherTest` | 9 | Round-trip; the same secret encrypts to different ciphertexts (fresh IV); output never contains the plaintext; tampered ciphertext, a value encrypted under another key, a malformed value and one shorter than the IV all rejected; a key of the wrong length or not Base64 fails construction rather than first use |
+| `LocalTotpProviderTest` | 23 | All six RFC 6238 Appendix B vectors through the adapter (proves step size, digit count, SHA-1 and start time are wired as authenticator apps expect); ±1-step skew accepted and ±2 rejected; the matched step reported is the code's own step, so replay stays detectable; whitespace-separated codes accepted; malformed codes, nulls, a non-Base32 credential and another secret's code all rejected without throwing; enroll produces a 32-char Base32 secret + labelled `otpauth://` URI, differs every time, and round-trips through verify |
+| `TwoFactorServiceTest` | 27 | getStatus (none / pending / enabled with remaining codes); startSetup (stores an encrypted unconfirmed secret, Google-only needs no password, wrong/missing password rejected, already-enabled refused, abandoned setup replaced, inactive account refused); enable (turns on + 10 codes + new tokens, codes stored hashed only, wrong code leaves it pending, no pending setup, already on); disable (authenticator code, recovery code, wrong password, invalid code, not enabled); regenerateRecoveryCodes (replaces the set, keeps sessions, not enabled); consumeCode (fresh step recorded, replayed step rejected, spent recovery code, any code formatting matches, blank code never reaches the provider) |
+| `TwoFactorControllerSecurityTest` | 7 | `@WebMvcTest` slice — all five `/api/account/2fa` endpoints deny anonymous callers (a body is sent so the request reaches authorization), authenticated caller resolved from the token, missing code rejected by validation |
+| `TwoFactorChallengeServiceTest` | 13 | challengeIfEnabled (no factor / pending-only → no challenge, enabled → hashed token + expiry + zero attempts, previous challenge dropped first, nothing about the account disclosed); verify (authenticator and recovery code complete the sign-in, recovery also emails the owner, wrong code counts the attempt and audits `LOGIN_FAILED`, attempts exhausted consumes the challenge without checking the code, expired / unknown / factor-removed / deactivated all refused with no tokens); scheduled purge |
 | `AuditContextTest` | 11 | `currentUserId` from `AuthPrincipal` (authenticated / anonymous / non-principal); `currentUser` reference (authenticated / anonymous); `currentActor` (member / non-member / no auth / null group); IP from bound request or none |
 | `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
 | `GroupSecurityTest` | 12 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); `canManageMember`/`canViewMember`/`isSelfMember` by membership id |
 | `GroupServiceTest` | 22 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found; getGroupByUid invite-code visibility (admin vs plain member); getMyGroups (role mapping, soft-deleted group skipped, invite-code visibility); joinByInviteCode (new member, case-insensitive code, unknown code, soft-deleted group, already a member, rejoin reactivates the same row without restoring admin); rotateInviteCode (replaces code + audits, not-found) |
 | `GroupMemberServiceTest` | 7 | addMember (success / duplicate); role change and removal with last-admin protection (blocked when last, allowed with another admin); promote member |
 | `UserServiceTest` | 7 | updateUserRole (+ audit / unknown); get/getAll/update/delete + not-found |
+| `UserSettingsServiceTest` | 6 | getMySettings (existing row, no row returns defaults without writing); updateMySettings (creates the row on first write, updates an existing row in place without re-resolving the user, a lost unique-constraint race retries in a fresh transaction and updates the winner's row, unknown user → not found) |
+| `UserSettingsControllerSecurityTest` | 6 | `@WebMvcTest` slice — GET/PUT require authentication (anonymous denied); the acted-on user comes only from the token, and id fields smuggled into the body (`userId`/`idUserSettings`/`user`) are ignored |
+| `NotificationSettingsServiceTest` | 11 | getMySettings (no rows returns every type at the defaults without writing, saved rows merged over the defaults, types always in declaration order); updateMySetting (creates the row for the caller + type on first write, updates an existing row in place without re-resolving the user, a lost unique-constraint race retries in a fresh transaction and updates the winner's row, unknown user → not found); updateMySettings batch (applies every entry and returns the whole matrix, mixes create + update in a single transaction, a lost race retries the whole batch, unknown user → not found) |
+| `NotificationSettingsControllerSecurityTest` | 13 | `@WebMvcTest` slice — GET/PUT/PUT-batch require authentication (anonymous denied); the caller comes only from the token; an unknown `{type}`, a missing channel field, an empty batch, a batch entry missing a channel and duplicate types in a batch are all 400; `/batch` routes to the batch handler rather than being read as a type; id fields smuggled into the body are ignored |
 | `CategoryServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
 | `TagServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
 | `TaskServiceTest` | 13 | get/getByGroup/create/update/delete incl. assignee & category branches + not-found |
 | `TaskCompletionServiceTest` | 5 | list by task/member; create (+ task/member not-found) |
-| `DeviceServiceTest` | 10 | get/getByUser/register/update/deactivate + not-found + duplicate token |
-| `UserControllerSecurityTest` | 8 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, `/me` for any authenticated caller (also guarding route precedence over `/{uid}`), role change SUPER_ADMIN-only (ADMIN 403), 403 envelope |
+| `DeviceServiceTest` | 11 | registerDevice (success / duplicate token / user missing); resolveLoginDevice (no device id, unseen creates + flags new, known updates but keeps user-renamed name); listMyDevices (active-session + current-device flags); logout/delete/rename my device (owner-scoped; non-owned → not found) |
+| `UserAgentParserTest` | 5 | Parses Chrome/Windows, Safari/iPhone (mobile, iOS before macOS), Edge-before-Chrome, Firefox/Linux, null → "Unknown device" |
+| `DeviceControllerSecurityTest` | 4 | `@WebMvcTest` slice — list/logout require authentication (anonymous denied), authenticated caller OK |
+| `UserControllerSecurityTest` | 10 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, `/me` for any authenticated caller (also guarding route precedence over `/{uid}`), role change SUPER_ADMIN-only (ADMIN 403), delete SUPER_ADMIN-only (self 403), 403 envelope |
 | `GroupControllerSecurityTest` | 10 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`); `/mine` and `/join` open to any authenticated caller (also guarding `/mine` route precedence over `/{uid}`); invite-code rotation group-admin only (plain member and platform ADMIN 403) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
-| `GlobalExceptionHandlerTest` | 12 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join); 401 for unverified email carries the `EMAIL_NOT_VERIFIED` code |
+| `GlobalExceptionHandlerTest` | 13 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join); a coded `AuthFailureException` returns 401 with that code, unverified email with `EMAIL_NOT_VERIFIED` |
 | `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
 | `RateLimitFilterTest` | 10 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/normal) |
 | `PasswordPolicyValidatorTest` | 19 | Length bounds, each missing-class message/grammar, space-as-special, and the guessable variants (common/leet/tail/repeated/sequential); plus the `isValid` message wiring |
@@ -642,7 +725,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **260 tests** across 29 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **432 tests** across 41 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

@@ -5,9 +5,12 @@ import com.tasklean.api.auth.dto.LoginRequest;
 import com.tasklean.api.auth.dto.RegisterRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -53,6 +56,9 @@ class AuthServiceTest {
 
     @Mock
     private EmailService emailService;
+
+    @Mock
+    private TwoFactorChallengeService twoFactorChallengeService;
 
     @InjectMocks
     private AuthService authService;
@@ -191,6 +197,29 @@ class AuthServiceTest {
     }
 
     @Test
+    void login_twoFactorEnabled_returnsChallengeAndWithholdsTokens() {
+        LoginRequest request = new LoginRequest();
+        request.setEmail("bob@example.com");
+        request.setPassword("correctPassword");
+
+        User user = buildExistingUser();
+        when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("correctPassword", "$2a$10$hashedpassword")).thenReturn(true);
+        when(twoFactorChallengeService.challenge(user))
+                .thenReturn(Optional.of(AuthResponse.twoFactorRequired("challenge-token")));
+
+        AuthResponse response = authService.login(request);
+
+        assertThat(response.isTwoFactorRequired()).isTrue();
+        assertThat(response.getChallengeToken()).isEqualTo("challenge-token");
+        assertThat(response.getToken()).isNull();
+        assertThat(response.getRefreshToken()).isNull();
+        // No session and no LOGIN entry yet - the user isn't signed in until the code step.
+        verify(refreshTokenService, never()).createRefreshToken(any());
+        verify(auditLogService, never()).recordAccountEvent(any(), eq(AuditAction.LOGIN), anyString());
+    }
+
+    @Test
     void login_nonExistentEmail_throwsBadCredentials() {
         LoginRequest request = new LoginRequest();
         request.setEmail("nobody@example.com");
@@ -216,8 +245,10 @@ class AuthServiceTest {
         when(userRepository.findByEmail("bob@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("wrongPassword", "$2a$10$hashedpassword")).thenReturn(false);
 
+        // Deliberately uncoded: a code would tell a wrong password apart from an unknown email.
         assertThatThrownBy(() -> authService.login(request))
                 .isInstanceOf(BadCredentialsException.class)
+                .isNotInstanceOf(AuthFailureException.class)
                 .hasMessageContaining("Invalid email or password");
 
         verifyLoginFailedRecordedFor(1L);
@@ -236,7 +267,8 @@ class AuthServiceTest {
         when(passwordEncoder.matches("password", "$2a$10$hashedpassword")).thenReturn(true);
 
         assertThatThrownBy(() -> authService.login(request))
-                .isInstanceOf(BadCredentialsException.class)
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.ACCOUNT_DEACTIVATED)
                 .hasMessageContaining("deactivated");
 
         verifyLoginFailedRecordedFor(1L);

@@ -6,6 +6,10 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -39,13 +43,15 @@ public class GoogleOAuthService {
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
+    private final TwoFactorChallengeService twoFactorChallengeService;
 
     /**
      * Authenticates a user from a Google ID token, provisioning or linking an account as needed,
      * and issues access and refresh tokens.
      *
      * @param request the request carrying the Google ID token and the nonce secret
-     * @return the auth response with access and refresh tokens
+     * @return the auth response with access and refresh tokens, or a two-factor challenge (no
+     *         tokens) when the matched account has a second factor enabled
      * @throws BadCredentialsException if the token is invalid, the nonce doesn't match, the Google
      *                                 email is unverified, or the matched account is deactivated
      */
@@ -55,7 +61,7 @@ public class GoogleOAuthService {
         verifyNonce(payload, request.getNonce());
 
         if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
-            throw new BadCredentialsException("Google account email is not verified");
+            throw new BadCredentialsException(ErrorMessages.GOOGLE_EMAIL_UNVERIFIED);
         }
 
         String googleSub = payload.getSubject();
@@ -77,12 +83,32 @@ public class GoogleOAuthService {
         return createGoogleUser(payload);
     }
 
+    /**
+     * Verifies a Google ID token for account-linking: checks the token signature, the OIDC nonce,
+     * and that Google has verified the email, then returns the Google subject id to link. Unlike
+     * {@link #authenticate}, it neither creates nor mutates any user — the caller links the subject
+     * to an already-authenticated account.
+     *
+     * @param request the request carrying the Google ID token and the nonce secret
+     * @return the verified Google identity (subject id and email) to link
+     * @throws BadCredentialsException if the token is invalid, the nonce doesn't match, or the
+     *                                 Google email is unverified
+     */
+    public GoogleIdentity verifyLinkToken(GoogleAuthRequest request) {
+        GoogleIdToken.Payload payload = verifyToken(request.getIdToken());
+        verifyNonce(payload, request.getNonce());
+        if (!Boolean.TRUE.equals(payload.getEmailVerified())) {
+            throw new BadCredentialsException(ErrorMessages.GOOGLE_EMAIL_UNVERIFIED);
+        }
+        return new GoogleIdentity(payload.getSubject(), payload.getEmail());
+    }
+
     // OIDC nonce (implicit flow): the token's nonce claim must equal SHA-256 of the per-login
     // secret the client kept in its session cookie, binding the token to this login (anti-replay).
     private void verifyNonce(GoogleIdToken.Payload payload, String nonce) {
         String expected = sha256Hex(nonce);
         if (!expected.equals(payload.getNonce())) {
-            throw new BadCredentialsException("Invalid Google token");
+            throw new BadCredentialsException(ErrorMessages.INVALID_GOOGLE_TOKEN);
         }
     }
 
@@ -100,7 +126,7 @@ public class GoogleOAuthService {
         try {
             GoogleIdToken verified = googleIdTokenVerifier.verify(idToken);
             if (verified == null) {
-                throw new BadCredentialsException("Invalid Google token");
+                throw new BadCredentialsException(ErrorMessages.INVALID_GOOGLE_TOKEN);
             }
             return verified.getPayload();
         } catch (GeneralSecurityException | IOException e) {
@@ -113,16 +139,16 @@ public class GoogleOAuthService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
                     "Failed Google login: account deactivated");
-            throw new BadCredentialsException("Account is deactivated");
+            throw new AuthFailureException(ErrorMessages.ACCOUNT_DEACTIVATED, ErrorCodes.ACCOUNT_DEACTIVATED);
         }
-        return issueTokens(user, AuditAction.LOGIN, "User logged in via Google");
+        return challengeOrTokens(user, AuditAction.LOGIN, "User logged in via Google");
     }
 
     private AuthResponse linkGoogleAccount(User user, GoogleIdToken.Payload payload) {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.LOGIN_FAILED,
                     "Failed Google login: account deactivated");
-            throw new BadCredentialsException("Account is deactivated");
+            throw new AuthFailureException(ErrorMessages.ACCOUNT_DEACTIVATED, ErrorCodes.ACCOUNT_DEACTIVATED);
         }
         user.setGoogleSub(payload.getSubject());
         // Google has verified this mailbox, so a previously unverified password account is now trusted.
@@ -132,7 +158,7 @@ public class GoogleOAuthService {
         }
         user = userRepository.save(user);
         log.info("Linked Google sign-in to existing account: uid={}", user.getUid());
-        return issueTokens(user, AuditAction.LOGIN, "Linked Google sign-in to existing account");
+        return challengeOrTokens(user, AuditAction.LOGIN, "Linked Google sign-in to existing account");
     }
 
     private AuthResponse createGoogleUser(GoogleIdToken.Payload payload) {
@@ -149,6 +175,13 @@ public class GoogleOAuthService {
         user = userRepository.save(user);
         log.info("User registered via Google: uid={}", user.getUid());
         return issueTokens(user, AuditAction.REGISTER, "Account created via Google");
+    }
+
+    // A second factor applies to an existing account signing in; a freshly provisioned one can't
+    // have one yet, so it goes straight to issueTokens.
+    private AuthResponse challengeOrTokens(User user, AuditAction action, String auditMessage) {
+        return twoFactorChallengeService.challenge(user)
+                .orElseGet(() -> issueTokens(user, action, auditMessage));
     }
 
     private AuthResponse issueTokens(User user, AuditAction action, String auditMessage) {
