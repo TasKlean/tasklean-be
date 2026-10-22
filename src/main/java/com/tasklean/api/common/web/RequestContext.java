@@ -1,17 +1,21 @@
 package com.tasklean.api.common.web;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Reads device/session metadata off the current HTTP request: the client-generated device id,
- * the end-user's user-agent, and the caller IP. Keeps servlet plumbing out of the services that
+ * the end-user's user-agent, and the client IP. Keeps servlet plumbing out of the services that
  * need this when issuing a sign-in session.
  */
 @Component
+@RequiredArgsConstructor
 public class RequestContext {
+
+    private final ClientIpResolver clientIpResolver;
 
     // Set by the frontend BFF: a stable id it keeps per browser/device, forwarded on auth calls.
     private static final String DEVICE_ID_HEADER = "X-Device-Id";
@@ -39,13 +43,15 @@ public class RequestContext {
     }
 
     /**
-     * Returns the caller's IP address for the current request.
+     * Returns the end user's IP for the current request, for attribution — the audit trail and
+     * new-sign-in emails. Throttling must call {@link ClientIpResolver#resolve} directly instead,
+     * because the trust flag discarded here is what keeps a forged IP out of a rate-limit key.
      *
      * @return the client IP, or {@code null} if no request is bound to the current thread
      */
     public String clientIp() {
         HttpServletRequest request = currentRequest();
-        return request != null ? request.getRemoteAddr() : null;
+        return request != null ? clientIpResolver.resolve(request).ip() : null;
     }
 
     private String header(String name) {

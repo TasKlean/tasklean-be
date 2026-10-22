@@ -2,6 +2,7 @@ package com.tasklean.api.security.ratelimit;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.web.ClientIpResolver;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;
 import jakarta.servlet.FilterChain;
@@ -28,6 +29,11 @@ import java.util.List;
  * per-user and a per-IP bucket; an unauthenticated request is limited per IP by the endpoint's tier.
  * On rejection it writes a 429 with a {@code Retry-After} header - filters run before Spring MVC,
  * so it renders the JSON envelope itself rather than relying on {@code GlobalExceptionHandler}.
+ *
+ * <p>Per-IP keys come from {@link ClientIpResolver}, never from {@code getRemoteAddr()} directly:
+ * behind Cloudflare the socket address is an edge node shared by unrelated users, which would make
+ * one abuser's quota everybody's. The resolver yields the end user's address for our own frontend's
+ * traffic and the caller's own for anyone else, and neither can be forged.
  */
 @Slf4j
 @Component
@@ -36,6 +42,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     private final RateLimitProperties properties;
     private final BucketRegistry bucketRegistry;
+    private final ClientIpResolver clientIpResolver;
 
     /**
      * Consumes a token from each applicable bucket; on the first exhausted bucket, responds 429.
@@ -47,16 +54,17 @@ public class RateLimitFilter extends OncePerRequestFilter {
      * @throws IOException      if writing the 429 body fails
      */
     @Override
-    protected void doFilterInternal(HttpServletRequest request, @NonNull HttpServletResponse response,
+    protected void doFilterInternal(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
                                     @NonNull FilterChain filterChain) throws ServletException, IOException {
-        String ip = request.getRemoteAddr();
+        ClientIpResolver.ResolvedIp client = clientIpResolver.resolve(request);
+        String ip = clientIpResolver.throttleKey(client.ip());
         Long userId = currentUserId();
 
         for (LimitCheck check : checksFor(request.getRequestURI(), ip, userId)) {
             Bucket bucket = bucketRegistry.resolve(check.key(), check.tier());
             ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
             if (!probe.isConsumed()) {
-                reject(response, probe.getNanosToWaitForRefill(), check.name(), ip, userId);
+                reject(response, probe.getNanosToWaitForRefill(), check.name(), ip, userId, client.trustedHop());
                 return;
             }
         }
@@ -117,11 +125,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return List.of(new LimitCheck("apiIp", "apiIp:" + ip, properties.getApiPerIp()));
     }
 
-    private void reject(HttpServletResponse response, long nanosToWait, String tier, String ip, Long userId)
-            throws IOException {
+    private void reject(HttpServletResponse response, long nanosToWait, String tier, String ip, Long userId,
+                        boolean trustedHop) throws IOException {
         long retryAfterSeconds = Math.max(1, nanosToWait / 1_000_000_000L);
-        // Security-relevant (possible abuse) → WARN for monitoring.
-        log.warn("Rate limit exceeded: tier={} ip={} userId={}", tier, ip, userId);
+        // Security-relevant (possible abuse) → WARN for monitoring. trustedHop tells a 429 keyed on a
+        // real user apart from one keyed on infrastructure, where unrelated users share the bucket.
+        log.warn("Rate limit exceeded: tier={} ip={} trustedHop={} userId={}", tier, ip, trustedHop, userId);
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
         response.setHeader(HttpHeaders.RETRY_AFTER, String.valueOf(retryAfterSeconds));
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);

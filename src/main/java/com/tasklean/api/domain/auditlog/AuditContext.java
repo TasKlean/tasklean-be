@@ -1,17 +1,15 @@
 package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
+import com.tasklean.api.common.web.RequestContext;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Resolves the ambient request context needed to attribute an audit entry: the acting
@@ -24,6 +22,7 @@ public class AuditContext {
 
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
+    private final RequestContext requestContext;
 
     /**
      * Resolves the group member acting in the current request for the given group —
@@ -82,20 +81,13 @@ public class AuditContext {
     }
 
     /**
-     * Returns the IP address of the current request.
+     * Returns the end user's IP for the current request. Delegates so the audit trail and the
+     * sign-in path record the same address.
      *
      * @return the caller's IP address, or {@code null} if no request is bound to the
      *         current thread (e.g. a scheduled job)
      */
     public String currentIpAddress() {
-        HttpServletRequest request = currentRequest();
-        return request != null ? request.getRemoteAddr() : null;
-    }
-
-    private HttpServletRequest currentRequest() {
-        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attrs) {
-            return attrs.getRequest();
-        }
-        return null;
+        return requestContext.clientIp();
     }
 }

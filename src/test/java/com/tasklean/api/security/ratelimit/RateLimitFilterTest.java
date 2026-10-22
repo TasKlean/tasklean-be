@@ -1,6 +1,7 @@
 package com.tasklean.api.security.ratelimit;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
+import com.tasklean.api.common.web.ClientIpResolver;
 import com.tasklean.api.domain.user.UserRole;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -23,6 +24,8 @@ import static org.mockito.Mockito.verify;
 
 class RateLimitFilterTest {
 
+    private static final String SECRET = "dGVzdC1ob3Atc2VjcmV0LTMyLWJ5dGVzLWxvbmc9";
+
     private RateLimitProperties props;
     private RateLimitFilter filter;
     private FilterChain chain;
@@ -30,7 +33,7 @@ class RateLimitFilterTest {
     @BeforeEach
     void setUp() {
         props = new RateLimitProperties();
-        filter = new RateLimitFilter(props, new CaffeineBucketRegistry());
+        filter = new RateLimitFilter(props, new CaffeineBucketRegistry(), new ClientIpResolver(SECRET));
         chain = mock(FilterChain.class);
         SecurityContextHolder.clearContext();
     }
@@ -60,6 +63,55 @@ class RateLimitFilterTest {
 
     private RateLimitProperties.Tier tier(int capacity) {
         return new RateLimitProperties.Tier(capacity, Duration.ofMinutes(1));
+    }
+
+    private MockHttpServletResponse runAs(String uri, String deviceIp, boolean withSecret)
+            throws ServletException, IOException {
+        MockHttpServletRequest r = request(uri);
+        if (withSecret) {
+            r.addHeader(ClientIpResolver.HOP_SECRET_HEADER, SECRET);
+        }
+        r.addHeader(ClientIpResolver.DEVICE_IP_HEADER, deviceIp);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilterInternal(r, response, chain);
+        return response;
+    }
+
+    // --- per-IP keying: which address the bucket counts against ---
+
+    @Test
+    void forgedDeviceIp_withoutHopSecret_doesNotEscapeTheBucket() throws Exception {
+        props.setAuth(tier(1));
+
+        runAs("/api/auth/login", "203.0.113.1", false);
+        MockHttpServletResponse response = runAs("/api/auth/login", "203.0.113.2", false);
+
+        // Rotating the header must not mint a fresh quota, or the limit is no limit at all.
+        assertThat(response.getStatus()).isEqualTo(429);
+        verify(chain, times(1)).doFilter(any(), any());
+    }
+
+    @Test
+    void trustedHop_differentUsers_getSeparateBuckets() throws Exception {
+        props.setAuth(tier(1));
+
+        runAs("/api/auth/login", "203.0.113.1", true);
+        MockHttpServletResponse response = runAs("/api/auth/login", "203.0.113.2", true);
+
+        // Two users behind one Cloudflare edge must not spend each other's quota.
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(chain, times(2)).doFilter(any(), any());
+    }
+
+    @Test
+    void trustedHop_oneUserRotatingWithinAnIpv6Prefix_sharesOneBucket() throws Exception {
+        props.setAuth(tier(1));
+
+        runAs("/api/auth/login", "2001:db8::1", true);
+        MockHttpServletResponse response = runAs("/api/auth/login", "2001:db8::ffff", true);
+
+        assertThat(response.getStatus()).isEqualTo(429);
+        verify(chain, times(1)).doFilter(any(), any());
     }
 
     // --- unauthenticated (per-IP) ---
