@@ -55,8 +55,7 @@ public class ClientIpResolver {
         this.hopSecrets = Arrays.stream(configured.split(","))
                 .map(String::trim)
                 .filter(secret -> !secret.isEmpty())
-                .peek(ClientIpResolver::requireStrongSecret)
-                .map(secret -> secret.getBytes(StandardCharsets.UTF_8))
+                .map(ClientIpResolver::toSecretBytes)
                 .toList();
 
         if (hopSecrets.isEmpty()) {
@@ -117,11 +116,12 @@ public class ClientIpResolver {
         }
     }
 
-    private static void requireStrongSecret(String secret) {
+    private static byte[] toSecretBytes(String secret) {
         if (secret.length() < MIN_SECRET_LENGTH) {
             throw new IllegalStateException(
                     "BFF_HOP_SECRETS entries must be at least " + MIN_SECRET_LENGTH + " characters");
         }
+        return secret.getBytes(StandardCharsets.UTF_8);
     }
 
     private boolean isTrustedHop(HttpServletRequest request) {
