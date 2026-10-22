@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
+import com.tasklean.api.common.web.RequestContext;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.user.User;
@@ -12,11 +13,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Optional;
 
@@ -32,25 +30,21 @@ class AuditContextTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private RequestContext requestContext;
+
     @InjectMocks
     private AuditContext auditContext;
 
     @AfterEach
     void clearThreadLocals() {
         SecurityContextHolder.clearContext();
-        RequestContextHolder.resetRequestAttributes();
     }
 
     private void authenticateAs(Long userId) {
         AuthPrincipal principal = new AuthPrincipal(userId, "usr-test", "test@example.com", UserRole.USER);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(principal, null));
-    }
-
-    private void bindRequestWithIp(String ip) {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setRemoteAddr(ip);
-        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
     }
 
     // --- currentUserId ---
@@ -127,14 +121,16 @@ class AuditContextTest {
     // --- currentIpAddress ---
 
     @Test
-    void currentIpAddress_boundRequest_returnsRemoteAddr() {
-        bindRequestWithIp("203.0.113.7");
+    void currentIpAddress_resolvedIp_returnsIt() {
+        when(requestContext.clientIp()).thenReturn("203.0.113.7");
 
         assertThat(auditContext.currentIpAddress()).isEqualTo("203.0.113.7");
     }
 
     @Test
     void currentIpAddress_noBoundRequest_returnsNull() {
+        when(requestContext.clientIp()).thenReturn(null);
+
         assertThat(auditContext.currentIpAddress()).isNull();
     }
 }

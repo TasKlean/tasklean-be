@@ -1,5 +1,6 @@
 package com.tasklean.api.security;
 
+import com.tasklean.api.common.web.ClientIpResolver;
 import com.tasklean.api.security.ratelimit.BucketRegistry;
 import com.tasklean.api.security.ratelimit.CaffeineBucketRegistry;
 import com.tasklean.api.security.ratelimit.RateLimitProperties;
@@ -42,6 +43,12 @@ public class MethodSecuritySliceConfig {
     @Bean
     RateLimitProperties rateLimitProperties() {
         return new RateLimitProperties();
+    }
+
+    // No hop secret: a slice trusts no forwarded IP, so keying falls back to the socket address.
+    @Bean
+    ClientIpResolver clientIpResolver() {
+        return new ClientIpResolver("");
     }
 
     @Bean

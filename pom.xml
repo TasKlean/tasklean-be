@@ -120,6 +120,14 @@
 			<artifactId>google-api-client</artifactId>
 			<version>2.7.2</version>
 		</dependency>
+		<!-- InetAddresses.isInetAddress for validating client-supplied IP literals: parses
+		     literals only, so a crafted value can never reach a DNS resolver. Already present
+		     transitively via google-api-client; declared so we do not depend on that. -->
+		<dependency>
+			<groupId>com.google.guava</groupId>
+			<artifactId>guava</artifactId>
+			<version>33.1.0-jre</version>
+		</dependency>
 		<!-- RFC 6238 TOTP (authenticator-app two-factor codes). Kotlin library, used only
 		     behind the TwoFactorProvider port so a hosted factor service can replace it. -->
 		<dependency>
