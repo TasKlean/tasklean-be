@@ -94,6 +94,16 @@ class RequestContextTest {
         assertThat(requestContext.userAgent()).isEqualTo("node-fetch/1.0");
     }
 
+    @Test
+    void userAgent_longerThanColumn_isTruncated() {
+        MockHttpServletRequest request = bindRequest();
+        request.addHeader("X-Device-User-Agent", "Mozilla/5.0 " + "x".repeat(600));
+
+        String userAgent = requestContext.userAgent();
+
+        assertThat(userAgent).hasSize(512).startsWith("Mozilla/5.0 ");
+    }
+
     // --- deviceId ---
 
     @Test
@@ -102,6 +112,15 @@ class RequestContextTest {
         request.addHeader("X-Device-Id", "device-1");
 
         assertThat(requestContext.deviceId()).isEqualTo("device-1");
+    }
+
+    @Test
+    void deviceId_longerThanColumn_returnsNull() {
+        MockHttpServletRequest request = bindRequest();
+        request.addHeader("X-Device-Id", "d".repeat(256));
+
+        // Rejected, not clipped: a truncated identity key would merge distinct devices.
+        assertThat(requestContext.deviceId()).isNull();
     }
 
     @Test
