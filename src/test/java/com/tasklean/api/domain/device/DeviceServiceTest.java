@@ -164,6 +164,26 @@ class DeviceServiceTest {
         assertThat(outcome.device().getIpAddress()).isEqualTo("203.0.113.9");
     }
 
+    @Test
+    void resolveLoginDevice_removedDeviceSignsInAgain_flagsNewAndResetsName() {
+        Device removed = ownedDevice(7L, "client-abc");
+        removed.setIsActive(false);
+        removed.setDeviceName("My laptop");
+        when(requestContext.deviceId()).thenReturn("client-abc");
+        when(requestContext.userAgent()).thenReturn(
+                "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Safari/537.36");
+        when(deviceRepository.findByUserIdUserAndClientDeviceId(USER_ID, "client-abc"))
+                .thenReturn(Optional.of(removed));
+        when(deviceRepository.save(any(Device.class))).thenAnswer(i -> i.getArgument(0));
+
+        DeviceLoginOutcome outcome = deviceService.resolveLoginDevice(user());
+
+        // Flagged new so the caller alerts and audits the return of a device the user removed.
+        assertThat(outcome.isNew()).isTrue();
+        assertThat(outcome.device().getIsActive()).isTrue();
+        assertThat(outcome.device().getDeviceName()).isEqualTo("Chrome on Windows");
+    }
+
     // --- recordActivity ---
 
     @Test

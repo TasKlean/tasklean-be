@@ -19,6 +19,10 @@ public class RequestContext {
 
     // Set by the frontend BFF: a stable id it keeps per browser/device, forwarded on auth calls.
     private static final String DEVICE_ID_HEADER = "X-Device-Id";
+    // Both match their columns on device, so a client cannot fail an insert with an oversized
+    // header. The frontend sends a 36-character UUID and a browser user-agent, far inside these.
+    private static final int MAX_DEVICE_ID_LENGTH = 255;
+    private static final int MAX_USER_AGENT_LENGTH = 512;
     // The BFF forwards the real browser user-agent here, since the standard User-Agent header on a
     // server-to-server call is the BFF's own. Falls back to User-Agent when absent.
     private static final String DEVICE_USER_AGENT_HEADER = "X-Device-User-Agent";
@@ -26,10 +30,14 @@ public class RequestContext {
     /**
      * Returns the stable client-generated device id from the request, if present.
      *
-     * @return the device id, or {@code null} if the header is absent or no request is bound
+     * @return the device id, or {@code null} if the header is absent, longer than the column, or
+     *         no request is bound
      */
     public String deviceId() {
-        return header(DEVICE_ID_HEADER);
+        String deviceId = header(DEVICE_ID_HEADER);
+        // Rejected rather than truncated, unlike the user-agent: this is an identity key, and
+        // clipping it would fold two distinct devices onto one row.
+        return deviceId != null && deviceId.length() > MAX_DEVICE_ID_LENGTH ? null : deviceId;
     }
 
     /**
@@ -39,7 +47,7 @@ public class RequestContext {
      */
     public String userAgent() {
         String forwarded = header(DEVICE_USER_AGENT_HEADER);
-        return forwarded != null ? forwarded : header("User-Agent");
+        return truncate(forwarded != null ? forwarded : header("User-Agent"));
     }
 
     /**
@@ -70,6 +78,15 @@ public class RequestContext {
     private ClientIpResolver.ResolvedIp resolved() {
         HttpServletRequest request = currentRequest();
         return request != null ? clientIpResolver.resolve(request) : null;
+    }
+
+    // Truncated rather than rejected: the browser and OS tokens sit at the front, so a clipped
+    // value still names the device, where dropping it entirely would not.
+    private String truncate(String userAgent) {
+        if (userAgent == null || userAgent.length() <= MAX_USER_AGENT_LENGTH) {
+            return userAgent;
+        }
+        return userAgent.substring(0, MAX_USER_AGENT_LENGTH);
     }
 
     private String header(String name) {

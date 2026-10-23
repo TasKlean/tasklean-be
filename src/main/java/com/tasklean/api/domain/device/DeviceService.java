@@ -80,8 +80,9 @@ public class DeviceService {
      * Resolves the device a sign-in runs on, from the client device id, user-agent and IP on the
      * current request. Finds the user's existing device by its client id, or creates one if unseen;
      * refreshes its last-used and browser details either way, and its IP only when a trusted hop
-     * vouched for it. A login with no device id yields an empty outcome (no device is created, so
-     * the session simply has none).
+     * vouched for it. A device the user had removed counts as newly seen, so its return is alerted
+     * and audited. A login with no device id yields an empty outcome (no device is created, so the
+     * session simply has none).
      *
      * @param user the user signing in
      * @return the resolved device and whether it was first seen on this login
@@ -100,9 +101,12 @@ public class DeviceService {
         Device device = deviceRepository
                 .findByUserIdUserAndClientDeviceId(user.getIdUser(), clientDeviceId)
                 .orElse(null);
-        boolean isNew = device == null;
+        // The lookup ignores is_active on purpose: (user, client device id) is unique, so a removed
+        // device must reuse its row rather than get a second one.
+        boolean returning = device != null && !Boolean.TRUE.equals(device.getIsActive());
+        boolean isNew = device == null || returning;
 
-        if (isNew) {
+        if (device == null) {
             device = Device.builder()
                     .clientDeviceId(clientDeviceId)
                     .deviceType(info.type())
@@ -118,7 +122,12 @@ public class DeviceService {
                     .user(user)
                     .build();
         } else {
-            // Keep deviceName as-is so a user rename survives; refresh the technical details.
+            if (returning) {
+                // Removal was deliberate, so the row comes back as a fresh device - it must not
+                // wear the name the user gave the one they removed.
+                device.setDeviceName(info.displayName());
+            }
+            // deviceName is otherwise left alone, so a rename survives an ordinary re-login.
             device.setBrowserInfo(info.browser());
             device.setOsVersion(info.os());
             device.setDeviceType(info.type());

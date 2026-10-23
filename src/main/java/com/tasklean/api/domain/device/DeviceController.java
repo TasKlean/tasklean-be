@@ -78,7 +78,8 @@ public class DeviceController {
     }
 
     /**
-     * Logs out a single device by revoking its session; the device stays listed as inactive.
+     * Logs out a single device by revoking its session; the device stays listed, without a live
+     * session.
      *
      * @param principal the authenticated caller
      * @param id        the device id
