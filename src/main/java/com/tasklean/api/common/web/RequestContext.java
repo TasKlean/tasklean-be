@@ -43,15 +43,33 @@ public class RequestContext {
     }
 
     /**
-     * Returns the end user's IP for the current request, for attribution — the audit trail and
-     * new-sign-in emails. Throttling must call {@link ClientIpResolver#resolve} directly instead,
-     * because the trust flag discarded here is what keeps a forged IP out of a rate-limit key.
+     * Returns the best address available for the current request, whatever vouched for it — for
+     * recording a value where none exists yet. Use {@link #trustedClientIp()} to <em>overwrite</em>
+     * a stored address, and {@link ClientIpResolver#resolve} where the trust flag itself matters,
+     * as rate limiting needs it.
      *
      * @return the client IP, or {@code null} if no request is bound to the current thread
      */
     public String clientIp() {
+        ClientIpResolver.ResolvedIp resolved = resolved();
+        return resolved != null ? resolved.ip() : null;
+    }
+
+    /**
+     * Returns the end user's IP only when the caller proved it is ours to believe — for writes that
+     * would otherwise replace a real location with infrastructure's. An untrusted request resolves
+     * to the BFF's own egress address or a Cloudflare edge, neither of which is where the user is.
+     *
+     * @return the client IP if a trusted hop vouched for it, otherwise {@code null}
+     */
+    public String trustedClientIp() {
+        ClientIpResolver.ResolvedIp resolved = resolved();
+        return resolved != null && resolved.trustedHop() ? resolved.ip() : null;
+    }
+
+    private ClientIpResolver.ResolvedIp resolved() {
         HttpServletRequest request = currentRequest();
-        return request != null ? clientIpResolver.resolve(request).ip() : null;
+        return request != null ? clientIpResolver.resolve(request) : null;
     }
 
     private String header(String name) {

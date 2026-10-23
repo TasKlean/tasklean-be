@@ -18,6 +18,8 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -132,7 +134,7 @@ class DeviceServiceTest {
         when(requestContext.deviceId()).thenReturn("client-abc");
         when(requestContext.userAgent()).thenReturn(
                 "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Safari/537.36");
-        when(requestContext.clientIp()).thenReturn("203.0.113.9");
+        when(requestContext.trustedClientIp()).thenReturn("203.0.113.9");
         when(deviceRepository.findByUserIdUserAndClientDeviceId(USER_ID, "client-abc"))
                 .thenReturn(Optional.of(existing));
         when(deviceRepository.save(any(Device.class))).thenAnswer(i -> i.getArgument(0));
@@ -142,6 +144,53 @@ class DeviceServiceTest {
         assertThat(outcome.isNew()).isFalse();
         assertThat(outcome.device().getDeviceName()).isEqualTo("My laptop");
         assertThat(outcome.device().getIpAddress()).isEqualTo("203.0.113.9");
+    }
+
+    @Test
+    void resolveLoginDevice_knownDeviceUntrustedHop_keepsStoredIp() {
+        Device existing = ownedDevice(7L, "client-abc");
+        existing.setIpAddress("203.0.113.9");
+        when(requestContext.deviceId()).thenReturn("client-abc");
+        when(requestContext.userAgent()).thenReturn(
+                "Mozilla/5.0 (Windows NT 10.0) Chrome/120.0 Safari/537.36");
+        when(requestContext.trustedClientIp()).thenReturn(null);
+        when(deviceRepository.findByUserIdUserAndClientDeviceId(USER_ID, "client-abc"))
+                .thenReturn(Optional.of(existing));
+        when(deviceRepository.save(any(Device.class))).thenAnswer(i -> i.getArgument(0));
+
+        DeviceLoginOutcome outcome = deviceService.resolveLoginDevice(user());
+
+        // Infrastructure's address must not replace the user's.
+        assertThat(outcome.device().getIpAddress()).isEqualTo("203.0.113.9");
+    }
+
+    // --- recordActivity ---
+
+    @Test
+    void recordActivity_trustedHop_updatesIpAndLastUsed() {
+        Device device = ownedDevice(7L, "client-abc");
+        device.setIpAddress("203.0.113.9");
+        device.setLastUsed(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
+        when(requestContext.trustedClientIp()).thenReturn("198.51.100.4");
+
+        deviceService.recordActivity(device);
+
+        assertThat(device.getIpAddress()).isEqualTo("198.51.100.4");
+        assertThat(device.getLastUsed()).isAfter(LocalDateTime.now(ZoneOffset.UTC).minusHours(1));
+        verify(deviceRepository).save(device);
+    }
+
+    @Test
+    void recordActivity_untrustedHop_keepsIpButStillAdvancesLastUsed() {
+        Device device = ownedDevice(7L, "client-abc");
+        device.setIpAddress("203.0.113.9");
+        device.setLastUsed(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
+        when(requestContext.trustedClientIp()).thenReturn(null);
+
+        deviceService.recordActivity(device);
+
+        assertThat(device.getIpAddress()).isEqualTo("203.0.113.9");
+        assertThat(device.getLastUsed()).isAfter(LocalDateTime.now(ZoneOffset.UTC).minusHours(1));
     }
 
     // --- listMyDevices ---
