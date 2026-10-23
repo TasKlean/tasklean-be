@@ -50,6 +50,31 @@ class RequestContextTest {
         assertThat(requestContext.clientIp()).isNull();
     }
 
+    // --- trustedClientIp ---
+
+    @Test
+    void trustedClientIp_trustedHop_returnsForwardedUserIp() {
+        MockHttpServletRequest request = bindRequest();
+        request.addHeader(ClientIpResolver.HOP_SECRET_HEADER, SECRET);
+        request.addHeader(ClientIpResolver.DEVICE_IP_HEADER, "203.0.113.7");
+
+        assertThat(requestContext.trustedClientIp()).isEqualTo("203.0.113.7");
+    }
+
+    @Test
+    void trustedClientIp_untrustedCaller_returnsNull() {
+        MockHttpServletRequest request = bindRequest();
+        request.addHeader(ClientIpResolver.CLOUDFLARE_IP_HEADER, "198.51.100.4");
+
+        // Resolvable, but it is our frontend's egress address rather than the user's.
+        assertThat(requestContext.trustedClientIp()).isNull();
+    }
+
+    @Test
+    void trustedClientIp_noBoundRequest_returnsNull() {
+        assertThat(requestContext.trustedClientIp()).isNull();
+    }
+
     // --- userAgent ---
 
     @Test

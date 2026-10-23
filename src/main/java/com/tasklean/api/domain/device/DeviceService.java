@@ -79,8 +79,9 @@ public class DeviceService {
     /**
      * Resolves the device a sign-in runs on, from the client device id, user-agent and IP on the
      * current request. Finds the user's existing device by its client id, or creates one if unseen;
-     * refreshes its last-used/browser/IP details either way. A login with no device id yields an
-     * empty outcome (no device is created, so the session simply has none).
+     * refreshes its last-used and browser details either way, and its IP only when a trusted hop
+     * vouched for it. A login with no device id yields an empty outcome (no device is created, so
+     * the session simply has none).
      *
      * @param user the user signing in
      * @return the resolved device and whether it was first seen on this login
@@ -93,7 +94,6 @@ public class DeviceService {
         }
 
         String userAgent = requestContext.userAgent();
-        String ip = requestContext.clientIp();
         DeviceInfo info = UserAgentParser.parse(userAgent);
         LocalDateTime now = LocalDateTime.now(clock);
 
@@ -110,7 +110,9 @@ public class DeviceService {
                     .browserInfo(info.browser())
                     .osVersion(info.os())
                     .userAgent(userAgent)
-                    .ipAddress(ip)
+                    // Unguarded, unlike the update below: a new row has no better value to keep,
+                    // and the new-sign-in email reads this.
+                    .ipAddress(requestContext.clientIp())
                     .lastUsed(now)
                     .isActive(true)
                     .user(user)
@@ -121,13 +123,27 @@ public class DeviceService {
             device.setOsVersion(info.os());
             device.setDeviceType(info.type());
             device.setUserAgent(userAgent);
-            device.setIpAddress(ip);
+            updateIpIfKnown(device);
             device.setLastUsed(now);
             device.setIsActive(true);
         }
 
         Device saved = deviceRepository.save(device);
         return new DeviceLoginOutcome(saved, isNew);
+    }
+
+    /**
+     * Records that a session was used: the last-used time always, and the IP when the request
+     * proves where the end user is. The single writer of device activity, so the timestamp and
+     * the address cannot drift apart again.
+     *
+     * @param device the device the refreshed session belongs to
+     */
+    @Transactional
+    public void recordActivity(Device device) {
+        device.setLastUsed(LocalDateTime.now(clock));
+        updateIpIfKnown(device);
+        deviceRepository.save(device);
     }
 
     /**
@@ -206,6 +222,15 @@ public class DeviceService {
         log.info("Device removed: userId={} deviceId={}", userId, id);
         auditLogService.recordAccountEvent(userId, AuditAction.DEVICE_REMOVED,
                 "Device removed: " + device.getDeviceName());
+    }
+
+    // Only a trusted hop carries the user's own address; an untrusted one resolves to our
+    // frontend's egress IP. Widen this when a native client - untrusted but honest - ships.
+    private void updateIpIfKnown(Device device) {
+        String ip = requestContext.trustedClientIp();
+        if (ip != null) {
+            device.setIpAddress(ip);
+        }
     }
 
     // Resolves a device that must belong to the caller. A non-owned or missing id yields the same

@@ -172,7 +172,7 @@ class RefreshTokenServiceTest {
     }
 
     @Test
-    void refresh_withDevice_keepsDeviceAndTouchesLastUsed() {
+    void refresh_withDevice_keepsDeviceAndRecordsActivity() {
         User user = buildUser();
         Device device = buildDevice(5L);
         device.setLastUsed(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
@@ -201,7 +201,8 @@ class RefreshTokenServiceTest {
         // Second save is the new token; it stays on the same device.
         RefreshToken issued = captor.getAllValues().get(1);
         assertThat(issued.getDevice()).isEqualTo(device);
-        assertThat(device.getLastUsed()).isAfter(LocalDateTime.now(ZoneOffset.UTC).minusHours(1));
+        // The touch is DeviceService's job, so last-used and IP cannot drift apart.
+        verify(deviceService).recordActivity(device);
     }
 
     @Test

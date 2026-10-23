@@ -115,7 +115,7 @@ public class RefreshTokenService {
 
         Device device = existing.getDevice();
         if (device != null) {
-            device.setLastUsed(LocalDateTime.now(clock));
+            deviceService.recordActivity(device);
         }
 
         String newAccessToken = jwtService.generateToken(user);
