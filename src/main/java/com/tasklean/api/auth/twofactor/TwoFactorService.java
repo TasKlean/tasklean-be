@@ -11,6 +11,7 @@ import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecretCipher;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
@@ -58,6 +59,7 @@ public class TwoFactorService {
     private final PasswordEncoder passwordEncoder;
     private final SessionRotator sessionRotator;
     private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
     private final AuditLogService auditLogService;
     private final Clock clock;
 
@@ -156,7 +158,7 @@ public class TwoFactorService {
         List<String> recoveryCodes = replaceRecoveryCodes(user);
         AuthResponse session = sessionRotator.rotateCurrentSession(user);
 
-        emailService.sendTwoFactorEnabledEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.twoFactorEnabled());
         auditLogService.recordAccountEvent(userId, AuditAction.TWO_FACTOR_ENABLED, "Two-factor authentication enabled");
         log.info("Two-factor enabled: uid={}", user.getUid());
         return new TwoFactorEnableResponse(recoveryCodes, session.getToken(), session.getRefreshToken());
@@ -186,7 +188,7 @@ public class TwoFactorService {
         userTwoFactorRepository.delete(factor);
         AuthResponse session = sessionRotator.rotateCurrentSession(user);
 
-        emailService.sendTwoFactorDisabledEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.twoFactorDisabled());
         auditLogService.recordAccountEvent(userId, AuditAction.TWO_FACTOR_DISABLED, "Two-factor authentication disabled");
         log.info("Two-factor disabled: uid={}", user.getUid());
         return session;
@@ -212,7 +214,7 @@ public class TwoFactorService {
 
         List<String> recoveryCodes = replaceRecoveryCodes(user);
 
-        emailService.sendRecoveryCodesRegeneratedEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.recoveryCodesRegenerated());
         auditLogService.recordAccountEvent(userId, AuditAction.RECOVERY_CODES_REGENERATED, "Recovery codes regenerated");
         log.info("Recovery codes regenerated: uid={}", user.getUid());
         return new RecoveryCodesResponse(recoveryCodes);

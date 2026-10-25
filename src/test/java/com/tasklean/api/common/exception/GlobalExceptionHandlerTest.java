@@ -180,4 +180,17 @@ class GlobalExceptionHandlerTest {
                 .extracting(ApiResponse::getMessage)
                 .isEqualTo(ErrorMessages.INTERNAL_ERROR);
     }
+
+    @Test
+    void handleEmailDelivery_returns503WithCode() {
+        ResponseEntity<ApiResponse<Void>> response = handler.handleEmailDelivery(
+                new EmailDeliveryException(ErrorMessages.EMAIL_DELIVERY_FAILED, new RuntimeException()));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::isSuccess, ApiResponse::getMessage, ApiResponse::getCode)
+                .containsExactly(false, ErrorMessages.EMAIL_DELIVERY_FAILED,
+                        ErrorCodes.EMAIL_DELIVERY_FAILED);
+    }
 }

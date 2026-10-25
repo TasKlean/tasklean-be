@@ -4,6 +4,7 @@ import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -54,6 +55,9 @@ class RefreshTokenServiceTest {
     private EmailService emailService;
 
     @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
+
+    @Spy
     private Clock clock = Clock.systemUTC();
 
     @InjectMocks
@@ -102,7 +106,7 @@ class RefreshTokenServiceTest {
         assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC).plusDays(13));
         assertThat(saved.getIsRevoked()).isFalse();
 
-        verify(emailService, never()).sendNewSignInEmail(any(), any(), any());
+        verify(emailService, never()).send(any(), any());
     }
 
     @Test
@@ -120,7 +124,8 @@ class RefreshTokenServiceTest {
         verify(refreshTokenRepository).save(captor.capture());
         assertThat(captor.getValue().getDevice()).isEqualTo(device);
 
-        verify(emailService).sendNewSignInEmail("test@example.com", "Chrome on Windows", "203.0.113.5");
+        verify(emailService).send("test@example.com",
+                emailTemplates.newSignIn("Chrome on Windows", "203.0.113.5"));
         verify(auditLogService).recordAccountEvent(eq(1L), eq(AuditAction.NEW_DEVICE_LOGIN), anyString());
     }
 
@@ -135,7 +140,7 @@ class RefreshTokenServiceTest {
 
         refreshTokenService.createRefreshToken(user);
 
-        verify(emailService, never()).sendNewSignInEmail(any(), any(), any());
+        verify(emailService, never()).send(any(), any());
         verify(auditLogService, never()).recordAccountEvent(any(), eq(AuditAction.NEW_DEVICE_LOGIN), anyString());
     }
 

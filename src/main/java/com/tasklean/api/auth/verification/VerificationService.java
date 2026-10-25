@@ -6,7 +6,9 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.email.Delivery;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -36,6 +38,7 @@ public class VerificationService {
     private final EmailVerificationRepository verificationRepository;
     private final UserRepository userRepository;
     private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
     private final JwtService jwtService;
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
@@ -45,10 +48,12 @@ public class VerificationService {
      * Generates a 6-digit code, persists it, and sends it to the user's email.
      * Any existing codes for the user are cleared first.
      *
-     * @param user the user to verify
+     * @param user     the user to verify
+     * @param delivery whether a failed send should fail the caller's request - registration depends
+     *                 on the code arriving, a resend must not betray that the address exists
      */
     @Transactional
-    public void createAndSendVerification(User user) {
+    public void createAndSendVerification(User user, Delivery delivery) {
         verificationRepository.deleteByUserIdUser(user.getIdUser());
 
         String code = generateCode();
@@ -60,7 +65,8 @@ public class VerificationService {
                 .build();
 
         verificationRepository.save(verification);
-        emailService.sendVerificationEmail(user.getEmail(), code);
+        emailService.send(user.getEmail(),
+                emailTemplates.verificationCode(user.getEmail(), code, delivery));
         // Never log the code itself.
         log.info("Verification code sent: uid={}", user.getUid());
     }
@@ -102,9 +108,11 @@ public class VerificationService {
      */
     @Transactional
     public void resendVerification(ResendVerificationRequest request) {
+        // Advisory, unlike registration: this endpoint is a silent no-op for an unknown or already
+        // verified address, so failing loudly here would tell a caller which addresses exist.
         userRepository.findByEmail(request.getEmail())
                 .filter(user -> !user.getIsEmailVerified())
-                .ifPresent(this::createAndSendVerification);
+                .ifPresent(user -> createAndSendVerification(user, Delivery.ADVISORY));
     }
 
     private String generateCode() {

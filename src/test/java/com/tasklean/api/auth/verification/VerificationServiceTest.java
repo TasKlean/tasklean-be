@@ -5,7 +5,9 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.verification.dto.ResendVerificationRequest;
 import com.tasklean.api.auth.verification.dto.VerifyEmailRequest;
+import com.tasklean.api.common.email.Delivery;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -27,6 +29,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -42,6 +45,9 @@ class VerificationServiceTest {
 
     @Mock
     private EmailService emailService;
+
+    @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
 
     @Mock
     private JwtService jwtService;
@@ -75,7 +81,7 @@ class VerificationServiceTest {
     void createAndSendVerification_generatesCodeAndSendsEmail() {
         User user = buildUnverifiedUser();
 
-        verificationService.createAndSendVerification(user);
+        verificationService.createAndSendVerification(user, Delivery.ESSENTIAL);
 
         verify(verificationRepository).deleteByUserIdUser(1L);
 
@@ -88,7 +94,8 @@ class VerificationServiceTest {
         assertThat(saved.getExpiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC));
         assertThat(saved.getUser()).isEqualTo(user);
 
-        verify(emailService).sendVerificationEmail(eq("test@example.com"), eq(saved.getCode()));
+        verify(emailService).send("test@example.com",
+                emailTemplates.verificationCode("test@example.com", saved.getCode(), Delivery.ESSENTIAL));
     }
 
     // --- verifyEmail ---
@@ -182,7 +189,10 @@ class VerificationServiceTest {
 
         verify(verificationRepository).deleteByUserIdUser(1L);
         verify(verificationRepository).save(any(EmailVerification.class));
-        verify(emailService).sendVerificationEmail(eq("test@example.com"), any());
+        // The code is random, so assert the policy rather than the whole record: a resend has
+        // to stay advisory to match the silent no-op an unknown address gets.
+        verify(emailService).send(eq("test@example.com"),
+                argThat(content -> content.delivery() == Delivery.ADVISORY));
     }
 
     @Test
@@ -197,7 +207,7 @@ class VerificationServiceTest {
         verificationService.resendVerification(request);
 
         verify(verificationRepository, never()).save(any());
-        verify(emailService, never()).sendVerificationEmail(any(), any());
+        verify(emailService, never()).send(any(), any());
     }
 
     @Test
@@ -210,6 +220,6 @@ class VerificationServiceTest {
         verificationService.resendVerification(request);
 
         verify(verificationRepository, never()).save(any());
-        verify(emailService, never()).sendVerificationEmail(any(), any());
+        verify(emailService, never()).send(any(), any());
     }
 }

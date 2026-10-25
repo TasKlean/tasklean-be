@@ -12,6 +12,7 @@ import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -59,6 +60,8 @@ class TwoFactorServiceTest {
     private SessionRotator sessionRotator;
     @Mock
     private EmailService emailService;
+    @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
     @Mock
     private AuditLogService auditLogService;
     @Spy
@@ -263,7 +266,7 @@ class TwoFactorServiceTest {
         assertThat(response.recoveryCodes()).hasSize(10).doesNotHaveDuplicates();
         assertThat(response.token()).isEqualTo("access");
         assertThat(response.refreshToken()).isEqualTo("refresh");
-        verify(emailService).sendTwoFactorEnabledEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.twoFactorEnabled());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.TWO_FACTOR_ENABLED), anyString());
     }
 
@@ -305,7 +308,7 @@ class TwoFactorServiceTest {
         verify(userTwoFactorRepository, never()).save(any());
         verify(recoveryCodeRepository, never()).save(any());
         verify(sessionRotator, never()).rotateCurrentSession(any());
-        verify(emailService, never()).sendTwoFactorEnabledEmail(anyString());
+        verify(emailService, never()).send(anyString(), any());
     }
 
     @Test
@@ -351,7 +354,7 @@ class TwoFactorServiceTest {
         assertThat(response.getToken()).isEqualTo("access");
         verify(recoveryCodeRepository).deleteByUserIdUser(USER_ID);
         verify(userTwoFactorRepository).delete(enabled);
-        verify(emailService).sendTwoFactorDisabledEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.twoFactorDisabled());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.TWO_FACTOR_DISABLED), anyString());
     }
 
@@ -447,7 +450,7 @@ class TwoFactorServiceTest {
         verify(recoveryCodeRepository, times(10)).save(any(TwoFactorRecoveryCode.class));
         // Replacing codes doesn't change how the account signs in, so sessions stay.
         verify(sessionRotator, never()).rotateCurrentSession(any());
-        verify(emailService).sendRecoveryCodesRegeneratedEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.recoveryCodesRegenerated());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.RECOVERY_CODES_REGENERATED), anyString());
     }
 

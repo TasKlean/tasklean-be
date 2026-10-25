@@ -4,6 +4,7 @@ import com.tasklean.api.auth.passwordreset.dto.ForgotPasswordRequest;
 import com.tasklean.api.auth.passwordreset.dto.ResetPasswordRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -25,6 +26,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -46,6 +48,9 @@ class PasswordResetServiceTest {
 
     @Mock
     private EmailService emailService;
+
+    @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
 
     @Mock
     private RefreshTokenService refreshTokenService;
@@ -93,7 +98,8 @@ class PasswordResetServiceTest {
 
         verify(tokenRepository).deleteByUserIdUser(1L);
         verify(tokenRepository).save(any(PasswordResetToken.class));
-        verify(emailService).sendPasswordResetEmail(eq("bob@example.com"), anyString());
+        verify(emailService).send(eq("bob@example.com"),
+                argThat(content -> content.body().contains("/reset-password?token=")));
     }
 
     @Test
@@ -127,9 +133,10 @@ class PasswordResetServiceTest {
 
         passwordResetService.requestReset(forgot("bob@example.com"));
 
-        verify(emailService).sendGoogleOnlyResetEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.googleOnlyReset());
         verify(tokenRepository, never()).save(any());
-        verify(emailService, never()).sendPasswordResetEmail(anyString(), anyString());
+        verify(emailService, never()).send(anyString(),
+                argThat(content -> content.body().contains("/reset-password?token=")));
     }
 
     // --- resetPassword ---
@@ -153,7 +160,7 @@ class PasswordResetServiceTest {
         assertThat(token.getUsed()).isTrue();
         verify(userRepository).save(user);
         verify(refreshTokenService).revokeAllUserTokens(user);
-        verify(emailService).sendPasswordChangedEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.passwordChanged());
         verify(auditLogService).recordAccountEvent(eq(1L),
                 eq(AuditAction.PASSWORD_RESET), anyString());
     }

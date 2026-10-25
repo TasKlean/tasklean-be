@@ -6,6 +6,7 @@ import com.tasklean.api.auth.refresh.dto.RefreshRequest;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.config.JwtConfig;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -41,6 +42,7 @@ public class RefreshTokenService {
     private final AuditLogService auditLogService;
     private final DeviceService deviceService;
     private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
     private final Clock clock;
 
     /**
@@ -57,7 +59,8 @@ public class RefreshTokenService {
 
         if (outcome.isNew() && outcome.device() != null) {
             Device device = outcome.device();
-            emailService.sendNewSignInEmail(user.getEmail(), device.getDeviceName(), device.getIpAddress());
+            emailService.send(user.getEmail(),
+                    emailTemplates.newSignIn(device.getDeviceName(), device.getIpAddress()));
             auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.NEW_DEVICE_LOGIN,
                     "New device signed in: " + device.getDeviceName());
         }

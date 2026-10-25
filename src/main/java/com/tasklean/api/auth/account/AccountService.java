@@ -13,6 +13,7 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
@@ -45,6 +46,7 @@ public class AccountService {
     private final SessionRotator sessionRotator;
     private final GoogleOAuthService googleOAuthService;
     private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
     private final AuditLogService auditLogService;
 
     /**
@@ -71,7 +73,7 @@ public class AccountService {
         userRepository.save(user);
         AuthResponse response = sessionRotator.rotateCurrentSession(user);
 
-        emailService.sendPasswordChangedEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.passwordChanged());
         auditLogService.recordAccountEvent(userId, AuditAction.PASSWORD_CHANGED, "Password changed");
         log.info("Password changed: uid={}", user.getUid());
         return response;
@@ -97,7 +99,7 @@ public class AccountService {
         userRepository.save(user);
         AuthResponse response = sessionRotator.rotateCurrentSession(user);
 
-        emailService.sendPasswordSetEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.passwordSet());
         auditLogService.recordAccountEvent(userId, AuditAction.PASSWORD_SET, "Password set");
         log.info("Password set: uid={}", user.getUid());
         return response;
@@ -148,7 +150,7 @@ public class AccountService {
         user.setGoogleSub(identity.subject());
         userRepository.save(user);
 
-        emailService.sendGoogleLinkedEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.googleLinked());
         auditLogService.recordAccountEvent(userId, AuditAction.GOOGLE_LINKED, "Google account linked");
         log.info("Google account linked: uid={}", user.getUid());
         return connectionsOf(user);
@@ -176,7 +178,7 @@ public class AccountService {
         user.setGoogleSub(null);
         userRepository.save(user);
 
-        emailService.sendGoogleUnlinkedEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.googleUnlinked());
         auditLogService.recordAccountEvent(userId, AuditAction.GOOGLE_UNLINKED, "Google account unlinked");
         log.info("Google account unlinked: uid={}", user.getUid());
         return connectionsOf(user);
@@ -210,7 +212,7 @@ public class AccountService {
         userRepository.save(user);
         refreshTokenService.revokeAllUserTokens(user);
 
-        emailService.sendAccountDeactivatedEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.accountDeactivated());
         auditLogService.recordAccountEvent(userId, AuditAction.ACCOUNT_DELETED, "Account deactivated");
         log.info("Account deactivated: uid={}", user.getUid());
     }

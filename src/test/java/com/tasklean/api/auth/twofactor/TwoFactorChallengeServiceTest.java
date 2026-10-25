@@ -8,6 +8,7 @@ import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -50,6 +51,8 @@ class TwoFactorChallengeServiceTest {
     private AuditLogService auditLogService;
     @Mock
     private EmailService emailService;
+    @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
     @Spy
     private Clock clock = Clock.systemUTC();
     @InjectMocks
@@ -163,7 +166,7 @@ class TwoFactorChallengeServiceTest {
         assertThat(captor.getValue().getConsumedAt()).isNotNull();
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.LOGIN), anyString());
         // An ordinary authenticator sign-in is not worth an email.
-        verify(emailService, never()).sendRecoveryCodeUsedEmail(anyString());
+        verify(emailService, never()).send(anyString(), any());
     }
 
     @Test
@@ -180,7 +183,7 @@ class TwoFactorChallengeServiceTest {
 
         assertThat(response.getToken()).isEqualTo("access");
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.LOGIN), anyString());
-        verify(emailService).sendRecoveryCodeUsedEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.recoveryCodeUsed());
     }
 
     @Test

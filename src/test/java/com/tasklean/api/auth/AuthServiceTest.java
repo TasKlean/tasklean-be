@@ -7,7 +7,9 @@ import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
+import com.tasklean.api.common.email.Delivery;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.exception.AuthFailureException;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -56,6 +59,9 @@ class AuthServiceTest {
 
     @Mock
     private EmailService emailService;
+
+    @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
 
     @Mock
     private TwoFactorChallengeService twoFactorChallengeService;
@@ -104,7 +110,7 @@ class AuthServiceTest {
         assertThat(response.getToken()).isNull();
         assertThat(response.getEmail()).isEqualTo("new@example.com");
         assertThat(response.getMessage()).contains("verification code");
-        verify(verificationService).createAndSendVerification(any(User.class));
+        verify(verificationService).createAndSendVerification(any(User.class), eq(Delivery.ESSENTIAL));
         verify(auditLogService).recordAccountEvent(eq(99L),
                 eq(AuditAction.REGISTER), anyString());
     }
@@ -167,9 +173,9 @@ class AuthServiceTest {
         assertThat(response.getEmail()).isEqualTo("existing@example.com");
         assertThat(response.getMessage()).contains("verification code");
         // The real owner is notified by email; nothing is created and no code is sent.
-        verify(emailService).sendRegistrationAttemptEmail("existing@example.com");
+        verify(emailService).send("existing@example.com", emailTemplates.registrationAttempt());
         verify(userRepository, never()).save(any());
-        verify(verificationService, never()).createAndSendVerification(any());
+        verify(verificationService, never()).createAndSendVerification(any(), any());
     }
 
     // --- Login ---
