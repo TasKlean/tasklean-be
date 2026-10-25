@@ -107,4 +107,20 @@ public class DeviceController {
         deviceService.deleteMyDevice(principal.userId(), id);
         return ResponseEntity.ok(ApiResponse.success("Device removed", null));
     }
+
+    /**
+     * Removes all of the caller's devices (soft-delete) and revokes every session on the account.
+     * This signs the caller out on the current device too, so the client must treat the response
+     * as the end of its own session.
+     *
+     * @param principal the authenticated caller
+     * @return {@code 200 OK} with a confirmation message
+     */
+    @PreAuthorize("isAuthenticated()")
+    @DeleteMapping
+    public ResponseEntity<ApiResponse<Void>> removeAllDevices(
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        deviceService.deleteAllMyDevices(principal.userId());
+        return ResponseEntity.ok(ApiResponse.success("All devices removed", null));
+    }
 }

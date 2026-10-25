@@ -282,4 +282,43 @@ class DeviceServiceTest {
         assertThat(device.getDeviceName()).isEqualTo("Work PC");
         assertThat(response.getDeviceName()).isEqualTo("Work PC");
     }
+
+    // --- deleteAllMyDevices ---
+
+    @Test
+    void deleteAllMyDevices_withDevices_deactivatesAllAndRevokesEverySession() {
+        Device phone = ownedDevice(7L, "client-phone");
+        Device laptop = ownedDevice(8L, "client-laptop");
+        when(deviceRepository.findByUserIdUserAndIsActiveTrue(USER_ID)).thenReturn(List.of(phone, laptop));
+
+        deviceService.deleteAllMyDevices(USER_ID);
+
+        assertThat(phone.getIsActive()).isFalse();
+        assertThat(laptop.getIsActive()).isFalse();
+        verify(deviceRepository).saveAll(List.of(phone, laptop));
+        verify(refreshTokenRepository).revokeAllByUserId(USER_ID);
+        verify(auditLogService)
+                .recordAccountEvent(eq(USER_ID), eq(AuditAction.ALL_DEVICES_REMOVED), anyString());
+    }
+
+    @Test
+    void deleteAllMyDevices_noDevices_stillRevokesEverySession() {
+        when(deviceRepository.findByUserIdUserAndIsActiveTrue(USER_ID)).thenReturn(List.of());
+
+        deviceService.deleteAllMyDevices(USER_ID);
+
+        // A session can outlive its device row (a legacy token has none), so the revoke is not
+        // conditional on there being devices to remove.
+        verify(refreshTokenRepository).revokeAllByUserId(USER_ID);
+    }
+
+    @Test
+    void deleteAllMyDevices_oneDevice_revokesByUserNotByDevice() {
+        Device only = ownedDevice(7L, "client-phone");
+        when(deviceRepository.findByUserIdUserAndIsActiveTrue(USER_ID)).thenReturn(List.of(only));
+
+        deviceService.deleteAllMyDevices(USER_ID);
+
+        verify(refreshTokenRepository, never()).revokeAllByDeviceId(any());
+    }
 }

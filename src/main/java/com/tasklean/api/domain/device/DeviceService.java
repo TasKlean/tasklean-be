@@ -233,6 +233,25 @@ public class DeviceService {
                 "Device removed: " + device.getDeviceName());
     }
 
+    /**
+     * Removes every device the caller has: soft-deletes them all and revokes every session on the
+     * account, so the caller is signed out on the device making this call too.
+     *
+     * @param userId the caller's user id
+     */
+    @Transactional
+    public void deleteAllMyDevices(Long userId) {
+        List<Device> devices = deviceRepository.findByUserIdUserAndIsActiveTrue(userId);
+        devices.forEach(device -> device.setIsActive(false));
+        deviceRepository.saveAll(devices);
+        // Revoked per user, not per device: one statement instead of N, and it also catches a
+        // legacy token with no device, which a per-device loop would leave alive.
+        refreshTokenRepository.revokeAllByUserId(userId);
+        log.info("All devices removed: userId={} count={}", userId, devices.size());
+        auditLogService.recordAccountEvent(userId, AuditAction.ALL_DEVICES_REMOVED,
+                "All devices removed (" + devices.size() + ")");
+    }
+
     // Only a trusted hop carries the user's own address; an untrusted one resolves to our
     // frontend's egress IP. Widen this when a native client - untrusted but honest - ships.
     private void updateIpIfKnown(Device device) {

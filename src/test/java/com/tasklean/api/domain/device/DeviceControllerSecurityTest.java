@@ -18,6 +18,7 @@ import java.util.List;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -70,6 +71,18 @@ class DeviceControllerSecurityTest {
     @Test
     void logoutDevice_authenticated_ok() throws Exception {
         mockMvc.perform(post("/api/devices/5/logout").with(as(1L)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void removeAllDevices_unauthenticated_denied() throws Exception {
+        mockMvc.perform(delete("/api/devices"))
+                .andExpect(status().is4xxClientError());
+    }
+
+    @Test
+    void removeAllDevices_authenticated_ok() throws Exception {
+        mockMvc.perform(delete("/api/devices").with(as(1L)))
                 .andExpect(status().isOk());
     }
 }
