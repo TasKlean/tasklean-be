@@ -1380,6 +1380,36 @@
       }
     },
     "/api/devices" : {
+      "delete" : {
+        "description" : "Removes all of the caller's devices (soft-delete) and revokes every session on the account.\n This signs the caller out on the current device too, so the client must treat the response\n as the end of its own session.",
+        "operationId" : "removeAllDevices",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseVoid"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with a confirmation message"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Removes all of the caller's devices (soft-delete) and revokes every session on the account.",
+        "tags" : [ "Devices" ]
+      },
       "get" : {
         "description" : "Lists the caller's devices, flagging which have a live session and which is the current one.",
         "operationId" : "getMyDevices",
@@ -1556,7 +1586,7 @@
     },
     "/api/devices/{id}/logout" : {
       "post" : {
-        "description" : "Logs out a single device by revoking its session; the device stays listed as inactive.",
+        "description" : "Logs out a single device by revoking its session; the device stays listed, without a live\n session.",
         "operationId" : "logoutDevice",
         "parameters" : [ {
           "description" : "the device id",
@@ -1595,7 +1625,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Logs out a single device by revoking its session; the device stays listed as inactive.",
+        "summary" : "Logs out a single device by revoking its session; the device stays listed, without a live\n session.",
         "tags" : [ "Devices" ]
       }
     },
