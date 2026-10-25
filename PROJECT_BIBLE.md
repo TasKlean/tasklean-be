@@ -511,10 +511,13 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 | `CORS_ALLOWED_ORIGINS` | required outside dev — unset fails startup (dev profile defaults to `http://localhost:3000`) | Comma-separated browser origins allowed to call `/api/**` |
 | `APP_BASE_URL` | required outside dev — unset fails startup (dev profile defaults to `http://localhost:3000`) | Frontend origin for links in emails (e.g. the verify-email link) |
 | `GOOGLE_CLIENT_ID` | base (all profiles) | Google OAuth client ID (token audience; the only Google value the backend uses) |
-| `MAIL_HOST` | base (all profiles) | SMTP host (Mailtrap sandbox in dev) |
-| `MAIL_PORT` | base (all profiles) | SMTP port |
-| `MAIL_USERNAME` | base (all profiles) | SMTP username |
-| `MAIL_PASSWORD` | base (all profiles) | SMTP password |
+| `MAIL_HOST` | required outside dev (dev defaults to `localhost`) | SMTP host — the Mailpit container in dev, a hosted sandbox on staging |
+| `MAIL_PORT` | required outside dev (dev defaults to `1025`) | SMTP port |
+| `MAIL_USERNAME` | required outside dev (dev defaults to empty) | SMTP username |
+| `MAIL_PASSWORD` | required outside dev (dev defaults to empty) | SMTP password |
+| `MAIL_FROM` | optional (defaults to `noreply@tasklean.app`) | Sender on outgoing mail; a real-delivery provider only accepts a verified address |
+| `MAIL_SMTP_AUTH` | optional (base defaults true, dev false) | Whether to authenticate; off in dev because Mailpit speaks plain SMTP |
+| `MAIL_SMTP_STARTTLS` | optional (base defaults true, dev false) | Whether to upgrade the connection with STARTTLS |
 | `SPRING_PROFILES_ACTIVE` | base | Profile selector (defaults to `dev`) |
 
 All secrets are loaded from `.env` at the project root via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. No external library needed — Spring Boot 4.1 reads `.env` natively as a properties source. The `.env` file is gitignored — create it locally from `.env.example`. On Render (prod), these are set as environment variables directly.
@@ -534,14 +537,16 @@ All secrets are loaded from `.env` at the project root via `spring.config.import
 ### Local development
 
 ```bash
-docker-compose up -d          # Start PostgreSQL 16 on port 5432 (tasklean_dev database)
+docker-compose up -d          # Start PostgreSQL 16 (5432) + Mailpit (SMTP 1025, inbox UI 8025)
 mvnw.cmd spring-boot:run      # Start API on port 8080 (dev profile active by default)
 
-docker-compose stop           # Stop Postgres (preserves data)
-docker-compose down -v        # Destroy Postgres container + volume (full reset)
+docker-compose stop           # Stop both (preserves data)
+docker-compose down -v        # Destroy the Postgres container + volume (full reset)
 ```
 
-Docker Compose only runs Postgres — the app runs on the host. The Compose file reads `DB_USERNAME` and `DB_PASSWORD` from `.env` with defaults. On fresh start after `down -v`, Flyway re-runs all migrations + seed data automatically.
+Docker Compose runs Postgres and Mailpit — the app itself runs on the host. The Compose file reads `DB_USERNAME` and `DB_PASSWORD` from `.env` with defaults. On fresh start after `down -v`, Flyway re-runs all migrations + seed data automatically.
+
+**Mail in dev goes to Mailpit**, the local SMTP catcher: everything the app sends is captured and nothing leaves the machine, so there is no account and no quota. Read it at **http://localhost:8025**; it keeps the last 500 messages **in memory only**, so a restart empties the inbox. The dev profile defaults `MAIL_HOST`/`MAIL_PORT` to `localhost:1025` with auth and STARTTLS off, so a fresh clone sends mail with no configuration — but a `MAIL_HOST` left set in `.env` wins over that default, and a *blank* one overrides it with an empty string rather than falling back. Outside dev the four `MAIL_*` values are required and point at a hosted sandbox (see **Configuration strategy**); swapping provider is env-only and touches no code.
 
 ### Production
 
@@ -716,7 +721,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 14 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`, two-factor enabled → challenge instead of tokens); error codes (deactivated carries `ACCOUNT_DEACTIVATED`, a wrong password carries none — enumeration guard) |
-| `EmailServiceTest` | 11 | Verification link (param names, URL-encoded email, trailing-slash safe); registration-attempt notice; password-reset link carries the token; Google-only reset notice (no link); password-changed notice; password-added notice; Google linked/unlinked notices; account-deactivated notice; new-sign-in notice (device + IP, IP omitted when blank) |
+| `EmailServiceTest` | 16 | Verification link (param names, URL-encoded email, trailing-slash safe); registration-attempt notice; password-reset link carries the token; Google-only reset notice (no link); password-changed notice; password-added notice; Google linked/unlinked notices; account-deactivated notice; new-sign-in notice (device + IP, IP omitted when blank); the sender comes from config, not a constant |
 | `GoogleOAuthServiceTest` | 12 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account; `verifyLinkToken` (valid returns subject+email without touching users, unverified email throws, nonce mismatch throws) |
 | `AccountServiceTest` | 17 | changePassword (success rotates + returns new tokens, wrong current pwd throws, Google-only throws); setPassword (success, already-has-pwd throws); getConnections; linkGoogle (success, already-linked, email mismatch, sub owned by another); unlinkGoogle (success, not-linked, no-password lockout); deactivate (password account ok/wrong/missing, Google-only no password needed) |
 | `AccountControllerSecurityTest` | 4 | `@WebMvcTest` slice — connected-accounts/change-password/deactivate require authentication (anonymous denied), authenticated caller OK |
@@ -760,7 +765,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **473 tests** across 43 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **474 tests** across 43 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

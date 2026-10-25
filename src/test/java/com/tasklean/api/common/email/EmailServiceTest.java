@@ -14,13 +14,15 @@ import static org.mockito.Mockito.verify;
 @ExtendWith(MockitoExtension.class)
 class EmailServiceTest {
 
+    private static final String FROM = "noreply@tasklean.test";
+
     @Mock
     private JavaMailSender mailSender;
 
     @Test
     void sendVerificationEmail_buildsPrefilledLinkWithEncodedEmailAndCode() {
         // Trailing slash on the base URL must not produce a double slash in the link.
-        EmailService service = new EmailService(mailSender, "http://localhost:3000/");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000/", FROM);
 
         service.sendVerificationEmail("a+b@example.com", "123456");
 
@@ -37,7 +39,7 @@ class EmailServiceTest {
 
     @Test
     void sendRegistrationAttemptEmail_notifiesOwnerWithoutSecrets() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendRegistrationAttemptEmail("bob@example.com");
 
@@ -51,7 +53,7 @@ class EmailServiceTest {
 
     @Test
     void sendPasswordResetEmail_buildsResetLinkWithToken() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendPasswordResetEmail("bob@example.com", "tok-ABC123");
 
@@ -67,7 +69,7 @@ class EmailServiceTest {
 
     @Test
     void sendGoogleOnlyResetEmail_mentionsGoogleAndSendsNoLink() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendGoogleOnlyResetEmail("bob@example.com");
 
@@ -81,7 +83,7 @@ class EmailServiceTest {
 
     @Test
     void sendPasswordChangedEmail_notifiesOwnerOfChange() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendPasswordChangedEmail("bob@example.com");
 
@@ -95,7 +97,7 @@ class EmailServiceTest {
 
     @Test
     void sendPasswordSetEmail_notifiesOwnerOfAddedPassword() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendPasswordSetEmail("bob@example.com");
 
@@ -106,7 +108,7 @@ class EmailServiceTest {
 
     @Test
     void sendGoogleLinkedEmail_notifiesOwner() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendGoogleLinkedEmail("bob@example.com");
 
@@ -117,7 +119,7 @@ class EmailServiceTest {
 
     @Test
     void sendGoogleUnlinkedEmail_notifiesOwner() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendGoogleUnlinkedEmail("bob@example.com");
 
@@ -128,7 +130,7 @@ class EmailServiceTest {
 
     @Test
     void sendAccountDeactivatedEmail_notifiesOwner() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendAccountDeactivatedEmail("bob@example.com");
 
@@ -139,7 +141,7 @@ class EmailServiceTest {
 
     @Test
     void sendTwoFactorEnabledEmail_notifiesOwnerAndPointsAtRecoveryCodes() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendTwoFactorEnabledEmail("bob@example.com");
 
@@ -153,7 +155,7 @@ class EmailServiceTest {
 
     @Test
     void sendTwoFactorDisabledEmail_notifiesOwnerOfWeakenedSignIn() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendTwoFactorDisabledEmail("bob@example.com");
 
@@ -167,7 +169,7 @@ class EmailServiceTest {
 
     @Test
     void sendRecoveryCodesRegeneratedEmail_notifiesOwnerPreviousCodesAreDead() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendRecoveryCodesRegeneratedEmail("bob@example.com");
 
@@ -181,7 +183,7 @@ class EmailServiceTest {
 
     @Test
     void sendRecoveryCodeUsedEmail_notifiesOwnerOfAppFreeSignIn() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendRecoveryCodeUsedEmail("bob@example.com");
 
@@ -195,7 +197,7 @@ class EmailServiceTest {
 
     @Test
     void sendNewSignInEmail_includesDeviceAndIp() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendNewSignInEmail("bob@example.com", "Chrome on Windows", "203.0.113.5");
 
@@ -209,7 +211,7 @@ class EmailServiceTest {
 
     @Test
     void sendNewSignInEmail_blankIp_omitsIpClause() {
-        EmailService service = new EmailService(mailSender, "http://localhost:3000");
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
 
         service.sendNewSignInEmail("bob@example.com", "Chrome on Windows", null);
 
@@ -218,5 +220,17 @@ class EmailServiceTest {
         SimpleMailMessage message = captor.getValue();
 
         assertThat(message.getText()).contains("Chrome on Windows").doesNotContain("IP ");
+    }
+
+    @Test
+    void send_setsTheConfiguredFromAddress() {
+        EmailService service = new EmailService(mailSender, "http://localhost:3000", FROM);
+
+        service.sendPasswordChangedEmail("bob@example.com");
+
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(mailSender).send(captor.capture());
+        // Config-driven, not a constant: a real-delivery provider only accepts a verified sender.
+        assertThat(captor.getValue().getFrom()).isEqualTo(FROM);
     }
 }
