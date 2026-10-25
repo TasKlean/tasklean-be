@@ -13,15 +13,17 @@ import java.nio.charset.StandardCharsets;
 @Service
 public class EmailService {
 
-    private static final String FROM_ADDRESS = "noreply@tasklean.app";
-
     private final JavaMailSender mailSender;
     private final String baseUrl;
+    private final String fromAddress;
 
-    public EmailService(JavaMailSender mailSender, @Value("${app.base-url}") String baseUrl) {
+    public EmailService(JavaMailSender mailSender,
+                        @Value("${app.base-url}") String baseUrl,
+                        @Value("${app.mail.from}") String fromAddress) {
         this.mailSender = mailSender;
         // Strip any trailing slashes so the link doesn't end up with a double slash.
         this.baseUrl = StringUtils.trimTrailingCharacter(baseUrl, '/');
+        this.fromAddress = fromAddress;
     }
 
     /**
@@ -238,7 +240,7 @@ public class EmailService {
         message.setTo(to);
         message.setSubject(subject);
         message.setText(body);
-        message.setFrom(FROM_ADDRESS);
+        message.setFrom(fromAddress);
         mailSender.send(message);
     }
 }

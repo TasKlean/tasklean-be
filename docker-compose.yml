@@ -18,5 +18,24 @@ services:
       timeout: 5s
       retries: 5
 
+  mailpit:
+    image: axllent/mailpit:v1.32
+    container_name: tasklean-mail
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    environment:
+      # Ring buffer, so a container left running for weeks never fills the disk.
+      MP_MAX_MESSAGES: 500
+      # Accept any credentials over a plain connection, so one Spring config shape works
+      # against both Mailpit and a hosted sandbox - dev needs no settings of its own.
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
