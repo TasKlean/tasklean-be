@@ -236,13 +236,38 @@ Rules for adding one:
 - `EMAIL_DELIVERY_FAILED` is deliberately **not** returned by forgot-password or resend-verification,
   even though those also depend on an email. See **Email delivery policy**.
 
+### How an email is composed
+
+A template declares its content as a list of `EmailBlock`s (`common/email/html/`) - heading, paragraph,
+note, button, code, data row - and `EmailLayout` renders that one list **twice**: as the HTML document
+and as the plain-text part. Neither part is written by hand, so the two cannot drift; adding an email
+means adding a template, and adding a kind of content means adding a block.
+
+- **Both parts, always.** The message is multipart/alternative. The text part is the fallback for clients
+  that will not render HTML, and an HTML-only message also scores worse with spam filters.
+- **A button always carries its URL in full** underneath it, because a client may strip the button and a
+  reader may not be able to tap it.
+- **Blocks escape what they interpolate** (`EmailBlock.escape`). This matters: the sign-in alert prints a
+  device name derived from the caller's own `User-Agent`, which would otherwise be markup injection into
+  the message body. Plain text had no such hole, HTML does.
+- **Tables and inline styles, px and hex.** Outlook on Windows renders with Word's engine - no flexbox,
+  no grid, no CSS variables, no rem.
+- **The logo is attached inline** (`src/main/resources/email/logo.png`, content id `logo`), not linked:
+  an inline part renders without the reader allowing remote images, and there is no URL to keep alive.
+  It is the light-blue mark on the slate header band, which stays slate in both schemes, so one asset
+  covers both. `addInline` must be called **after** `setText` or the image silently detaches.
+- **Dark mode is honoured where it can be.** `color-scheme`/`supported-color-schemes` plus a
+  `prefers-color-scheme` block (the only styles that cannot be inline, since a media query needs a class)
+  give a true dark scheme in Apple Mail and Outlook. **Gmail ignores it on every platform** and
+  force-inverts instead, which is why the light palette avoids pure white and the brand band is solid.
+
 ### Email delivery policy
 
 `EmailTemplates` (`common/email/`) holds every email the app sends as an `EmailContent` record - subject,
-body and a `Delivery` (`common/email/Delivery.java`) that decides what happens when the provider refuses.
-`EmailService.send(to, content)` is the **only** way out to the mail provider and applies that policy, so
-the failure behaviour of a flow is a property of its template, not of its caller: a service picks a
-template, it cannot pick what a refusal means.
+both body parts and a `Delivery` (`common/email/Delivery.java`) that decides what happens when the
+provider refuses. `EmailService.send(to, content)` is the **only** way out to the mail provider and
+applies that policy, so the failure behaviour of a flow is a property of its template, not of its caller:
+a service picks a template, it cannot pick what a refusal means.
 
 - **`ADVISORY`** — caught, logged at WARN (subject only, never the body: bodies carry codes, links and
   device details), never rethrown. Correct whenever the operation has already happened: a sign-in alert,
@@ -758,8 +783,10 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 14 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`, two-factor enabled → challenge instead of tokens); error codes (deactivated carries `ACCOUNT_DEACTIVATED`, a wrong password carries none — enumeration guard) |
-| `EmailTemplatesTest` | 19 | Verification link (param names, URL-encoded email, trailing-slash safe); password-reset link carries the token; Google-only reset notice (no link); new-sign-in notice (device + IP, IP omitted when blank); the copy of every notification template; **delivery policy** - the registration-attempt notice is essential, the reset link is advisory despite being the deliverable, every other notification is advisory, and the verification template obeys whichever policy its caller passes |
-| `EmailServiceTest` | 3 | Transport only: the content and the configured sender land on the message; an advisory refusal is swallowed; an essential one rethrows as `EmailDeliveryException` |
+| `EmailTemplatesTest` | 20 | Verification link (param names, URL-encoded email, trailing-slash safe); password-reset link carries the token; Google-only reset notice (no link); new-sign-in notice (device + IP, IP omitted when blank); the copy of every notification template; **delivery policy** - the registration-attempt notice is essential, the reset link is advisory despite being the deliverable, every other notification is advisory, and the verification template obeys whichever policy its caller passes |
+| `EmailServiceTest` | 6 | Transport only: recipient/subject/configured sender land on the message; it is assembled as HTML with a plain-text alternative; the logo is attached inline and the asset is on the classpath; an advisory refusal is swallowed; an essential one rethrows as `EmailDeliveryException` |
+| `EmailBlockTest` | 7 | A client-supplied value is escaped in HTML and left alone in text; a URL's `&` is escaped; a button renders the pill **and** the URL in full; every block renders both parts |
+| `EmailLayoutTest` | 4 | The shell wraps the blocks (doctype through `</html>`); both schemes declared and the dark overrides marked important; the logo referenced as `cid:`; the text part joins the blocks with no markup |
 | `GoogleOAuthServiceTest` | 13 | New-user provisioning; returning Google user (two-factor enabled returns a challenge and withholds tokens); link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account; `verifyLinkToken` (valid returns subject+email without touching users, unverified email throws, nonce mismatch throws) |
 | `AccountServiceTest` | 17 | changePassword (success rotates + returns new tokens, wrong current pwd throws, Google-only throws); setPassword (success, already-has-pwd throws); getConnections; linkGoogle (success, already-linked, email mismatch, sub owned by another); unlinkGoogle (success, not-linked, no-password lockout); deactivate (password account ok/wrong/missing, Google-only no password needed) |
 | `AccountControllerSecurityTest` | 4 | `@WebMvcTest` slice — connected-accounts/change-password/deactivate require authentication (anonymous denied), authenticated caller OK |
@@ -803,7 +830,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **481 tests** across 44 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **496 tests** across 46 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

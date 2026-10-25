@@ -99,7 +99,7 @@ class PasswordResetServiceTest {
         verify(tokenRepository).deleteByUserIdUser(1L);
         verify(tokenRepository).save(any(PasswordResetToken.class));
         verify(emailService).send(eq("bob@example.com"),
-                argThat(content -> content.body().contains("/reset-password?token=")));
+                argThat(content -> content.text().contains("/reset-password?token=")));
     }
 
     @Test
@@ -136,7 +136,7 @@ class PasswordResetServiceTest {
         verify(emailService).send("bob@example.com", emailTemplates.googleOnlyReset());
         verify(tokenRepository, never()).save(any());
         verify(emailService, never()).send(anyString(),
-                argThat(content -> content.body().contains("/reset-password?token=")));
+                argThat(content -> content.text().contains("/reset-password?token=")));
     }
 
     // --- resetPassword ---
