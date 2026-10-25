@@ -54,21 +54,7 @@ public class VerificationService {
      */
     @Transactional
     public void createAndSendVerification(User user, Delivery delivery) {
-        verificationRepository.deleteByUserIdUser(user.getIdUser());
-
-        String code = generateCode();
-
-        EmailVerification verification = EmailVerification.builder()
-                .user(user)
-                .code(code)
-                .expiresAt(LocalDateTime.now(clock).plusMinutes(CODE_EXPIRY_MINUTES))
-                .build();
-
-        verificationRepository.save(verification);
-        emailService.send(user.getEmail(),
-                emailTemplates.verificationCode(user.getEmail(), code, delivery));
-        // Never log the code itself.
-        log.info("Verification code sent: uid={}", user.getUid());
+        issueCode(user, delivery);
     }
 
     /**
@@ -112,7 +98,27 @@ public class VerificationService {
         // verified address, so failing loudly here would tell a caller which addresses exist.
         userRepository.findByEmail(request.getEmail())
                 .filter(user -> !user.getIsEmailVerified())
-                .ifPresent(user -> createAndSendVerification(user, Delivery.ADVISORY));
+                .ifPresent(user -> issueCode(user, Delivery.ADVISORY));
+    }
+
+    // Shared by both entry points as a private method rather than one calling the other: a self-call
+    // would bypass the Spring proxy, leaving the @Transactional on the inner method silently inert.
+    private void issueCode(User user, Delivery delivery) {
+        verificationRepository.deleteByUserIdUser(user.getIdUser());
+
+        String code = generateCode();
+
+        EmailVerification verification = EmailVerification.builder()
+                .user(user)
+                .code(code)
+                .expiresAt(LocalDateTime.now(clock).plusMinutes(CODE_EXPIRY_MINUTES))
+                .build();
+
+        verificationRepository.save(verification);
+        emailService.send(user.getEmail(),
+                emailTemplates.verificationCode(user.getEmail(), code, delivery));
+        // Never log the code itself.
+        log.info("Verification code sent: uid={}", user.getUid());
     }
 
     private String generateCode() {
