@@ -236,13 +236,38 @@ Rules for adding one:
 - `EMAIL_DELIVERY_FAILED` is deliberately **not** returned by forgot-password or resend-verification,
   even though those also depend on an email. See **Email delivery policy**.
 
+### How an email is composed
+
+A template declares its content as a list of `EmailBlock`s (`common/email/html/`) - heading, paragraph,
+note, button, code, data row - and `EmailLayout` renders that one list **twice**: as the HTML document
+and as the plain-text part. Neither part is written by hand, so the two cannot drift; adding an email
+means adding a template, and adding a kind of content means adding a block.
+
+- **Both parts, always.** The message is multipart/alternative. The text part is the fallback for clients
+  that will not render HTML, and an HTML-only message also scores worse with spam filters.
+- **A button always carries its URL in full** underneath it, because a client may strip the button and a
+  reader may not be able to tap it.
+- **Blocks escape what they interpolate** (`EmailBlock.escape`). This matters: the sign-in alert prints a
+  device name derived from the caller's own `User-Agent`, which would otherwise be markup injection into
+  the message body. Plain text had no such hole, HTML does.
+- **Tables and inline styles, px and hex.** Outlook on Windows renders with Word's engine - no flexbox,
+  no grid, no CSS variables, no rem.
+- **The logo is attached inline** (`src/main/resources/email/logo.png`, content id `logo`), not linked:
+  an inline part renders without the reader allowing remote images, and there is no URL to keep alive.
+  It is the light-blue mark on the slate header band, which stays slate in both schemes, so one asset
+  covers both. `addInline` must be called **after** `setText` or the image silently detaches.
+- **Dark mode is honoured where it can be.** `color-scheme`/`supported-color-schemes` plus a
+  `prefers-color-scheme` block (the only styles that cannot be inline, since a media query needs a class)
+  give a true dark scheme in Apple Mail and Outlook. **Gmail ignores it on every platform** and
+  force-inverts instead, which is why the light palette avoids pure white and the brand band is solid.
+
 ### Email delivery policy
 
 `EmailTemplates` (`common/email/`) holds every email the app sends as an `EmailContent` record - subject,
-body and a `Delivery` (`common/email/Delivery.java`) that decides what happens when the provider refuses.
-`EmailService.send(to, content)` is the **only** way out to the mail provider and applies that policy, so
-the failure behaviour of a flow is a property of its template, not of its caller: a service picks a
-template, it cannot pick what a refusal means.
+both body parts and a `Delivery` (`common/email/Delivery.java`) that decides what happens when the
+provider refuses. `EmailService.send(to, content)` is the **only** way out to the mail provider and
+applies that policy, so the failure behaviour of a flow is a property of its template, not of its caller:
+a service picks a template, it cannot pick what a refusal means.
 
 - **`ADVISORY`** — caught, logged at WARN (subject only, never the body: bodies carry codes, links and
   device details), never rethrown. Correct whenever the operation has already happened: a sign-in alert,
@@ -261,6 +286,7 @@ nothing* — because if it does, an error on the sending branch tells the caller
 | `register` | ESSENTIAL | **Both** branches email (verification code, or the "account already exists" notice to the real owner), so an outage fails both identically and leaks nothing |
 | `forgot-password` | ADVISORY | Unknown or deactivated addresses are a silent no-op, so a 503 for a real one would be an account-existence oracle. The user simply gets no email — accepted deliberately |
 | `resend-verification` | ADVISORY | Same shape: a no-op for unknown or already-verified addresses |
+| `verify-email` | ADVISORY | The welcome email. `verifyEmail` is `@Transactional`, so an essential failure would roll the verification back - a mail outage would stop people finishing sign-up |
 | everything else | ADVISORY | The operation already committed |
 
 This is why the registration-attempt notice is ESSENTIAL although it creates nothing: it exists to avoid
@@ -464,7 +490,7 @@ Authenticated, self-scoped (`AccountController` at `/api/account`, caller from t
 
 **Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → look up the email. **If it already exists**: send the owner an "account already exists" email and return the same neutral response (no create, no 409) — so the caller can't tell the address is taken (enumeration-safe). **If new**: hash password (BCrypt) → create User with random UID → generate & send a 6-digit verification code (5-min expiry). Either way the response is `AuthResponse.registrationPending(email)` — just the email + a neutral message, no JWT/uid/name. The verification email carries a prefilled link `${APP_BASE_URL}/verify-email?email=&code=` (the link only lands on the FE page — nothing verifies on GET, so a mail scanner's prefetch can't spend the single-use code) plus the raw code as a fallback.
 
-**Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
+**Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → send the welcome email → generate JWT → return `AuthResponse`. The welcome lands here rather than at registration because this is the point the account becomes usable; it arrives just before the new-sign-in alert the token issue triggers. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
 
 **Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
 
@@ -478,7 +504,7 @@ Authenticated, self-scoped (`AccountController` at `/api/account`, caller from t
 
 **Logout (per-device)**: hash incoming refresh token → look up non-revoked match → revoke every refresh token on **that token's device** (a legacy token with no device revokes only itself). Invalid token returns 401. **Logout everywhere** (`/api/auth/logout-all`) is the same lookup but revokes every token for the user — the explicit "sign out all sessions" action from settings.
 
-**Sessions & devices**: a sign-in is modelled as a `device` row plus its live refresh token. On login/verify/Google, `DeviceService.resolveLoginDevice` finds-or-creates the user's device by the `X-Device-Id` header (parsing the user-agent into a "Chrome on Windows"-style name via `UserAgentParser`, recording IP); the refresh token is bound to it, and rotation reissues on the same device so identity survives. Rotation also calls `DeviceService.recordActivity`, the single writer of device activity: it advances `last_used` and refreshes `ip_address` when the hop is trusted, so an address cannot sit on a network the user has left while the timestamp keeps moving. Both writes live in one method precisely so they cannot drift apart again. The address is therefore at most one access-token lifetime of *activity* stale — an idle session does not rotate, and so reports neither new time nor new place. A first sign-in on an unseen `(user, device)` emails a new-sign-in alert (keyed on device/UA, not IP, to avoid mobile-IP noise).
+**Sessions & devices**: a sign-in is modelled as a `device` row plus its live refresh token. On login/verify/Google, `DeviceService.resolveLoginDevice` finds-or-creates the user's device by the `X-Device-Id` header (parsing the user-agent into a "Chrome on Windows"-style name via `UserAgentParser`, recording IP); the refresh token is bound to it, and rotation reissues on the same device so identity survives. Rotation also calls `DeviceService.recordActivity`, the single writer of device activity: it advances `last_used` and refreshes `ip_address` when the hop is trusted, so an address cannot sit on a network the user has left while the timestamp keeps moving. Both writes live in one method precisely so they cannot drift apart again. The address is therefore at most one access-token lifetime of *activity* stale — an idle session does not rotate, and so reports neither new time nor new place. A first sign-in on an unseen `(user, device)` emails a new-sign-in alert (keyed on device/UA, not IP, to avoid mobile-IP noise). It is **not** suppressed for a brand-new account, even though that means three emails in the first minute (code, welcome, alert): "the user has no other active devices" is also true right after `DELETE /api/devices`, so suppressing on device state would go quiet exactly when someone wipes their sessions over a suspected compromise - and would undo `isNew = device == null || returning`, which exists to alert on a removed device coming back.
 
 **Removal is final, and a return counts as new.** `deleteMyDevice` soft-deletes (`is_active=false`) and revokes the device's tokens, but the login lookup is by `(user_id, client_device_id)` and deliberately ignores `is_active`, because that pair is unique — a removed device has to reuse its row rather than get a second one. So `resolveLoginDevice` treats a row it finds inactive as **newly seen**: `isNew` is true, which is the only input `createRefreshToken` reads, so the return alerts and audits exactly like a first sighting. It also resets `device_name` from the user-agent, since a device the user deliberately removed should not come back wearing the name they gave it; a rename still survives an ordinary re-login. `date_created` is left alone — `@CreationTimestamp` only writes on insert — so the column means first-ever sighting rather than "added on". Note `logoutMyDevice` does *not* deactivate: revoking a session leaves a known device known, so a re-login after it is correctly quiet.
 
@@ -758,8 +784,10 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 14 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`, two-factor enabled → challenge instead of tokens); error codes (deactivated carries `ACCOUNT_DEACTIVATED`, a wrong password carries none — enumeration guard) |
-| `EmailTemplatesTest` | 19 | Verification link (param names, URL-encoded email, trailing-slash safe); password-reset link carries the token; Google-only reset notice (no link); new-sign-in notice (device + IP, IP omitted when blank); the copy of every notification template; **delivery policy** - the registration-attempt notice is essential, the reset link is advisory despite being the deliverable, every other notification is advisory, and the verification template obeys whichever policy its caller passes |
-| `EmailServiceTest` | 3 | Transport only: the content and the configured sender land on the message; an advisory refusal is swallowed; an essential one rethrows as `EmailDeliveryException` |
+| `EmailTemplatesTest` | 22 | Verification link (param names, URL-encoded email, trailing-slash safe); password-reset link carries the token; Google-only reset notice (no link); new-sign-in notice (device + IP, IP omitted when blank); the welcome greeting and its link into the app; the copy of every notification template; **delivery policy** - the registration-attempt notice is essential, the reset link is advisory despite being the deliverable, every other notification is advisory, and the verification template obeys whichever policy its caller passes |
+| `EmailServiceTest` | 6 | Transport only: recipient/subject/configured sender land on the message; it is assembled as HTML with a plain-text alternative; the logo is attached inline and the asset is on the classpath; an advisory refusal is swallowed; an essential one rethrows as `EmailDeliveryException` |
+| `EmailBlockTest` | 7 | A client-supplied value is escaped in HTML and left alone in text; a URL's `&` is escaped; a button renders the pill **and** the URL in full; every block renders both parts |
+| `EmailLayoutTest` | 4 | The shell wraps the blocks (doctype through `</html>`); both schemes declared and the dark overrides marked important; the logo referenced as `cid:`; the text part joins the blocks with no markup |
 | `GoogleOAuthServiceTest` | 13 | New-user provisioning; returning Google user (two-factor enabled returns a challenge and withholds tokens); link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account; `verifyLinkToken` (valid returns subject+email without touching users, unverified email throws, nonce mismatch throws) |
 | `AccountServiceTest` | 17 | changePassword (success rotates + returns new tokens, wrong current pwd throws, Google-only throws); setPassword (success, already-has-pwd throws); getConnections; linkGoogle (success, already-linked, email mismatch, sub owned by another); unlinkGoogle (success, not-linked, no-password lockout); deactivate (password account ok/wrong/missing, Google-only no password needed) |
 | `AccountControllerSecurityTest` | 4 | `@WebMvcTest` slice — connected-accounts/change-password/deactivate require authentication (anonymous denied), authenticated caller OK |
@@ -803,7 +831,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **481 tests** across 44 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **498 tests** across 46 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

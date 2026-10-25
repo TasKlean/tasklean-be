@@ -128,6 +128,7 @@ class VerificationServiceTest {
         verify(userRepository).save(user);
         verify(verificationRepository).deleteByUserIdUser(1L);
         verify(auditLogService).recordAccountEvent(eq(1L), eq(AuditAction.EMAIL_VERIFIED), anyString());
+        verify(emailService).send("test@example.com", emailTemplates.welcome());
     }
 
     @Test
@@ -145,6 +146,8 @@ class VerificationServiceTest {
         assertThatThrownBy(() -> verificationService.verifyEmail(request))
                 .isInstanceOf(BadCredentialsException.class)
                 .hasMessageContaining("Invalid email or code");
+        // No welcome for an account that is not verified after all.
+        verify(emailService, never()).send(any(), any());
     }
 
     @Test

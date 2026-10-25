@@ -1,19 +1,33 @@
 package com.tasklean.api.common.email;
 
+import com.tasklean.api.common.email.html.EmailBlock;
+import com.tasklean.api.common.email.html.EmailLayout;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+
+import static com.tasklean.api.common.email.html.EmailBlock.button;
+import static com.tasklean.api.common.email.html.EmailBlock.code;
+import static com.tasklean.api.common.email.html.EmailBlock.dataRow;
+import static com.tasklean.api.common.email.html.EmailBlock.heading;
+import static com.tasklean.api.common.email.html.EmailBlock.note;
+import static com.tasklean.api.common.email.html.EmailBlock.paragraph;
 
 /**
- * Every email the app sends, as composed content. Each template owns both its copy and its
- * {@link Delivery} policy, so the question "may this email be lost?" is answered once, next to the
- * words, rather than re-decided by each caller.
+ * Every email the app sends, declared as a list of {@link EmailBlock}s. Each template owns its
+ * copy, its structure and its {@link Delivery} policy, so the question "may this email be lost?" is
+ * answered once, next to the words, rather than re-decided by each caller.
  *
- * <p>Holds the frontend base URL because two templates carry links into it. Pure functions — nothing
- * here touches the mail provider; {@link EmailService} does the sending.
+ * <p>A template declares its content once and {@link EmailLayout} renders it twice, as HTML and as
+ * plain text - the two parts of a message cannot drift apart because neither is written by hand.
+ *
+ * <p>Holds the frontend base URL because the linking templates point into it. Pure functions —
+ * nothing here touches the mail provider; {@link EmailService} does the sending.
  */
 @Component
 public class EmailTemplates {
@@ -29,10 +43,10 @@ public class EmailTemplates {
     }
 
     /**
-     * The email-verification message: a link to the frontend verify page (prefilled with the email
-     * and code) plus the raw code as a manual-entry fallback. The link only lands on the page;
-     * verification itself happens when the recipient clicks there, so a mail scanner prefetching the
-     * link can't spend the single-use code.
+     * The email-verification message: a button to the frontend verify page (prefilled with the
+     * email and code) plus the raw code as a manual-entry fallback. The link only lands on the
+     * page; verification itself happens when the recipient clicks there, so a mail scanner
+     * prefetching the link can't spend the single-use code.
      *
      * <p>The only template whose caller chooses the policy: registration cannot succeed without the
      * code, but a resend must stay indistinguishable from the no-op it performs for an unknown or
@@ -46,10 +60,30 @@ public class EmailTemplates {
     public EmailContent verificationCode(String to, String code, Delivery delivery) {
         String link = baseUrl + "/verify-email?email=" + URLEncoder.encode(to, StandardCharsets.UTF_8)
                 + "&code=" + code;
-        return new EmailContent("TasKlean - Verify your email",
-                "Verify your email by opening this link:\n" + link
-                        + "\n\nOr enter this code manually: " + code
-                        + "\n\nThis code expires in 5 minutes.", delivery);
+        return compose("TasKlean - Verify your email", delivery,
+                heading("Verify your email"),
+                paragraph("Verify your email address to finish setting up your account."),
+                button("Verify email", link),
+                paragraph("Or enter this code manually:"),
+                code(code),
+                note("This code expires in 5 minutes."));
+    }
+
+    /**
+     * Greets a new account once its email is verified, and points at the app.
+     *
+     * <p>Advisory, and it has to be: {@code verifyEmail} is transactional, so failing here would
+     * roll back the verification itself - a mail outage would stop people finishing sign-up.
+     *
+     * @return the composed message
+     */
+    public EmailContent welcome() {
+        return compose("TasKlean - Your account is ready", Delivery.ADVISORY,
+                heading("Welcome to TasKlean"),
+                paragraph("Your email is verified and your account is ready to use."),
+                paragraph("TasKlean keeps a household's chores in one place, so everyone can see "
+                        + "what needs doing and who is doing it."),
+                button("Open TasKlean", baseUrl + "/app"));
     }
 
     /**
@@ -62,15 +96,17 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent registrationAttempt() {
-        return new EmailContent("TasKlean - Account already exists", """
-                Someone tried to create a TasKlean account with this email, but an account already exists.
-
-                If this was you, just sign in instead - you can use your password or Google.
-                If it wasn't you, you can safely ignore this email.""", Delivery.ESSENTIAL);
+        return compose("TasKlean - Account already exists", Delivery.ESSENTIAL,
+                heading("Account already exists"),
+                paragraph("Someone tried to create a TasKlean account with this email, but an "
+                        + "account already exists."),
+                paragraph("If this was you, just sign in instead - you can use your password or "
+                        + "Google."),
+                note("If it wasn't you, you can safely ignore this email."));
     }
 
     /**
-     * A password-reset link to the frontend reset page, carrying the single-use token.
+     * A password-reset button to the frontend reset page, carrying the single-use token.
      *
      * <p>Advisory even though the link is the whole point: forgot-password answers an unknown
      * address with a silent no-op, so failing here would reveal which addresses exist.
@@ -80,13 +116,14 @@ public class EmailTemplates {
      */
     public EmailContent passwordReset(String token) {
         String link = baseUrl + "/reset-password?token=" + token;
-        return new EmailContent("TasKlean - Reset your password", """
-                Reset your password by opening this link:
-                %s
-
-                This link expires in 15 minutes and can be used once.
-                If you didn't request this, you can safely ignore this email - your password stays unchanged.""".formatted(link),
-                Delivery.ADVISORY);
+        return compose("TasKlean - Reset your password", Delivery.ADVISORY,
+                heading("Reset your password"),
+                paragraph("You asked to reset your TasKlean password. Use the link below to "
+                        + "choose a new one."),
+                button("Reset password", link),
+                note("This link expires in 15 minutes and can be used once."),
+                note("If you didn't request this, you can safely ignore this email - your password "
+                        + "stays unchanged."));
     }
 
     /**
@@ -96,11 +133,13 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent googleOnlyReset() {
-        return new EmailContent("TasKlean - Password reset", """
-                You asked to reset your TasKlean password, but this account signs in with Google.
-
-                There's no password to reset - just use "Continue with Google" to sign in.
-                If you didn't request this, you can safely ignore this email.""", Delivery.ADVISORY);
+        return compose("TasKlean - Password reset", Delivery.ADVISORY,
+                heading("Password reset"),
+                paragraph("You asked to reset your TasKlean password, but this account signs in "
+                        + "with Google."),
+                paragraph("There's no password to reset - just use \"Continue with Google\" to "
+                        + "sign in."),
+                note("If you didn't request this, you can safely ignore this email."));
     }
 
     /**
@@ -110,12 +149,13 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent passwordChanged() {
-        return new EmailContent("TasKlean - Your password was changed", """
-                Your TasKlean password was just changed, and you've been signed out on all devices.
-
-                If this was you, you can ignore this email.
-                If it wasn't you, reset your password immediately and contact support - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - Your password was changed", Delivery.ADVISORY,
+                heading("Your password was changed"),
+                paragraph("Your TasKlean password was just changed, and you've been signed out on "
+                        + "all devices."),
+                note("If this was you, you can ignore this email."),
+                note("If it wasn't you, reset your password immediately and contact support - your "
+                        + "account may be compromised."));
     }
 
     /**
@@ -125,14 +165,14 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent passwordSet() {
-        return new EmailContent("TasKlean - A password was added to your account", """
-                A password was just added to your TasKlean account. You can now sign in with your
-                email and password, or keep using Google. For your security, your other sessions
-                have been signed out.
-
-                If this was you, you can ignore this email.
-                If it wasn't you, reset your password immediately and contact support - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - A password was added to your account", Delivery.ADVISORY,
+                heading("A password was added to your account"),
+                paragraph("A password was just added to your TasKlean account. You can now sign in "
+                        + "with your email and password, or keep using Google. For your security, "
+                        + "your other sessions have been signed out."),
+                note("If this was you, you can ignore this email."),
+                note("If it wasn't you, reset your password immediately and contact support - your "
+                        + "account may be compromised."));
     }
 
     /**
@@ -141,12 +181,13 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent googleLinked() {
-        return new EmailContent("TasKlean - Google was linked to your account", """
-                A Google account was just linked to your TasKlean account, so you can now sign in with Google.
-
-                If this was you, you can ignore this email.
-                If it wasn't you, unlink Google and change your password from your account settings - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - Google was linked to your account", Delivery.ADVISORY,
+                heading("Google was linked to your account"),
+                paragraph("A Google account was just linked to your TasKlean account, so you can "
+                        + "now sign in with Google."),
+                note("If this was you, you can ignore this email."),
+                note("If it wasn't you, unlink Google and change your password from your account "
+                        + "settings - your account may be compromised."));
     }
 
     /**
@@ -155,12 +196,13 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent googleUnlinked() {
-        return new EmailContent("TasKlean - Google was unlinked from your account", """
-                Google sign-in was just removed from your TasKlean account. You'll now sign in with your email and password.
-
-                If this was you, you can ignore this email.
-                If it wasn't you, change your password immediately and contact support - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - Google was unlinked from your account", Delivery.ADVISORY,
+                heading("Google was unlinked from your account"),
+                paragraph("Google sign-in was just removed from your TasKlean account. You'll now "
+                        + "sign in with your email and password."),
+                note("If this was you, you can ignore this email."),
+                note("If it wasn't you, change your password immediately and contact support - "
+                        + "your account may be compromised."));
     }
 
     /**
@@ -169,12 +211,13 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent accountDeactivated() {
-        return new EmailContent("TasKlean - Your account was deactivated", """
-                Your TasKlean account was just deactivated and you've been signed out everywhere.
-
-                If this was you, no further action is needed.
-                If it wasn't you, contact support right away - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - Your account was deactivated", Delivery.ADVISORY,
+                heading("Your account was deactivated"),
+                paragraph("Your TasKlean account was just deactivated and you've been signed out "
+                        + "everywhere."),
+                note("If this was you, no further action is needed."),
+                note("If it wasn't you, contact support right away - your account may be "
+                        + "compromised."));
     }
 
     /**
@@ -184,15 +227,15 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent twoFactorEnabled() {
-        return new EmailContent("TasKlean - Two-factor authentication is on", """
-                Two-factor authentication was just turned on for your TasKlean account. From now on
-                you'll enter a code from your authenticator app when you sign in, and your other
-                sessions have been signed out.
-
-                Keep your recovery codes somewhere safe - they're the only way back in if you lose your phone.
-
-                If this wasn't you, contact support right away - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - Two-factor authentication is on", Delivery.ADVISORY,
+                heading("Two-factor authentication is on"),
+                paragraph("Two-factor authentication was just turned on for your TasKlean account. "
+                        + "From now on you'll enter a code from your authenticator app when you "
+                        + "sign in, and your other sessions have been signed out."),
+                paragraph("Keep your recovery codes somewhere safe - they're the only way back in "
+                        + "if you lose your phone."),
+                note("If this wasn't you, contact support right away - your account may be "
+                        + "compromised."));
     }
 
     /**
@@ -202,12 +245,13 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent twoFactorDisabled() {
-        return new EmailContent("TasKlean - Two-factor authentication is off", """
-                Two-factor authentication was just turned off for your TasKlean account, and your
-                other sessions have been signed out. You'll now sign in with your password alone.
-
-                If this wasn't you, turn it back on and change your password immediately - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - Two-factor authentication is off", Delivery.ADVISORY,
+                heading("Two-factor authentication is off"),
+                paragraph("Two-factor authentication was just turned off for your TasKlean "
+                        + "account, and your other sessions have been signed out. You'll now sign "
+                        + "in with your password alone."),
+                note("If this wasn't you, turn it back on and change your password immediately - "
+                        + "your account may be compromised."));
     }
 
     /**
@@ -216,12 +260,12 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent recoveryCodesRegenerated() {
-        return new EmailContent("TasKlean - New recovery codes were generated", """
-                A new set of two-factor recovery codes was just generated for your TasKlean account.
-                Your previous codes no longer work.
-
-                If this wasn't you, contact support right away - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - New recovery codes were generated", Delivery.ADVISORY,
+                heading("New recovery codes were generated"),
+                paragraph("A new set of two-factor recovery codes was just generated for your "
+                        + "TasKlean account. Your previous codes no longer work."),
+                note("If this wasn't you, contact support right away - your account may be "
+                        + "compromised."));
     }
 
     /**
@@ -231,14 +275,14 @@ public class EmailTemplates {
      * @return the composed message
      */
     public EmailContent recoveryCodeUsed() {
-        return new EmailContent("TasKlean - A recovery code was used to sign in", """
-                Someone signed in to your TasKlean account with a two-factor recovery code instead of
-                your authenticator app. That code is now used up.
-
-                If this was you, no further action is needed - you can generate a fresh set of codes
-                in your account settings.
-                If it wasn't you, change your password and generate new recovery codes right away - your account may be compromised.""",
-                Delivery.ADVISORY);
+        return compose("TasKlean - A recovery code was used to sign in", Delivery.ADVISORY,
+                heading("A recovery code was used to sign in"),
+                paragraph("Someone signed in to your TasKlean account with a two-factor recovery "
+                        + "code instead of your authenticator app. That code is now used up."),
+                note("If this was you, no further action is needed - you can generate a fresh set "
+                        + "of codes in your account settings."),
+                note("If it wasn't you, change your password and generate new recovery codes right "
+                        + "away - your account may be compromised."));
     }
 
     /**
@@ -246,17 +290,29 @@ public class EmailTemplates {
      * unrecognised sign-in is noticeable. Carries only the device label and IP, never credentials.
      *
      * @param deviceName the friendly device label (e.g. "Chrome on Windows")
-     * @param ipAddress  the IP the sign-in came from; omitted from the message when null/blank
+     * @param ipAddress  the IP the sign-in came from; the row is omitted when null/blank
      * @return the composed message
      */
     public EmailContent newSignIn(String deviceName, String ipAddress) {
-        String fromIp = (ipAddress != null && !ipAddress.isBlank()) ? " (IP " + ipAddress + ")" : "";
-        return new EmailContent("TasKlean - New sign-in to your account", """
-                Your TasKlean account was just signed into from a new device:
-                %s%s
+        List<EmailBlock> blocks = new ArrayList<>(List.of(
+                heading("New sign-in to your account"),
+                paragraph("Your TasKlean account was just signed into from a new device:"),
+                dataRow("Device", deviceName)));
+        if (ipAddress != null && !ipAddress.isBlank()) {
+            blocks.add(dataRow("IP address", ipAddress));
+        }
+        blocks.add(note("If this was you, you can ignore this email."));
+        blocks.add(note("If it wasn't you, change your password and sign out everywhere from your "
+                + "account settings."));
+        return compose("TasKlean - New sign-in to your account", Delivery.ADVISORY, blocks);
+    }
 
-                If this was you, you can ignore this email.
-                If it wasn't you, change your password and sign out everywhere from your account settings.""".formatted(deviceName, fromIp),
-                Delivery.ADVISORY);
+    private EmailContent compose(String subject, Delivery delivery, EmailBlock... blocks) {
+        return compose(subject, delivery, List.of(blocks));
+    }
+
+    private EmailContent compose(String subject, Delivery delivery, List<EmailBlock> blocks) {
+        return new EmailContent(subject, EmailLayout.renderText(blocks),
+                EmailLayout.renderHtml(blocks), delivery);
     }
 }

@@ -2,11 +2,51 @@ package com.tasklean.api.common.email;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class EmailTemplatesTest {
 
     private final EmailTemplates templates = new EmailTemplates("http://localhost:3000");
+
+    /** Every template, for the invariants that have to hold across all of them. */
+    private List<EmailContent> all() {
+        return List.of(
+                templates.verificationCode("bob@example.com", "123456", Delivery.ESSENTIAL),
+                templates.welcome(),
+                templates.registrationAttempt(),
+                templates.passwordReset("tok-ABC123"),
+                templates.googleOnlyReset(),
+                templates.passwordChanged(),
+                templates.passwordSet(),
+                templates.googleLinked(),
+                templates.googleUnlinked(),
+                templates.accountDeactivated(),
+                templates.twoFactorEnabled(),
+                templates.twoFactorDisabled(),
+                templates.recoveryCodesRegenerated(),
+                templates.recoveryCodeUsed(),
+                templates.newSignIn("Chrome on Windows", "203.0.113.5"));
+    }
+
+    /** Asserts a phrase reaches both parts — the guard against the two drifting apart. */
+    private void assertBothParts(EmailContent content, String... phrases) {
+        assertThat(content.text()).contains(phrases);
+        assertThat(content.html()).contains(phrases);
+    }
+
+    // --- invariants ---
+
+    @Test
+    void everyTemplate_rendersAFullDocumentAndAReadableTextPart() {
+        for (EmailContent content : all()) {
+            assertThat(content.subject()).startsWith("TasKlean - ");
+            assertThat(content.html()).startsWith("<!DOCTYPE html>");
+            // A template that forgot to compose would leave markup in the fallback part.
+            assertThat(content.text()).isNotBlank().doesNotContain("<");
+        }
+    }
 
     // --- links ---
 
@@ -18,93 +58,103 @@ class EmailTemplatesTest {
         EmailContent content = withSlash.verificationCode("a+b@example.com", "123456", Delivery.ESSENTIAL);
 
         // Email is URL-encoded (+ -> %2B, @ -> %40); exact param names email/code.
-        assertThat(content.body())
-                .contains("http://localhost:3000/verify-email?email=a%2Bb%40example.com&code=123456")
-                .contains("enter this code manually: 123456");
+        assertThat(content.text())
+                .contains("http://localhost:3000/verify-email?email=a%2Bb%40example.com&code=123456");
+        // Same link in the HTML part, with the query separator escaped for markup.
+        assertThat(content.html())
+                .contains("http://localhost:3000/verify-email?email=a%2Bb%40example.com&amp;code=123456");
+        assertBothParts(content, "123456");
     }
 
     @Test
     void passwordReset_buildsResetLinkWithToken() {
         EmailContent content = templates.passwordReset("tok-ABC123");
 
-        assertThat(content.body())
-                .contains("http://localhost:3000/reset-password?token=tok-ABC123")
-                .contains("expires in 15 minutes");
+        assertBothParts(content,
+                "http://localhost:3000/reset-password?token=tok-ABC123", "expires in 15 minutes");
     }
 
     @Test
     void googleOnlyReset_mentionsGoogleAndCarriesNoLink() {
         EmailContent content = templates.googleOnlyReset();
 
-        assertThat(content.body()).contains("Google").doesNotContain("/reset-password?token=");
+        assertBothParts(content, "Google");
+        assertThat(content.text()).doesNotContain("/reset-password?token=");
+        assertThat(content.html()).doesNotContain("/reset-password?token=");
     }
 
     @Test
     void newSignIn_includesDeviceAndIp() {
-        EmailContent content = templates.newSignIn("Chrome on Windows", "203.0.113.5");
-
-        assertThat(content.body()).contains("Chrome on Windows").contains("203.0.113.5");
+        assertBothParts(templates.newSignIn("Chrome on Windows", "203.0.113.5"),
+                "Chrome on Windows", "203.0.113.5");
     }
 
     @Test
-    void newSignIn_blankIp_omitsIpClause() {
+    void newSignIn_blankIp_omitsTheIpRow() {
         EmailContent content = templates.newSignIn("Chrome on Windows", null);
 
-        assertThat(content.body()).contains("Chrome on Windows").doesNotContain("IP ");
+        assertBothParts(content, "Chrome on Windows");
+        assertThat(content.text()).doesNotContain("IP address");
+        assertThat(content.html()).doesNotContain("IP address");
     }
 
     // --- copy ---
 
     @Test
+    void welcome_greetsTheNewAccountAndLinksToTheApp() {
+        assertBothParts(templates.welcome(),
+                "Welcome to TasKlean", "http://localhost:3000/app");
+    }
+
+    @Test
     void registrationAttempt_tellsTheOwnerAnAccountExists() {
-        assertThat(templates.registrationAttempt().body()).contains("account already exists");
+        assertBothParts(templates.registrationAttempt(), "account already exists");
     }
 
     @Test
     void passwordChanged_namesTheChange() {
-        assertThat(templates.passwordChanged().body()).contains("password was just changed");
+        assertBothParts(templates.passwordChanged(), "password was just changed");
     }
 
     @Test
     void passwordSet_namesTheAddedPassword() {
-        assertThat(templates.passwordSet().body()).contains("password was just added");
+        assertBothParts(templates.passwordSet(), "password was just added");
     }
 
     @Test
     void googleLinked_namesTheLink() {
-        assertThat(templates.googleLinked().body()).contains("Google account was just linked");
+        assertBothParts(templates.googleLinked(), "Google account was just linked");
     }
 
     @Test
     void googleUnlinked_namesTheRemoval() {
-        assertThat(templates.googleUnlinked().body()).contains("Google sign-in was just removed");
+        assertBothParts(templates.googleUnlinked(), "Google sign-in was just removed");
     }
 
     @Test
     void accountDeactivated_namesTheDeactivation() {
-        assertThat(templates.accountDeactivated().body()).contains("account was just deactivated");
+        assertBothParts(templates.accountDeactivated(), "account was just deactivated");
     }
 
     @Test
     void twoFactorEnabled_namesTheChangeAndPointsAtRecoveryCodes() {
-        assertThat(templates.twoFactorEnabled().body())
-                .contains("Two-factor authentication was just turned on")
-                .contains("recovery codes");
+        assertBothParts(templates.twoFactorEnabled(),
+                "Two-factor authentication was just turned on", "recovery codes");
     }
 
     @Test
     void twoFactorDisabled_namesTheWeakenedSignIn() {
-        assertThat(templates.twoFactorDisabled().body()).contains("just turned off");
+        assertBothParts(templates.twoFactorDisabled(), "just turned off");
     }
 
     @Test
     void recoveryCodesRegenerated_saysThePreviousCodesAreDead() {
-        assertThat(templates.recoveryCodesRegenerated().body()).contains("previous codes no longer work");
+        assertBothParts(templates.recoveryCodesRegenerated(), "previous codes no longer work");
     }
 
     @Test
     void recoveryCodeUsed_namesTheAppFreeSignIn() {
-        assertThat(templates.recoveryCodeUsed().body()).contains("recovery code");
+        assertBothParts(templates.recoveryCodeUsed(), "recovery code");
     }
 
     // --- delivery policy ---
@@ -124,6 +174,13 @@ class EmailTemplatesTest {
                 .isEqualTo(Delivery.ESSENTIAL);
         assertThat(templates.verificationCode("bob@example.com", "123456", Delivery.ADVISORY).delivery())
                 .isEqualTo(Delivery.ADVISORY);
+    }
+
+    @Test
+    void welcome_isAdvisory() {
+        // It must be: verifyEmail is transactional, so an essential failure here would roll the
+        // verification back and a mail outage would stop people finishing sign-up.
+        assertThat(templates.welcome().delivery()).isEqualTo(Delivery.ADVISORY);
     }
 
     @Test

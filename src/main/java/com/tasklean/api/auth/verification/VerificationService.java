@@ -58,7 +58,8 @@ public class VerificationService {
     }
 
     /**
-     * Validates the code, marks the user verified, clears all their codes, and returns a JWT.
+     * Validates the code, marks the user verified, clears all their codes, welcomes them by
+     * email, and returns a JWT.
      *
      * @param request the email and verification code
      * @return the auth response with access and refresh tokens
@@ -81,6 +82,10 @@ public class VerificationService {
         verificationRepository.deleteByUserIdUser(user.getIdUser());
         log.info("Email verified: uid={}", user.getUid());
         auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.EMAIL_VERIFIED, "Email verified");
+
+        // Sent here rather than at registration: this is the point the account becomes usable, and
+        // a welcome alongside the code the reader still has to enter would be premature.
+        emailService.send(user.getEmail(), emailTemplates.welcome());
 
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);
