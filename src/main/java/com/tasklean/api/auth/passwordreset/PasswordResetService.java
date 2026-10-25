@@ -6,6 +6,7 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -38,6 +39,7 @@ public class PasswordResetService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
     private final Clock clock;
@@ -58,7 +60,7 @@ public class PasswordResetService {
 
         if (user.getPasswordHash() == null) {
             // Google-only account: there is no password to reset, so guide the owner by email.
-            emailService.sendGoogleOnlyResetEmail(user.getEmail());
+            emailService.send(user.getEmail(), emailTemplates.googleOnlyReset());
             log.info("Password reset requested for Google-only account: uid={}", user.getUid());
             return;
         }
@@ -73,7 +75,7 @@ public class PasswordResetService {
                 .expiresAt(LocalDateTime.now(clock).plusMinutes(TOKEN_EXPIRY_MINUTES))
                 .build());
 
-        emailService.sendPasswordResetEmail(user.getEmail(), rawToken);
+        emailService.send(user.getEmail(), emailTemplates.passwordReset(rawToken));
         // Never log the raw token.
         log.info("Password reset requested: uid={}", user.getUid());
     }
@@ -107,7 +109,7 @@ public class PasswordResetService {
         refreshTokenService.revokeAllUserTokens(user);
 
         // Tell the owner their password changed, so an unauthorized reset is noticeable.
-        emailService.sendPasswordChangedEmail(user.getEmail());
+        emailService.send(user.getEmail(), emailTemplates.passwordChanged());
 
         log.info("Password reset completed: uid={}", user.getUid());
         auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.PASSWORD_RESET, "Password reset");

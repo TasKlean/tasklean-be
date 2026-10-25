@@ -224,6 +224,7 @@ set). Constants live in `common/ErrorCodes.java`; a 401 gets one by throwing
 | `PASSWORD_INVALID` | `/api/account/**` re-auth (change password, deactivate, 2FA setup/disable/regenerate) | flag the password field, keep the form open |
 | `TWO_FACTOR_CODE_INVALID` | 2FA enable / verify / disable | flag the code field, let them retype |
 | `TWO_FACTOR_CHALLENGE_INVALID` | 2FA verify: unknown, expired, spent, out of attempts, factor removed | restart the sign-in |
+| `EMAIL_DELIVERY_FAILED` | register (503), when the mail provider refuses | tell them to try again shortly; nothing was created |
 
 Rules for adding one:
 - A code is never finer-grained than the message it accompanies. The five unusable-challenge cases share
@@ -232,6 +233,42 @@ Rules for adding one:
   would be an account-enumeration oracle. `AuthServiceTest` asserts the thrown type carries no code.
 - Codes that name account state (`EMAIL_NOT_VERIFIED`, `ACCOUNT_DEACTIVATED`) are only reachable *after*
   the caller proved ownership, which is why the login flow checks the password first.
+- `EMAIL_DELIVERY_FAILED` is deliberately **not** returned by forgot-password or resend-verification,
+  even though those also depend on an email. See **Email delivery policy**.
+
+### Email delivery policy
+
+`EmailTemplates` (`common/email/`) holds every email the app sends as an `EmailContent` record - subject,
+body and a `Delivery` (`common/email/Delivery.java`) that decides what happens when the provider refuses.
+`EmailService.send(to, content)` is the **only** way out to the mail provider and applies that policy, so
+the failure behaviour of a flow is a property of its template, not of its caller: a service picks a
+template, it cannot pick what a refusal means.
+
+- **`ADVISORY`** — caught, logged at WARN (subject only, never the body: bodies carry codes, links and
+  device details), never rethrown. Correct whenever the operation has already happened: a sign-in alert,
+  a password-changed notice, a 2FA change. *A refused sign-in alert used to 500 the whole login, because
+  `createRefreshToken` is `@Transactional` and the throw rolled the device row back with it.*
+- **`ESSENTIAL`** — caught, logged, rethrown as `EmailDeliveryException` → **503** with
+  `EMAIL_DELIVERY_FAILED`. Used by registration: the account is unusable until the code arrives, and
+  because `register` is `@Transactional` the failure discards the half-made user so the caller can simply
+  register again.
+
+**The choice is not "how important is this email".** It is *does this endpoint have a branch that sends
+nothing* — because if it does, an error on the sending branch tells the caller which branch ran:
+
+| Flow | Policy | Why |
+|---|---|---|
+| `register` | ESSENTIAL | **Both** branches email (verification code, or the "account already exists" notice to the real owner), so an outage fails both identically and leaks nothing |
+| `forgot-password` | ADVISORY | Unknown or deactivated addresses are a silent no-op, so a 503 for a real one would be an account-existence oracle. The user simply gets no email — accepted deliberately |
+| `resend-verification` | ADVISORY | Same shape: a no-op for unknown or already-verified addresses |
+| everything else | ADVISORY | The operation already committed |
+
+This is why the registration-attempt notice is ESSENTIAL although it creates nothing: it exists to avoid
+revealing account existence, so it has to fail in step with the branch it is hiding.
+
+Not covered: latency. Advisory sends are still synchronous, so a slow provider adds up to the 5s SMTP
+timeout to the request. `@Async` would fix that but introduces send-before-commit and send-after-rollback
+problems, so it is deliberately a separate change.
 
 ### Generated contract
 
@@ -721,8 +758,9 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 14 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`, two-factor enabled → challenge instead of tokens); error codes (deactivated carries `ACCOUNT_DEACTIVATED`, a wrong password carries none — enumeration guard) |
-| `EmailServiceTest` | 16 | Verification link (param names, URL-encoded email, trailing-slash safe); registration-attempt notice; password-reset link carries the token; Google-only reset notice (no link); password-changed notice; password-added notice; Google linked/unlinked notices; account-deactivated notice; new-sign-in notice (device + IP, IP omitted when blank); the sender comes from config, not a constant |
-| `GoogleOAuthServiceTest` | 12 | New-user provisioning; returning Google user; link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account; `verifyLinkToken` (valid returns subject+email without touching users, unverified email throws, nonce mismatch throws) |
+| `EmailTemplatesTest` | 19 | Verification link (param names, URL-encoded email, trailing-slash safe); password-reset link carries the token; Google-only reset notice (no link); new-sign-in notice (device + IP, IP omitted when blank); the copy of every notification template; **delivery policy** - the registration-attempt notice is essential, the reset link is advisory despite being the deliverable, every other notification is advisory, and the verification template obeys whichever policy its caller passes |
+| `EmailServiceTest` | 3 | Transport only: the content and the configured sender land on the message; an advisory refusal is swallowed; an essential one rethrows as `EmailDeliveryException` |
+| `GoogleOAuthServiceTest` | 13 | New-user provisioning; returning Google user (two-factor enabled returns a challenge and withholds tokens); link password account; invalid token; verifier failure; unverified Google email; nonce mismatch; nonce missing in token; deactivated account; `verifyLinkToken` (valid returns subject+email without touching users, unverified email throws, nonce mismatch throws) |
 | `AccountServiceTest` | 17 | changePassword (success rotates + returns new tokens, wrong current pwd throws, Google-only throws); setPassword (success, already-has-pwd throws); getConnections; linkGoogle (success, already-linked, email mismatch, sub owned by another); unlinkGoogle (success, not-linked, no-password lockout); deactivate (password account ok/wrong/missing, Google-only no password needed) |
 | `AccountControllerSecurityTest` | 4 | `@WebMvcTest` slice — connected-accounts/change-password/deactivate require authentication (anonymous denied), authenticated caller OK |
 | `JwtAuthenticationFilterTest` | 6 | Valid token sets an `AuthPrincipal` + `ROLE_` authority from claims (no DB); no/non-Bearer/invalid token passes through anonymously; auth endpoints skipped |
@@ -757,15 +795,15 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UserControllerSecurityTest` | 10 | `@WebMvcTest` slice — list=ADMIN (USER 403 / ADMIN / SUPER_ADMIN via hierarchy), get self vs other, `/me` for any authenticated caller (also guarding route precedence over `/{uid}`), role change SUPER_ADMIN-only (ADMIN 403), delete SUPER_ADMIN-only (self 403), 403 envelope |
 | `GroupControllerSecurityTest` | 10 | `@WebMvcTest` slice — getGroup member/platform-admin vs non-member 403; updateGroup group-admin vs plain-member 403 (via `@groupSecurity`); `/mine` and `/join` open to any authenticated caller (also guarding `/mine` route precedence over `/{uid}`); invite-code rotation group-admin only (plain member and platform ADMIN 403) |
 | `ApiErrorControllerTest` | 4 | `/error` renders JSON per status (404/405/403/500) |
-| `GlobalExceptionHandlerTest` | 13 | Every handler maps to the right status + message (404/409/401/403/400/405/500 + validation join); a coded `AuthFailureException` returns 401 with that code, unverified email with `EMAIL_NOT_VERIFIED` |
+| `GlobalExceptionHandlerTest` | 14 | Every handler maps to the right status + message (404/409/401/403/400/405/500/503 + validation join); a coded `AuthFailureException` returns 401 with that code, unverified email with `EMAIL_NOT_VERIFIED` |
 | `CaffeineBucketRegistryTest` | 3 | Same key → same bucket; distinct keys; bucket enforces tier capacity |
-| `RateLimitFilterTest` | 13 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/normal); keying — a forged `X-Device-Ip` without the hop secret does not escape the bucket, two users on a trusted hop get separate buckets, and one user rotating inside an IPv6 /64 shares one |
+| `RateLimitFilterTest` | 16 | Within-limit passes; over-limit → 429 + `Retry-After`; per-user and per-IP trips; the two-factor-verify tier trips without touching the auth tier and does not apply to other auth endpoints; the additive join tier trips while the api tiers still have room, and does not apply to other endpoints; `shouldNotFilter` (disabled/actuator/error/api-docs/swagger/normal); keying — a forged `X-Device-Ip` without the hop secret does not escape the bucket, two users on a trusted hop get separate buckets, and one user rotating inside an IPv6 /64 shares one |
 | `PasswordPolicyValidatorTest` | 19 | Length bounds, each missing-class message/grammar, space-as-special, and the guessable variants (common/leet/tail/repeated/sequential); plus the `isValid` message wiring |
 | `PasswordPolicyContractTest` | 11 | Runs the validator against the shared FE/BE contract vectors (`password-policy-vectors.json`) |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **474 tests** across 43 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **481 tests** across 44 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

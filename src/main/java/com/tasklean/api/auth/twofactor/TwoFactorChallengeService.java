@@ -8,6 +8,7 @@ import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.SecureTokens;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -46,6 +47,7 @@ public class TwoFactorChallengeService {
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
     private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
     private final Clock clock;
 
     /**
@@ -132,7 +134,7 @@ public class TwoFactorChallengeService {
         // Signing in without the authenticator app is the weakest two-factor path, so the owner is
         // told even though the sign-in succeeded.
         if (outcome == TwoFactorCodeOutcome.RECOVERY) {
-            emailService.sendRecoveryCodeUsedEmail(user.getEmail());
+            emailService.send(user.getEmail(), emailTemplates.recoveryCodeUsed());
         }
         String token = jwtService.generateToken(user);
         String refreshToken = refreshTokenService.createRefreshToken(user);

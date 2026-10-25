@@ -9,7 +9,9 @@ import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.auth.verification.VerificationService;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.email.Delivery;
 import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.EmailNotVerifiedException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -43,6 +45,7 @@ public class AuthService {
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
     private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
     private final TwoFactorChallengeService twoFactorChallengeService;
 
     /**
@@ -59,7 +62,7 @@ public class AuthService {
         User existing = userRepository.findByEmail(request.getEmail()).orElse(null);
         if (existing != null) {
             // Don't reveal existence to the caller; tell the real owner by email.
-            emailService.sendRegistrationAttemptEmail(request.getEmail());
+            emailService.send(request.getEmail(), emailTemplates.registrationAttempt());
             log.info("Registration attempt for existing email: uid={}", existing.getUid());
             return AuthResponse.registrationPending(request.getEmail());
         }
@@ -77,7 +80,9 @@ public class AuthService {
         // Log the uid, never the email (PII).
         log.info("User registered: uid={}", user.getUid());
         auditLogService.recordAccountEvent(user.getIdUser(), AuditAction.REGISTER, "Account created");
-        verificationService.createAndSendVerification(user);
+        // Essential: the account is unusable until the code arrives. A failure rolls this
+        // transaction back, so the caller can simply register again.
+        verificationService.createAndSendVerification(user, Delivery.ESSENTIAL);
 
         return AuthResponse.registrationPending(user.getEmail());
     }

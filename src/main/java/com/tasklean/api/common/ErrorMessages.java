@@ -30,6 +30,9 @@ public final class ErrorMessages {
     public static final String MALFORMED_REQUEST = "Malformed or invalid request body";
     public static final String INTERNAL_ERROR = "An unexpected error occurred";
 
+    public static final String EMAIL_DELIVERY_FAILED =
+            "We could not send the email just now, please try again in a moment";
+
     // Auth failures thrown from more than one service. They are centralized because the copies
     // must stay identical: each is the human half of an ErrorCodes value.
     public static final String INVALID_CREDENTIALS = "Invalid email or password";

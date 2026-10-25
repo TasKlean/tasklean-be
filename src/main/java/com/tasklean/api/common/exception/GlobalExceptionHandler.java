@@ -1,6 +1,7 @@
 package com.tasklean.api.common.exception;
 
 import com.tasklean.api.common.ApiResponse;
+import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -167,6 +168,20 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining(", "));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(message));
+    }
+
+    /**
+     * Maps a failed send of an email the flow depends on to 503. Separate from the catch-all so the
+     * caller learns the request is worth retrying, and so it is not logged as an internal fault -
+     * {@link com.tasklean.api.common.email.EmailService} has already logged the provider's reason.
+     *
+     * @param ex the thrown exception
+     * @return a 503 response with the message and {@code EMAIL_DELIVERY_FAILED}
+     */
+    @ExceptionHandler(EmailDeliveryException.class)
+    public ResponseEntity<ApiResponse<Void>> handleEmailDelivery(EmailDeliveryException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiResponse.error(ex.getMessage(), ErrorCodes.EMAIL_DELIVERY_FAILED));
     }
 
     /**

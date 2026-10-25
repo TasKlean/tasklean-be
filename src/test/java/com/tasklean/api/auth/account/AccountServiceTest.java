@@ -7,6 +7,8 @@ import com.tasklean.api.auth.account.dto.*;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -45,7 +48,9 @@ class AccountServiceTest {
     @Mock
     private AuditLogService auditLogService;
     @Mock
-    private com.tasklean.api.common.email.EmailService emailService;
+    private EmailService emailService;
+    @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
     @InjectMocks
     private AccountService accountService;
 
@@ -73,7 +78,7 @@ class AccountServiceTest {
         assertThat(response.getRefreshToken()).isEqualTo("refresh");
         assertThat(user.getPasswordHash()).isEqualTo("$new");
         verify(sessionRotator).rotateCurrentSession(user);
-        verify(emailService).sendPasswordChangedEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.passwordChanged());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.PASSWORD_CHANGED), anyString());
     }
 
@@ -114,7 +119,7 @@ class AccountServiceTest {
         assertThat(response.getRefreshToken()).isEqualTo("refresh");
         assertThat(user.getPasswordHash()).isEqualTo("$new");
         verify(sessionRotator).rotateCurrentSession(user);
-        verify(emailService).sendPasswordSetEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.passwordSet());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.PASSWORD_SET), anyString());
     }
 
@@ -153,7 +158,7 @@ class AccountServiceTest {
 
         assertThat(user.getGoogleSub()).isEqualTo("sub-new");
         assertThat(response.googleLinked()).isTrue();
-        verify(emailService).sendGoogleLinkedEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.googleLinked());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.GOOGLE_LINKED), anyString());
     }
 
@@ -204,7 +209,7 @@ class AccountServiceTest {
 
         assertThat(user.getGoogleSub()).isNull();
         assertThat(response.googleLinked()).isFalse();
-        verify(emailService).sendGoogleUnlinkedEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.googleUnlinked());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.GOOGLE_UNLINKED), anyString());
     }
 
@@ -237,7 +242,7 @@ class AccountServiceTest {
 
         assertThat(user.getIsActive()).isFalse();
         verify(refreshTokenService).revokeAllUserTokens(user);
-        verify(emailService).sendAccountDeactivatedEmail("bob@example.com");
+        verify(emailService).send("bob@example.com", emailTemplates.accountDeactivated());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.ACCOUNT_DELETED), anyString());
     }
 
