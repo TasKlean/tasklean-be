@@ -14,6 +14,7 @@ class EmailTemplatesTest {
     private List<EmailContent> all() {
         return List.of(
                 templates.verificationCode("bob@example.com", "123456", Delivery.ESSENTIAL),
+                templates.welcome(),
                 templates.registrationAttempt(),
                 templates.passwordReset("tok-ABC123"),
                 templates.googleOnlyReset(),
@@ -100,6 +101,12 @@ class EmailTemplatesTest {
     // --- copy ---
 
     @Test
+    void welcome_greetsTheNewAccountAndLinksToTheApp() {
+        assertBothParts(templates.welcome(),
+                "Welcome to TasKlean", "http://localhost:3000/app");
+    }
+
+    @Test
     void registrationAttempt_tellsTheOwnerAnAccountExists() {
         assertBothParts(templates.registrationAttempt(), "account already exists");
     }
@@ -167,6 +174,13 @@ class EmailTemplatesTest {
                 .isEqualTo(Delivery.ESSENTIAL);
         assertThat(templates.verificationCode("bob@example.com", "123456", Delivery.ADVISORY).delivery())
                 .isEqualTo(Delivery.ADVISORY);
+    }
+
+    @Test
+    void welcome_isAdvisory() {
+        // It must be: verifyEmail is transactional, so an essential failure here would roll the
+        // verification back and a mail outage would stop people finishing sign-up.
+        assertThat(templates.welcome().delivery()).isEqualTo(Delivery.ADVISORY);
     }
 
     @Test

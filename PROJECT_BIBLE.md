@@ -286,6 +286,7 @@ nothing* — because if it does, an error on the sending branch tells the caller
 | `register` | ESSENTIAL | **Both** branches email (verification code, or the "account already exists" notice to the real owner), so an outage fails both identically and leaks nothing |
 | `forgot-password` | ADVISORY | Unknown or deactivated addresses are a silent no-op, so a 503 for a real one would be an account-existence oracle. The user simply gets no email — accepted deliberately |
 | `resend-verification` | ADVISORY | Same shape: a no-op for unknown or already-verified addresses |
+| `verify-email` | ADVISORY | The welcome email. `verifyEmail` is `@Transactional`, so an essential failure would roll the verification back - a mail outage would stop people finishing sign-up |
 | everything else | ADVISORY | The operation already committed |
 
 This is why the registration-attempt notice is ESSENTIAL although it creates nothing: it exists to avoid
@@ -489,7 +490,7 @@ Authenticated, self-scoped (`AccountController` at `/api/account`, caller from t
 
 **Email registration**: validate input (`@Email`, `@ValidPassword` password — see *Password policy*, `@NotBlank` name/lastName) → look up the email. **If it already exists**: send the owner an "account already exists" email and return the same neutral response (no create, no 409) — so the caller can't tell the address is taken (enumeration-safe). **If new**: hash password (BCrypt) → create User with random UID → generate & send a 6-digit verification code (5-min expiry). Either way the response is `AuthResponse.registrationPending(email)` — just the email + a neutral message, no JWT/uid/name. The verification email carries a prefilled link `${APP_BASE_URL}/verify-email?email=&code=` (the link only lands on the FE page — nothing verifies on GET, so a mail scanner's prefetch can't spend the single-use code) plus the raw code as a fallback.
 
-**Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → generate JWT → return `AuthResponse`. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
+**Email verification**: find user by email, filter out already-verified → find matching non-expired code → mark user `is_email_verified=true` → delete all user's codes → send the welcome email → generate JWT → return `AuthResponse`. The welcome lands here rather than at registration because this is the point the account becomes usable; it arrives just before the new-sign-in alert the token issue triggers. All failure cases (unknown email, already verified, wrong/expired code) return same generic "Invalid email or code" error to prevent email enumeration.
 
 **Resend verification**: find user by email, filter out already-verified → if found and unverified, generate & send new code. Always returns 200 with generic message regardless of email state (enumeration-safe).
 
@@ -783,7 +784,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 |-------|-------|--------|
 | `JwtServiceTest` | 11 | Token generation, validation (valid/tampered/expired/wrong secret), claim extraction incl. role (and USER default) |
 | `AuthServiceTest` | 14 | Register (new success, existing email → neutral + owner email, password hashing, UID generation); Login (success, linked account Option B, wrong password, wrong password hides unverified, missing email, deactivated, OAuth-only → generic, unverified → `EmailNotVerifiedException`, two-factor enabled → challenge instead of tokens); error codes (deactivated carries `ACCOUNT_DEACTIVATED`, a wrong password carries none — enumeration guard) |
-| `EmailTemplatesTest` | 20 | Verification link (param names, URL-encoded email, trailing-slash safe); password-reset link carries the token; Google-only reset notice (no link); new-sign-in notice (device + IP, IP omitted when blank); the copy of every notification template; **delivery policy** - the registration-attempt notice is essential, the reset link is advisory despite being the deliverable, every other notification is advisory, and the verification template obeys whichever policy its caller passes |
+| `EmailTemplatesTest` | 22 | Verification link (param names, URL-encoded email, trailing-slash safe); password-reset link carries the token; Google-only reset notice (no link); new-sign-in notice (device + IP, IP omitted when blank); the welcome greeting and its link into the app; the copy of every notification template; **delivery policy** - the registration-attempt notice is essential, the reset link is advisory despite being the deliverable, every other notification is advisory, and the verification template obeys whichever policy its caller passes |
 | `EmailServiceTest` | 6 | Transport only: recipient/subject/configured sender land on the message; it is assembled as HTML with a plain-text alternative; the logo is attached inline and the asset is on the classpath; an advisory refusal is swallowed; an essential one rethrows as `EmailDeliveryException` |
 | `EmailBlockTest` | 7 | A client-supplied value is escaped in HTML and left alone in text; a URL's `&` is escaped; a button renders the pill **and** the URL in full; every block renders both parts |
 | `EmailLayoutTest` | 4 | The shell wraps the blocks (doctype through `</html>`); both schemes declared and the dark overrides marked important; the logo referenced as `cid:`; the text part joins the blocks with no markup |
@@ -830,7 +831,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **496 tests** across 46 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **498 tests** across 46 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

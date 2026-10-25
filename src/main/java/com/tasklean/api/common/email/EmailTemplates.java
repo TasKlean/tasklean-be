@@ -70,6 +70,23 @@ public class EmailTemplates {
     }
 
     /**
+     * Greets a new account once its email is verified, and points at the app.
+     *
+     * <p>Advisory, and it has to be: {@code verifyEmail} is transactional, so failing here would
+     * roll back the verification itself - a mail outage would stop people finishing sign-up.
+     *
+     * @return the composed message
+     */
+    public EmailContent welcome() {
+        return compose("TasKlean - Your account is ready", Delivery.ADVISORY,
+                heading("Welcome to TasKlean"),
+                paragraph("Your email is verified and your account is ready to use."),
+                paragraph("TasKlean keeps a household's chores in one place, so everyone can see "
+                        + "what needs doing and who is doing it."),
+                button("Open TasKlean", baseUrl + "/app"));
+    }
+
+    /**
      * Tells the owner of an existing account that someone tried to register with their email.
      * Sent instead of revealing account existence in the API response (anti-enumeration).
      *
