@@ -4247,8 +4247,11 @@
       },
       "ChangePasswordRequest" : {
         "type" : "object",
-        "description" : "Request body for \"change password\": the current password plus the chosen new password.",
+        "description" : "Request body for \"change password\": the current password, the chosen new password, and a\n current second-factor code when the account has two-factor on.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "currentPassword" : {
             "type" : "string",
             "minLength" : 1
@@ -4275,8 +4278,11 @@
       },
       "DeactivateAccountRequest" : {
         "type" : "object",
-        "description" : "Request body for \"deactivate account\". The password is required for an account that has one\n (re-authentication) and ignored for a Google-only account, which the valid session confirms.",
+        "description" : "Request body for \"deactivate account\". The password is required for an account that has one\n (re-authentication) and ignored for a Google-only account, which the valid session confirms.\n A current second-factor code is required when the account has two-factor on.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "password" : {
             "type" : "string"
           }
@@ -4807,8 +4813,11 @@
       },
       "SetPasswordRequest" : {
         "type" : "object",
-        "description" : "Request body for \"set password\" on a Google-only account: the chosen new password.",
+        "description" : "Request body for \"set password\" on a Google-only account: the chosen new password, plus a\n current second-factor code when the account has two-factor on.",
         "properties" : {
+          "code" : {
+            "type" : "string"
+          },
           "newPassword" : {
             "type" : "string"
           }

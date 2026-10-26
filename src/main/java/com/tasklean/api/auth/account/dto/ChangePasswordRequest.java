@@ -4,7 +4,10 @@ import com.tasklean.api.common.validation.ValidPassword;
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
 
-/** Request body for "change password": the current password plus the chosen new password. */
+/**
+ * Request body for "change password": the current password, the chosen new password, and a
+ * current second-factor code when the account has two-factor on.
+ */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -19,4 +22,8 @@ public class ChangePasswordRequest {
     // the same policy the UI and register enforce.
     @ValidPassword
     private String newPassword;
+
+    // Only required when the account has two-factor on, which the service checks - an account
+    // without it leaves this null.
+    private String code;
 }

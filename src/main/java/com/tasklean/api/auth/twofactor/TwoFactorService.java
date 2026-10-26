@@ -221,6 +221,23 @@ public class TwoFactorService {
     }
 
     /**
+     * Requires a valid second factor from a caller who is about to change their own credentials,
+     * when the account has one enabled. An account without two-factor passes straight through, so
+     * a caller can apply this unconditionally. It spends the code through {@link #consumeCode}, so
+     * it has to run inside the caller's transaction.
+     *
+     * @param user the account whose factor applies
+     * @param code the submitted authenticator or recovery code; may be null or blank for an
+     *             account that has no second factor
+     * @throws AuthFailureException if a factor is enabled and the code is missing or incorrect
+     */
+    public void requireSecondFactorIfEnabled(User user, String code) {
+        userTwoFactorRepository.findByUserIdUser(user.getIdUser())
+                .filter(factor -> Boolean.TRUE.equals(factor.getIsEnabled()))
+                .ifPresent(factor -> requireValidCode(user, factor, code));
+    }
+
+    /**
      * Checks a submitted second-factor code against the user's factor and spends it. An
      * authenticator code counts once per time step (a repeat inside the skew window is a replay);
      * a recovery code counts once ever and is marked used. It writes, so it must be called from

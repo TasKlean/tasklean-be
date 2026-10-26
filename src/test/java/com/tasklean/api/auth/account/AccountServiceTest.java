@@ -7,8 +7,11 @@ import com.tasklean.api.auth.account.dto.*;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.email.EmailTemplates;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -48,6 +51,8 @@ class AccountServiceTest {
     @Mock
     private AuditLogService auditLogService;
     @Mock
+    private TwoFactorService twoFactorService;
+    @Mock
     private EmailService emailService;
     @Spy
     private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
@@ -72,7 +77,7 @@ class AccountServiceTest {
         when(sessionRotator.rotateCurrentSession(user)).thenReturn(AuthResponse.from(user, "access", "refresh"));
 
         AuthResponse response = accountService.changePassword(USER_ID,
-                new ChangePasswordRequest("current", "NewPass1!"));
+                new ChangePasswordRequest("current", "NewPass1!", null));
 
         assertThat(response.getToken()).isEqualTo("access");
         assertThat(response.getRefreshToken()).isEqualTo("refresh");
@@ -89,11 +94,13 @@ class AccountServiceTest {
         when(passwordEncoder.matches("wrong", "$old")).thenReturn(false);
 
         assertThatThrownBy(() -> accountService.changePassword(USER_ID,
-                new ChangePasswordRequest("wrong", "NewPass1!")))
+                new ChangePasswordRequest("wrong", "NewPass1!", null)))
                 .isInstanceOf(BadCredentialsException.class);
 
         verify(userRepository, never()).save(any());
         verify(sessionRotator, never()).rotateCurrentSession(any());
+        // Checked after the password, so a wrong guess never reveals whether two-factor is on.
+        verify(twoFactorService, never()).requireSecondFactorIfEnabled(any(), any());
     }
 
     @Test
@@ -101,8 +108,40 @@ class AccountServiceTest {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user(null, "sub-1")));
 
         assertThatThrownBy(() -> accountService.changePassword(USER_ID,
-                new ChangePasswordRequest("current", "NewPass1!")))
+                new ChangePasswordRequest("current", "NewPass1!", null)))
                 .isInstanceOf(BusinessRuleException.class);
+    }
+
+    @Test
+    void changePassword_twoFactorAccount_spendsTheSubmittedCode() {
+        User user = user("$old", null);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("current", "$old")).thenReturn(true);
+        when(passwordEncoder.encode("NewPass1!")).thenReturn("$new");
+        when(sessionRotator.rotateCurrentSession(user)).thenReturn(AuthResponse.from(user, "access", "refresh"));
+
+        accountService.changePassword(USER_ID, new ChangePasswordRequest("current", "NewPass1!", "123456"));
+
+        verify(twoFactorService).requireSecondFactorIfEnabled(user, "123456");
+        assertThat(user.getPasswordHash()).isEqualTo("$new");
+    }
+
+    @Test
+    void changePassword_rejectedTwoFactorCode_throwsAndDoesNotChange() {
+        User user = user("$old", null);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("current", "$old")).thenReturn(true);
+        doThrow(new AuthFailureException("Invalid code", ErrorCodes.TWO_FACTOR_CODE_INVALID))
+                .when(twoFactorService).requireSecondFactorIfEnabled(user, "000000");
+
+        assertThatThrownBy(() -> accountService.changePassword(USER_ID,
+                new ChangePasswordRequest("current", "NewPass1!", "000000")))
+                .isInstanceOf(AuthFailureException.class);
+
+        // A stolen session plus a known password must not be enough to take the account over.
+        assertThat(user.getPasswordHash()).isEqualTo("$old");
+        verify(sessionRotator, never()).rotateCurrentSession(any());
+        verify(emailService, never()).send(any(), any());
     }
 
     // --- setPassword ---
@@ -114,7 +153,7 @@ class AccountServiceTest {
         when(passwordEncoder.encode("NewPass1!")).thenReturn("$new");
         when(sessionRotator.rotateCurrentSession(user)).thenReturn(AuthResponse.from(user, "access", "refresh"));
 
-        AuthResponse response = accountService.setPassword(USER_ID, new SetPasswordRequest("NewPass1!"));
+        AuthResponse response = accountService.setPassword(USER_ID, new SetPasswordRequest("NewPass1!", null));
 
         assertThat(response.getRefreshToken()).isEqualTo("refresh");
         assertThat(user.getPasswordHash()).isEqualTo("$new");
@@ -127,9 +166,38 @@ class AccountServiceTest {
     void setPassword_accountAlreadyHasPassword_throwsBusinessRule() {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user("$old", null)));
 
-        assertThatThrownBy(() -> accountService.setPassword(USER_ID, new SetPasswordRequest("NewPass1!")))
+        assertThatThrownBy(() -> accountService.setPassword(USER_ID, new SetPasswordRequest("NewPass1!", null)))
                 .isInstanceOf(BusinessRuleException.class);
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void setPassword_twoFactorAccount_spendsTheSubmittedCode() {
+        User user = user(null, "sub-1");
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.encode("NewPass1!")).thenReturn("$new");
+        when(sessionRotator.rotateCurrentSession(user)).thenReturn(AuthResponse.from(user, "access", "refresh"));
+
+        accountService.setPassword(USER_ID, new SetPasswordRequest("NewPass1!", "123456"));
+
+        verify(twoFactorService).requireSecondFactorIfEnabled(user, "123456");
+        assertThat(user.getPasswordHash()).isEqualTo("$new");
+    }
+
+    @Test
+    void setPassword_rejectedTwoFactorCode_throwsAndDoesNotSet() {
+        User user = user(null, "sub-1");
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        doThrow(new AuthFailureException("Invalid code", ErrorCodes.TWO_FACTOR_CODE_INVALID))
+                .when(twoFactorService).requireSecondFactorIfEnabled(user, "000000");
+
+        assertThatThrownBy(() -> accountService.setPassword(USER_ID,
+                new SetPasswordRequest("NewPass1!", "000000")))
+                .isInstanceOf(AuthFailureException.class);
+
+        // There is no current password to re-check here, so the code is the whole gate.
+        assertThat(user.getPasswordHash()).isNull();
+        verify(sessionRotator, never()).rotateCurrentSession(any());
     }
 
     // --- getConnections ---
@@ -238,7 +306,7 @@ class AccountServiceTest {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("pw", "$old")).thenReturn(true);
 
-        accountService.deactivate(USER_ID, new DeactivateAccountRequest("pw"));
+        accountService.deactivate(USER_ID, new DeactivateAccountRequest("pw", null));
 
         assertThat(user.getIsActive()).isFalse();
         verify(refreshTokenService).revokeAllUserTokens(user);
@@ -252,7 +320,7 @@ class AccountServiceTest {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("bad", "$old")).thenReturn(false);
 
-        assertThatThrownBy(() -> accountService.deactivate(USER_ID, new DeactivateAccountRequest("bad")))
+        assertThatThrownBy(() -> accountService.deactivate(USER_ID, new DeactivateAccountRequest("bad", null)))
                 .isInstanceOf(BadCredentialsException.class);
 
         assertThat(user.getIsActive()).isTrue();
@@ -263,7 +331,7 @@ class AccountServiceTest {
     void deactivate_passwordAccount_missingPassword_throws() {
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user("$old", null)));
 
-        assertThatThrownBy(() -> accountService.deactivate(USER_ID, new DeactivateAccountRequest(null)))
+        assertThatThrownBy(() -> accountService.deactivate(USER_ID, new DeactivateAccountRequest(null, null)))
                 .isInstanceOf(BadCredentialsException.class);
     }
 
@@ -272,10 +340,38 @@ class AccountServiceTest {
         User user = user(null, "sub-1");
         when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
 
-        accountService.deactivate(USER_ID, new DeactivateAccountRequest(null));
+        accountService.deactivate(USER_ID, new DeactivateAccountRequest(null, null));
 
         assertThat(user.getIsActive()).isFalse();
         verify(refreshTokenService).revokeAllUserTokens(user);
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.ACCOUNT_DELETED), anyString());
+    }
+
+    @Test
+    void deactivate_twoFactorAccount_spendsTheSubmittedCode() {
+        User user = user("$old", null);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("pw", "$old")).thenReturn(true);
+
+        accountService.deactivate(USER_ID, new DeactivateAccountRequest("pw", "123456"));
+
+        verify(twoFactorService).requireSecondFactorIfEnabled(user, "123456");
+        assertThat(user.getIsActive()).isFalse();
+    }
+
+    @Test
+    void deactivate_rejectedTwoFactorCode_throwsAndStaysActive() {
+        User user = user(null, "sub-1");
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        doThrow(new AuthFailureException("Invalid code", ErrorCodes.TWO_FACTOR_CODE_INVALID))
+                .when(twoFactorService).requireSecondFactorIfEnabled(user, "000000");
+
+        assertThatThrownBy(() -> accountService.deactivate(USER_ID,
+                new DeactivateAccountRequest(null, "000000")))
+                .isInstanceOf(AuthFailureException.class);
+
+        // A Google-only account has no password to ask for, so this is its only confirmation.
+        assertThat(user.getIsActive()).isTrue();
+        verify(refreshTokenService, never()).revokeAllUserTokens(any());
     }
 }

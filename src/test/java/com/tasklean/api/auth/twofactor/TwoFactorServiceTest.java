@@ -468,6 +468,46 @@ class TwoFactorServiceTest {
         verify(recoveryCodeRepository, never()).save(any());
     }
 
+    // --- requireSecondFactorIfEnabled (shared with the account-security endpoints) ---
+
+    @Test
+    void requireSecondFactorIfEnabled_noFactor_isANoOp() {
+        User user = user("$hash");
+        when(userTwoFactorRepository.findByUserIdUser(USER_ID)).thenReturn(Optional.empty());
+
+        // Callers apply it unconditionally, so an account without two-factor has to pass through
+        // without a code - and without reaching the provider.
+        twoFactorService.requireSecondFactorIfEnabled(user, null);
+
+        verify(twoFactorProvider, never()).verify(anyString(), anyString());
+    }
+
+    @Test
+    void requireSecondFactorIfEnabled_setupNotYetConfirmed_isANoOp() {
+        User user = user("$hash");
+        when(userTwoFactorRepository.findByUserIdUser(USER_ID)).thenReturn(Optional.of(factor(user, false)));
+
+        // An abandoned or in-progress enrollment is not a second factor yet; demanding a code for
+        // it would lock the user out of changing their own password.
+        twoFactorService.requireSecondFactorIfEnabled(user, null);
+
+        verify(twoFactorProvider, never()).verify(anyString(), anyString());
+    }
+
+    @Test
+    void requireSecondFactorIfEnabled_enabledAndCodeWrong_throws() {
+        User user = user("$hash");
+        when(userTwoFactorRepository.findByUserIdUser(USER_ID)).thenReturn(Optional.of(factor(user, true)));
+        when(secretCipher.decrypt("enc")).thenReturn("SECRET32");
+        when(twoFactorProvider.verify("SECRET32", "000000")).thenReturn(TwoFactorVerification.invalid());
+        when(recoveryCodeRepository.findByUserIdUserAndCodeHashAndUsedAtIsNull(USER_ID, hashOf("000000")))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> twoFactorService.requireSecondFactorIfEnabled(user, "000000"))
+                .isInstanceOf(AuthFailureException.class)
+                .hasFieldOrPropertyWithValue("code", ErrorCodes.TWO_FACTOR_CODE_INVALID);
+    }
+
     // --- consumeCode (shared with the sign-in challenge) ---
 
     @Test
