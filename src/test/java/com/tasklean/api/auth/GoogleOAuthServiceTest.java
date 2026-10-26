@@ -7,6 +7,8 @@ import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.jwt.JwtService;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
+import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
 
@@ -52,6 +55,12 @@ class GoogleOAuthServiceTest {
 
     @Mock
     private TwoFactorChallengeService twoFactorChallengeService;
+
+    @Mock
+    private EmailService emailService;
+
+    @Spy
+    private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
 
     @InjectMocks
     private GoogleOAuthService googleOAuthService;
@@ -100,6 +109,20 @@ class GoogleOAuthServiceTest {
                 .build();
     }
 
+    /** A password account that never entered its verification code - what Google linking finds. */
+    private User buildUnverifiedPasswordUser() {
+        return User.builder()
+                .idUser(9L)
+                .uid("usr-pw-9")
+                .email("jane@example.com")
+                .passwordHash("$2a$10$hash")
+                .name("Jane")
+                .lastName("Doe")
+                .isActive(true)
+                .isEmailVerified(false)
+                .build();
+    }
+
     // --- New user provisioning ---
 
     @Test
@@ -130,6 +153,20 @@ class GoogleOAuthServiceTest {
         assertThat(saved.getUid()).isNotBlank();
         verify(auditLogService).recordAccountEvent(eq(50L),
                 eq(AuditAction.REGISTER), anyString());
+    }
+
+    @Test
+    void authenticate_newGoogleUser_sendsWelcome() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", true));
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        googleOAuthService.authenticate(request());
+
+        // Registering through Google skips verifyEmail, so without this the only email a new
+        // Google account ever gets is the new-sign-in alert.
+        verify(emailService).send("jane@example.com", emailTemplates.welcome());
     }
 
     // --- Returning Google user ---
@@ -170,18 +207,9 @@ class GoogleOAuthServiceTest {
     @Test
     void authenticate_existingEmail_linksGoogleAndVerifies() throws Exception {
         stubVerify(payload("sub-123", "jane@example.com", true));
-        User passwordUser = User.builder()
-                .idUser(9L)
-                .uid("usr-pw-9")
-                .email("jane@example.com")
-                .passwordHash("$2a$10$hash")
-                .name("Jane")
-                .lastName("Doe")
-                .isActive(true)
-                .isEmailVerified(false)
-                .build();
         when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.empty());
-        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.of(passwordUser));
+        when(userRepository.findByEmail("jane@example.com"))
+                .thenReturn(Optional.of(buildUnverifiedPasswordUser()));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         when(jwtService.generateToken(any(User.class))).thenReturn("access-token");
         when(refreshTokenService.createRefreshToken(any(User.class))).thenReturn("refresh-token");
@@ -198,6 +226,21 @@ class GoogleOAuthServiceTest {
         assertThat(linked.getPasswordHash()).isEqualTo("$2a$10$hash");
         verify(auditLogService).recordAccountEvent(eq(9L),
                 eq(AuditAction.LOGIN), anyString());
+    }
+
+    @Test
+    void authenticate_existingEmail_linksWithoutWelcoming() throws Exception {
+        stubVerify(payload("sub-123", "jane@example.com", true));
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("jane@example.com"))
+                .thenReturn(Optional.of(buildUnverifiedPasswordUser()));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        googleOAuthService.authenticate(request());
+
+        // The welcome belongs to registration, not to the address becoming verified: linking adds
+        // a sign-in method to an account that already existed.
+        verify(emailService, never()).send(any(), any());
     }
 
     // --- Rejections ---
