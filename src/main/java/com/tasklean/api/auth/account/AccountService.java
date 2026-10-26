@@ -10,6 +10,7 @@ import com.tasklean.api.auth.account.dto.SetPasswordRequest;
 import com.tasklean.api.auth.dto.AuthResponse;
 import com.tasklean.api.auth.dto.GoogleAuthRequest;
 import com.tasklean.api.auth.refresh.RefreshTokenService;
+import com.tasklean.api.auth.twofactor.TwoFactorService;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
@@ -33,7 +34,8 @@ import org.springframework.transaction.annotation.Transactional;
  * password, managing connected sign-in methods (Google link/unlink), and deactivating the account.
  * A credential change revokes every existing session; for password change/set the current device
  * is immediately re-issued a fresh session so the caller stays signed in here while other devices
- * are forced to re-authenticate.
+ * are forced to re-authenticate. Each of these also requires a current second-factor code when the
+ * account has two-factor on, so a stolen session is never enough on its own.
  */
 @Slf4j
 @Service
@@ -48,16 +50,19 @@ public class AccountService {
     private final EmailService emailService;
     private final EmailTemplates emailTemplates;
     private final AuditLogService auditLogService;
+    private final TwoFactorService twoFactorService;
 
     /**
      * Changes the caller's password after verifying the current one, then rotates sessions
      * (revoke all, keep this device) and emails a confirmation.
      *
      * @param userId  the authenticated caller's internal id
-     * @param request the current and new passwords
+     * @param request the current and new passwords, plus a second-factor code when the account
+     *                has two-factor on
      * @return a fresh auth response (new access + refresh token) for the current device
      * @throws BusinessRuleException   if the account has no password yet (use set-password instead)
-     * @throws BadCredentialsException if the current password is incorrect
+     * @throws BadCredentialsException if the current password, or a required second-factor code,
+     *                                 is missing or incorrect
      */
     @Transactional
     public AuthResponse changePassword(Long userId, ChangePasswordRequest request) {
@@ -68,6 +73,8 @@ public class AccountService {
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
             throw new AuthFailureException(ErrorMessages.PASSWORD_INCORRECT, ErrorCodes.PASSWORD_INVALID);
         }
+        // After the password check so a wrong password never reveals whether two-factor is on.
+        twoFactorService.requireSecondFactorIfEnabled(user, request.getCode());
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
@@ -84,9 +91,11 @@ public class AccountService {
      * (revoke all, keep this device) and emails a confirmation.
      *
      * @param userId  the authenticated caller's internal id
-     * @param request the new password
+     * @param request the new password, plus a second-factor code when the account has
+     *                two-factor on
      * @return a fresh auth response (new access + refresh token) for the current device
-     * @throws BusinessRuleException if the account already has a password (use change-password instead)
+     * @throws BusinessRuleException   if the account already has a password (use change-password instead)
+     * @throws BadCredentialsException if a required second-factor code is missing or incorrect
      */
     @Transactional
     public AuthResponse setPassword(Long userId, SetPasswordRequest request) {
@@ -94,6 +103,9 @@ public class AccountService {
         if (user.getPasswordHash() != null) {
             throw new BusinessRuleException("This account already has a password. Change it instead.");
         }
+        // There is no current password to re-check here, so on a two-factor account the code is
+        // the only thing besides the session standing between a thief and a password they chose.
+        twoFactorService.requireSecondFactorIfEnabled(user, request.getCode());
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
         userRepository.save(user);
@@ -190,8 +202,9 @@ public class AccountService {
      * authenticated session alone.
      *
      * @param userId  the authenticated caller's internal id
-     * @param request the confirmation password (required only for a password account)
-     * @throws BadCredentialsException if the account has a password and the supplied one is
+     * @param request the confirmation password (required only for a password account), plus a
+     *                second-factor code when the account has two-factor on
+     * @throws BadCredentialsException if the password, or a required second-factor code, is
      *                                 missing or incorrect
      */
     @Transactional
@@ -207,6 +220,7 @@ public class AccountService {
                 throw new AuthFailureException(ErrorMessages.PASSWORD_INCORRECT, ErrorCodes.PASSWORD_INVALID);
             }
         }
+        twoFactorService.requireSecondFactorIfEnabled(user, request.getCode());
 
         user.setIsActive(false);
         userRepository.save(user);

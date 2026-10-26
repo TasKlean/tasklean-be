@@ -3,7 +3,10 @@ package com.tasklean.api.auth.account.dto;
 import com.tasklean.api.common.validation.ValidPassword;
 import lombok.*;
 
-/** Request body for "set password" on a Google-only account: the chosen new password. */
+/**
+ * Request body for "set password" on a Google-only account: the chosen new password, plus a
+ * current second-factor code when the account has two-factor on.
+ */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -15,4 +18,8 @@ public class SetPasswordRequest {
     // the same policy the UI and register enforce.
     @ValidPassword
     private String newPassword;
+
+    // Only required when the account has two-factor on, which the service checks - an account
+    // without it leaves this null.
+    private String code;
 }
