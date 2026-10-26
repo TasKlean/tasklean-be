@@ -9,6 +9,8 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.email.EmailService;
+import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.AuthFailureException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
@@ -44,6 +46,8 @@ public class GoogleOAuthService {
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
     private final TwoFactorChallengeService twoFactorChallengeService;
+    private final EmailService emailService;
+    private final EmailTemplates emailTemplates;
 
     /**
      * Authenticates a user from a Google ID token, provisioning or linking an account as needed,
@@ -174,6 +178,11 @@ public class GoogleOAuthService {
                 .build();
         user = userRepository.save(user);
         log.info("User registered via Google: uid={}", user.getUid());
+
+        // The welcome belongs to registration, so it is sent here and in verifyEmail only; before
+        // issueTokens so it lands ahead of the new-sign-in alert the refresh token triggers.
+        emailService.send(user.getEmail(), emailTemplates.welcome());
+
         return issueTokens(user, AuditAction.REGISTER, "Account created via Google");
     }
 
