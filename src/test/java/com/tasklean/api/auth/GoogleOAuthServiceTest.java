@@ -9,6 +9,7 @@ import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.auth.twofactor.TwoFactorChallengeService;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.email.EmailTemplates;
+import com.tasklean.api.common.validation.FieldLimits;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -167,6 +168,88 @@ class GoogleOAuthServiceTest {
         // Registering through Google skips verifyEmail, so without this the only email a new
         // Google account ever gets is the new-sign-in alert.
         verify(emailService).send("jane@example.com", emailTemplates.welcome());
+    }
+
+    // --- Provider values that outgrow their columns ---
+
+    @Test
+    void authenticate_oversizedGoogleProfile_clipsEachValueToItsColumn() throws Exception {
+        GoogleIdToken.Payload payload = payload("sub-123", "jane@example.com", true);
+        payload.set("given_name", "a".repeat(FieldLimits.NAME + 50));
+        payload.set("family_name", "b".repeat(FieldLimits.NAME + 50));
+        payload.set("picture", "https://pics/" + "c".repeat(FieldLimits.PHOTO_URL));
+        stubVerify(payload);
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        googleOAuthService.authenticate(request());
+
+        // Clipped rather than refused: the column would reject the insert, and failing a sign-in
+        // over the length of someone's own profile name is worse than storing a trimmed one.
+        User saved = savedUser();
+        assertThat(saved.getName()).isEqualTo("a".repeat(FieldLimits.NAME));
+        assertThat(saved.getLastName()).isEqualTo("b".repeat(FieldLimits.NAME));
+        assertThat(saved.getPhotoUrl()).hasSize(FieldLimits.PHOTO_URL);
+    }
+
+    @Test
+    void authenticate_blankGivenName_fallsBackToTheFullNameClipped() throws Exception {
+        GoogleIdToken.Payload payload = payload("sub-123", "jane@example.com", true);
+        payload.set("given_name", " ");
+        payload.set("name", "d".repeat(FieldLimits.NAME + 50));
+        stubVerify(payload);
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        googleOAuthService.authenticate(request());
+
+        assertThat(savedUser().getName()).isEqualTo("d".repeat(FieldLimits.NAME));
+    }
+
+    @Test
+    void authenticate_noNameAtAll_fallsBackToTheEmailLocalPartClipped() throws Exception {
+        String localPart = "e".repeat(FieldLimits.NAME + 50);
+        GoogleIdToken.Payload payload = payload("sub-123", localPart + "@example.com", true);
+        payload.set("given_name", null);
+        payload.set("family_name", null);
+        stubVerify(payload);
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail(localPart + "@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        googleOAuthService.authenticate(request());
+
+        User saved = savedUser();
+        assertThat(saved.getName()).isEqualTo("e".repeat(FieldLimits.NAME));
+        // The column is non-null, so a missing family name becomes empty rather than null.
+        assertThat(saved.getLastName()).isEmpty();
+    }
+
+    @Test
+    void authenticate_blankFamilyNameAndNoPicture_storesEmptySurnameAndNoPhoto() throws Exception {
+        GoogleIdToken.Payload payload = payload("sub-123", "jane@example.com", true);
+        payload.set("family_name", " ");
+        payload.set("picture", null);
+        stubVerify(payload);
+        when(userRepository.findByGoogleSub("sub-123")).thenReturn(Optional.empty());
+        when(userRepository.findByEmail("jane@example.com")).thenReturn(Optional.empty());
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+
+        googleOAuthService.authenticate(request());
+
+        User saved = savedUser();
+        // The surname column is non-null, so a blank one becomes empty; a missing picture stays
+        // missing rather than being invented.
+        assertThat(saved.getLastName()).isEmpty();
+        assertThat(saved.getPhotoUrl()).isNull();
+    }
+
+    private User savedUser() {
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        return captor.getValue();
     }
 
     // --- Returning Google user ---

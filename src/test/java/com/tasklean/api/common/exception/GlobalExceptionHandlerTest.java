@@ -205,6 +205,18 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleDataIntegrityViolation_causeIsNotASqlException_stillReturns400() {
+        ResponseEntity<ApiResponse<Void>> response = handler.handleDataIntegrityViolation(
+                new DataIntegrityViolationException("constraint", new IllegalStateException("no sql cause")));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::getMessage)
+                .isEqualTo(ErrorMessages.MALFORMED_REQUEST);
+    }
+
+    @Test
     void handleUnexpected_returns500WithGenericMessage() {
         ResponseEntity<ApiResponse<Void>> response =
                 handler.handleUnexpected(new RuntimeException("boom"));
