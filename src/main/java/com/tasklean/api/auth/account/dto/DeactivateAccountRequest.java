@@ -1,5 +1,7 @@
 package com.tasklean.api.auth.account.dto;
 
+import com.tasklean.api.common.validation.FieldLimits;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 /**
@@ -14,9 +16,11 @@ import lombok.*;
 @Builder
 public class DeactivateAccountRequest {
 
+    @Size(max = FieldLimits.PASSWORD_INPUT)
     private String password;
 
     // Only required when the account has two-factor on, which the service checks - an account
     // without it leaves this null.
+    @Size(max = FieldLimits.CODE)
     private String code;
 }

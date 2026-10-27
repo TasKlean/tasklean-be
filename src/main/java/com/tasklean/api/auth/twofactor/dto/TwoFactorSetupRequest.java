@@ -1,5 +1,7 @@
 package com.tasklean.api.auth.twofactor.dto;
 
+import com.tasklean.api.common.validation.FieldLimits;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 /**
@@ -14,5 +16,6 @@ import lombok.*;
 @Builder
 public class TwoFactorSetupRequest {
 
+    @Size(max = FieldLimits.PASSWORD_INPUT)
     private String password;
 }

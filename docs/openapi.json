@@ -4250,10 +4250,13 @@
         "description" : "Request body for \"change password\": the current password, the chosen new password, and a\n current second-factor code when the account has two-factor on.",
         "properties" : {
           "code" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 32,
+            "minLength" : 0
           },
           "currentPassword" : {
             "type" : "string",
+            "maxLength" : 256,
             "minLength" : 1
           },
           "newPassword" : {
@@ -4281,10 +4284,14 @@
         "description" : "Request body for \"deactivate account\". The password is required for an account that has one\n (re-authentication) and ignored for a Google-only account, which the valid session confirms.\n A current second-factor code is required when the account has two-factor on.",
         "properties" : {
           "code" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 32,
+            "minLength" : 0
           },
           "password" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 256,
+            "minLength" : 0
           }
         }
       },
@@ -4385,6 +4392,7 @@
           "email" : {
             "type" : "string",
             "format" : "email",
+            "maxLength" : 254,
             "minLength" : 1
           }
         },
@@ -4396,10 +4404,12 @@
         "properties" : {
           "idToken" : {
             "type" : "string",
+            "maxLength" : 4096,
             "minLength" : 1
           },
           "nonce" : {
             "type" : "string",
+            "maxLength" : 256,
             "minLength" : 1
           }
         },
@@ -4531,10 +4541,12 @@
           "email" : {
             "type" : "string",
             "format" : "email",
+            "maxLength" : 254,
             "minLength" : 1
           },
           "password" : {
             "type" : "string",
+            "maxLength" : 256,
             "minLength" : 1
           }
         },
@@ -4745,6 +4757,7 @@
         "properties" : {
           "refreshToken" : {
             "type" : "string",
+            "maxLength" : 64,
             "minLength" : 1
           }
         },
@@ -4756,17 +4769,22 @@
           "email" : {
             "type" : "string",
             "format" : "email",
+            "maxLength" : 254,
             "minLength" : 1
           },
           "lastName" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
           },
           "middleName" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
           },
           "name" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
           },
           "password" : {
@@ -4792,6 +4810,7 @@
           "email" : {
             "type" : "string",
             "format" : "email",
+            "maxLength" : 254,
             "minLength" : 1
           }
         },
@@ -4806,6 +4825,7 @@
           },
           "token" : {
             "type" : "string",
+            "maxLength" : 64,
             "minLength" : 1
           }
         },
@@ -4816,7 +4836,9 @@
         "description" : "Request body for \"set password\" on a Google-only account: the chosen new password, plus a\n current second-factor code when the account has two-factor on.",
         "properties" : {
           "code" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 32,
+            "minLength" : 0
           },
           "newPassword" : {
             "type" : "string"
@@ -5061,10 +5083,13 @@
         "properties" : {
           "code" : {
             "type" : "string",
+            "maxLength" : 32,
             "minLength" : 1
           },
           "password" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 256,
+            "minLength" : 0
           }
         },
         "required" : [ "code" ]
@@ -5075,6 +5100,7 @@
         "properties" : {
           "code" : {
             "type" : "string",
+            "maxLength" : 32,
             "minLength" : 1
           }
         },
@@ -5106,7 +5132,9 @@
         "description" : "Request body for starting two-factor setup. The password re-authenticates the caller; it is\n required for an account that has one and ignored for a Google-only account, which the valid\n session confirms.",
         "properties" : {
           "password" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 256,
+            "minLength" : 0
           }
         }
       },
@@ -5154,10 +5182,12 @@
         "properties" : {
           "challengeToken" : {
             "type" : "string",
+            "maxLength" : 64,
             "minLength" : 1
           },
           "code" : {
             "type" : "string",
+            "maxLength" : 32,
             "minLength" : 1
           }
         },
@@ -5284,6 +5314,7 @@
           "email" : {
             "type" : "string",
             "format" : "email",
+            "maxLength" : 254,
             "minLength" : 1
           }
         },

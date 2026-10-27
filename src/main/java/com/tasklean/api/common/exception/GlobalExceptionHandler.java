@@ -4,6 +4,7 @@ import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import java.sql.SQLException;
 import java.util.stream.Collectors;
 
 /**
@@ -168,6 +170,25 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining(", "));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(message));
+    }
+
+    /**
+     * Maps a write the database refused - a value too long for its column, or a unique constraint a
+     * race slipped past - to 400, so a field that no {@code @Size} covers yet fails as a bad request
+     * instead of an internal error. The message stays generic: naming the constraint would tell the
+     * caller whether an address already has an account.
+     *
+     * @param ex the thrown exception
+     * @return a 400 response with a generic malformed-request message
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        // Only the SQL state: a unique-violation message quotes the offending value, which is PII.
+        Throwable cause = ex.getMostSpecificCause();
+        String sqlState = cause instanceof SQLException sql ? sql.getSQLState() : "unknown";
+        log.warn("Database rejected a write: sqlState={}", sqlState);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ErrorMessages.MALFORMED_REQUEST));
     }
 
     /**
