@@ -12,6 +12,7 @@ import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.email.EmailService;
 import com.tasklean.api.common.email.EmailTemplates;
 import com.tasklean.api.common.exception.AuthFailureException;
+import com.tasklean.api.common.validation.FieldLimits;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
@@ -158,7 +159,7 @@ public class GoogleOAuthService {
         // Google has verified this mailbox, so a previously unverified password account is now trusted.
         user.setIsEmailVerified(true);
         if (user.getPhotoUrl() == null) {
-            user.setPhotoUrl((String) payload.get("picture"));
+            user.setPhotoUrl(picture(payload));
         }
         user = userRepository.save(user);
         log.info("Linked Google sign-in to existing account: uid={}", user.getUid());
@@ -171,7 +172,7 @@ public class GoogleOAuthService {
                 .email(payload.getEmail())
                 .name(firstName(payload))
                 .lastName(lastName(payload))
-                .photoUrl((String) payload.get("picture"))
+                .photoUrl(picture(payload))
                 .googleSub(payload.getSubject())
                 // Google has already verified the email, so no verification step is required.
                 .isEmailVerified(true)
@@ -203,19 +204,29 @@ public class GoogleOAuthService {
     private String firstName(GoogleIdToken.Payload payload) {
         String given = (String) payload.get("given_name");
         if (given != null && !given.isBlank()) {
-            return given;
+            return clamp(given, FieldLimits.NAME);
         }
         String name = (String) payload.get("name");
         if (name != null && !name.isBlank()) {
-            return name;
+            return clamp(name, FieldLimits.NAME);
         }
         // Last resort: the local part of the email address.
-        return payload.getEmail().split("@")[0];
+        return clamp(payload.getEmail().split("@")[0], FieldLimits.NAME);
     }
 
     private String lastName(GoogleIdToken.Payload payload) {
         String family = (String) payload.get("family_name");
         // Google may omit the family name; the column is non-null, so fall back to an empty string.
-        return family != null && !family.isBlank() ? family : "";
+        return family != null && !family.isBlank() ? clamp(family, FieldLimits.NAME) : "";
+    }
+
+    private String picture(GoogleIdToken.Payload payload) {
+        return clamp((String) payload.get("picture"), FieldLimits.PHOTO_URL);
+    }
+
+    // These come from a profile the account holder edits, not from a form we validate, so an
+    // over-long one is clipped to its column rather than refused - being unable to sign in is worse.
+    private String clamp(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
     }
 }

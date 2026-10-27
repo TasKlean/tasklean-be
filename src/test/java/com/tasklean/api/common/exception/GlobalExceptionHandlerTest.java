@@ -5,6 +5,7 @@ import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.MethodParameter;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
@@ -13,6 +14,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 
+import java.sql.SQLException;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,6 +24,11 @@ import static org.mockito.Mockito.when;
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+
+    private static DataIntegrityViolationException valueTooLong() {
+        return new DataIntegrityViolationException("could not execute statement",
+                new SQLException("value too long for type character varying(100)", "22001"));
+    }
 
     @Test
     void handleNotFound_returns404WithMessage() {
@@ -167,6 +174,46 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getBody().getMessage())
                 .contains("email: must not be blank")
                 .contains("password: size must be at least 8");
+    }
+
+    @Test
+    void handleDataIntegrityViolation_returns400WithGenericMessage() {
+        ResponseEntity<ApiResponse<Void>> response =
+                handler.handleDataIntegrityViolation(valueTooLong());
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::isSuccess, ApiResponse::getMessage)
+                .containsExactly(false, ErrorMessages.MALFORMED_REQUEST);
+    }
+
+    @Test
+    void handleDataIntegrityViolation_doesNotEchoTheDatabaseMessage() {
+        DataIntegrityViolationException duplicate = new DataIntegrityViolationException(
+                "could not execute statement",
+                new SQLException("duplicate key value violates unique constraint \"user_email_key\" "
+                        + "Detail: Key (email)=(ada@example.com) already exists.", "23505"));
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleDataIntegrityViolation(duplicate);
+
+        // The driver's message quotes the offending value, which on this table is an address.
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage())
+                .isEqualTo(ErrorMessages.MALFORMED_REQUEST)
+                .doesNotContain("ada@example.com", "user_email_key");
+    }
+
+    @Test
+    void handleDataIntegrityViolation_causeIsNotASqlException_stillReturns400() {
+        ResponseEntity<ApiResponse<Void>> response = handler.handleDataIntegrityViolation(
+                new DataIntegrityViolationException("constraint", new IllegalStateException("no sql cause")));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::getMessage)
+                .isEqualTo(ErrorMessages.MALFORMED_REQUEST);
     }
 
     @Test

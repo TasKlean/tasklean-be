@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
 public class PasswordPolicyValidator implements ConstraintValidator<ValidPassword, String> {
 
     static final int MIN_LENGTH = 8;
-    static final int MAX_LENGTH = 64;
+    static final int MAX_LENGTH = FieldLimits.PASSWORD;
 
     private static final Pattern UPPERCASE = Pattern.compile("[A-Z]");
     private static final Pattern LOWERCASE = Pattern.compile("[a-z]");

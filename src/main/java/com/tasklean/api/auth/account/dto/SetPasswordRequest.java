@@ -1,6 +1,8 @@
 package com.tasklean.api.auth.account.dto;
 
+import com.tasklean.api.common.validation.FieldLimits;
 import com.tasklean.api.common.validation.ValidPassword;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 /**
@@ -21,5 +23,6 @@ public class SetPasswordRequest {
 
     // Only required when the account has two-factor on, which the service checks - an account
     // without it leaves this null.
+    @Size(max = FieldLimits.CODE)
     private String code;
 }

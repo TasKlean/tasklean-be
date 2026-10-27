@@ -1,6 +1,8 @@
 package com.tasklean.api.auth.twofactor.dto;
 
+import com.tasklean.api.common.validation.FieldLimits;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 /**
@@ -15,5 +17,6 @@ import lombok.*;
 public class TwoFactorEnableRequest {
 
     @NotBlank(message = "Code is required")
+    @Size(min = 1, max = FieldLimits.CODE)
     private String code;
 }
