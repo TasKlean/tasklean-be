@@ -1,8 +1,11 @@
 package com.tasklean.api.domain.upload;
 
+import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.common.storage.ObjectStorage;
+import com.tasklean.api.common.storage.StoredObject;
 import com.tasklean.api.config.StorageProperties;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
@@ -15,6 +18,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -33,6 +39,7 @@ public class UploadService {
     private final UserRepository userRepository;
     private final ObjectStorage objectStorage;
     private final StorageProperties storageProperties;
+    private final Clock clock;
 
     /**
      * Records an intended upload and signs the URL it may be written to. The type and size are part
@@ -87,6 +94,87 @@ public class UploadService {
                 .url(objectStorage.presignDownload(upload.getStorageKey()))
                 .expiresInSeconds(storageProperties.getDownloadTtl().toSeconds())
                 .build();
+    }
+
+    /**
+     * Points a group at an uploaded photo, after proving the object is really there and is really
+     * what was declared. The bucket cannot be trusted to have refused a mismatch — a local one does
+     * not even try — so the checks happen here, before anything stored points at the object.
+     *
+     * <p>Re-sending the photo a group already has is a no-op, so a repeated update is harmless.
+     *
+     * @param uploadUid    the upload's public uid, or {@code null} to clear the photo
+     * @param group        the group the photo belongs to
+     * @param callerUserId the id of the authenticated caller
+     * @return the uid to store on the group, or {@code null} when the photo is being cleared
+     * @throws InvalidRequestException if the upload is not this caller's pending group photo for
+     *                                 this group, or its object does not match what was declared
+     */
+    @Transactional
+    public String attachGroupPhoto(String uploadUid, Group group, Long callerUserId) {
+        if (uploadUid == null) {
+            supersedeCurrentPhoto(group, null);
+            return null;
+        }
+        if (uploadUid.equals(group.getPhotoUid())) {
+            return uploadUid;
+        }
+
+        Upload upload = uploadRepository.findByUid(uploadUid)
+                .orElseThrow(this::unusable);
+        requireOwnPendingGroupPhoto(upload, group, callerUserId);
+        requireObjectMatchesDeclaration(upload);
+
+        supersedeCurrentPhoto(group, uploadUid);
+        upload.setStatus(UploadStatus.ATTACHED);
+        upload.setDateAttached(LocalDateTime.now(clock));
+        uploadRepository.save(upload);
+        log.info("Upload attached: uid={} purpose={} groupUid={}",
+                upload.getUid(), upload.getPurpose(), group.getUid());
+        return upload.getUid();
+    }
+
+    // Everything the caller claimed about the upload, checked against the row we wrote at signing.
+    private void requireOwnPendingGroupPhoto(Upload upload, Group group, Long callerUserId) {
+        boolean ownPendingPhotoForThisGroup = upload.getStatus() == UploadStatus.PENDING
+                && upload.getPurpose() == UploadPurpose.GROUP_PHOTO
+                && upload.getUser().getIdUser().equals(callerUserId)
+                && upload.getGroup() != null
+                && upload.getGroup().getIdGroup().equals(group.getIdGroup());
+        if (!ownPendingPhotoForThisGroup) {
+            throw unusable();
+        }
+    }
+
+    // The object has to exist and be what was signed for, bytes included: a content type is the
+    // uploader's assertion until the magic number agrees with it.
+    private void requireObjectMatchesDeclaration(Upload upload) {
+        StoredObject stored = objectStorage.head(upload.getStorageKey()).orElseThrow(this::unusable);
+        if (stored.contentLength() != upload.getSizeBytes()
+                || !upload.getContentType().equals(stored.contentType())) {
+            throw unusable();
+        }
+        byte[] prefix = objectStorage.readPrefix(upload.getStorageKey(), ImageSignature.BYTES_NEEDED)
+                .orElseThrow(this::unusable);
+        if (!ImageSignature.matches(upload.getContentType(), prefix)) {
+            throw unusable();
+        }
+    }
+
+    // A replaced photo's object is nobody's any more, so the sweep collects it.
+    private void supersedeCurrentPhoto(Group group, String replacementUid) {
+        Optional.ofNullable(group.getPhotoUid())
+                .filter(current -> !current.equals(replacementUid))
+                .flatMap(uploadRepository::findByUid)
+                .ifPresent(previous -> {
+                    previous.setStatus(UploadStatus.SUPERSEDED);
+                    uploadRepository.save(previous);
+                });
+    }
+
+    // One failure for every way an attach can be refused: which check caught it is our business.
+    private InvalidRequestException unusable() {
+        return new InvalidRequestException(ErrorMessages.UPLOAD_NOT_USABLE, ErrorCodes.UPLOAD_NOT_USABLE);
     }
 
     private Group requireGroup(String groupUid) {

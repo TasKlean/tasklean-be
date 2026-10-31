@@ -20,7 +20,7 @@ public class GroupResponse {
     private String uid;
     private String name;
     private String description;
-    private String photoUrl;
+    private String photoUid;
     private String inviteCode;
     private GroupRole myRole;
     private Integer memberCount;
@@ -55,7 +55,7 @@ public class GroupResponse {
                 .uid(group.getUid())
                 .name(group.getName())
                 .description(group.getDescription())
-                .photoUrl(group.getPhotoUrl())
+                .photoUid(group.getPhotoUid())
                 .memberCount((int) memberCount)
                 .isActive(group.getIsActive())
                 .dateCreated(group.getDateCreated())

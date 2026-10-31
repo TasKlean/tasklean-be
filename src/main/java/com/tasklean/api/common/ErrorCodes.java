@@ -23,6 +23,9 @@ public final class ErrorCodes {
     /** An email the flow depends on could not be sent; the same request is worth retrying. */
     public static final String EMAIL_DELIVERY_FAILED = "EMAIL_DELIVERY_FAILED";
 
+    /** The image never arrived in the bucket as declared; upload it again before attaching. */
+    public static final String UPLOAD_NOT_USABLE = "UPLOAD_NOT_USABLE";
+
     /** The account is deactivated, so no retry of any kind will succeed. */
     public static final String ACCOUNT_DEACTIVATED = "ACCOUNT_DEACTIVATED";
 

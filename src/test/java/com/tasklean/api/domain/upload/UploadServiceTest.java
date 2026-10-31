@@ -1,7 +1,9 @@
 package com.tasklean.api.domain.upload;
 
+import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.common.storage.ObjectStorage;
+import com.tasklean.api.common.storage.StoredObject;
 import com.tasklean.api.config.StorageProperties;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
@@ -15,6 +17,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.Optional;
 
@@ -49,13 +52,14 @@ class UploadServiceTest {
     private static final Long USER_ID = 1L;
     private static final String GROUP_UID = "group-uid";
     private static final String UPLOAD_UID = "upload-uid";
+    private static final String KEY = "group-photo/x.png";
 
     @BeforeEach
     void setUp() {
         storageProperties.setUploadTtl(Duration.ofMinutes(5));
         storageProperties.setDownloadTtl(Duration.ofMinutes(15));
         uploadService = new UploadService(uploadRepository, groupRepository, userRepository,
-                objectStorage, storageProperties);
+                objectStorage, storageProperties, Clock.systemUTC());
     }
 
     private void stubTargetAndSave() {
@@ -172,5 +176,160 @@ class UploadServiceTest {
 
         assertThatThrownBy(() -> uploadService.downloadUrl(UPLOAD_UID))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // --- attachGroupPhoto ---
+
+    private static final byte[] PNG_BYTES = {
+            (byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 13};
+
+    private Group targetGroup(String currentPhotoUid) {
+        return Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).photoUid(currentPhotoUid).build();
+    }
+
+    private Upload groupPhoto(Long requesterId, UploadStatus status) {
+        return Upload.builder()
+                .uid(UPLOAD_UID)
+                .storageKey(KEY)
+                .purpose(UploadPurpose.GROUP_PHOTO)
+                .contentType("image/png")
+                .sizeBytes(12L)
+                .status(status)
+                .user(User.builder().idUser(requesterId).build())
+                .group(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build())
+                .build();
+    }
+
+    private void stubPending(Long requesterId) {
+        when(uploadRepository.findByUid(UPLOAD_UID))
+                .thenReturn(Optional.of(groupPhoto(requesterId, UploadStatus.PENDING)));
+    }
+
+    private void stubObjectAsDeclared() {
+        when(objectStorage.head(KEY)).thenReturn(Optional.of(new StoredObject("image/png", 12L)));
+        when(objectStorage.readPrefix(KEY, 12)).thenReturn(Optional.of(PNG_BYTES));
+    }
+
+    @Test
+    void attachGroupPhoto_ownPendingUploadThatArrived_isAttached() {
+        Upload upload = groupPhoto(USER_ID, UploadStatus.PENDING);
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(upload));
+        stubObjectAsDeclared();
+
+        String stored = uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID);
+
+        assertThat(stored).isEqualTo(UPLOAD_UID);
+        assertThat(upload.getStatus()).isEqualTo(UploadStatus.ATTACHED);
+        assertThat(upload.getDateAttached()).isNotNull();
+    }
+
+    @Test
+    void attachGroupPhoto_null_clearsThePhotoAndSupersedesTheOldOne() {
+        Upload previous = groupPhoto(USER_ID, UploadStatus.ATTACHED);
+        when(uploadRepository.findByUid("old-uid")).thenReturn(Optional.of(previous));
+
+        String stored = uploadService.attachGroupPhoto(null, targetGroup("old-uid"), USER_ID);
+
+        assertThat(stored).isNull();
+        assertThat(previous.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+    }
+
+    @Test
+    void attachGroupPhoto_replacingAPhoto_supersedesTheOldOne() {
+        Upload previous = groupPhoto(USER_ID, UploadStatus.ATTACHED);
+        Upload replacement = groupPhoto(USER_ID, UploadStatus.PENDING);
+        when(uploadRepository.findByUid("old-uid")).thenReturn(Optional.of(previous));
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(replacement));
+        stubObjectAsDeclared();
+
+        uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup("old-uid"), USER_ID);
+
+        // Nothing points at the replaced object any more, so the sweep may collect it.
+        assertThat(previous.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+        assertThat(replacement.getStatus()).isEqualTo(UploadStatus.ATTACHED);
+    }
+
+    @Test
+    void attachGroupPhoto_thePhotoTheGroupAlreadyHas_changesNothing() {
+        // A repeated update must not fail just because the upload is no longer pending.
+        String stored = uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(UPLOAD_UID), USER_ID);
+
+        assertThat(stored).isEqualTo(UPLOAD_UID);
+        verify(uploadRepository, never()).save(any());
+        verify(objectStorage, never()).head(anyString());
+    }
+
+    @Test
+    void attachGroupPhoto_unknownUid_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachGroupPhoto_someoneElsesUpload_throwsInvalidRequest() {
+        stubPending(2L);
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(objectStorage, never()).head(anyString());
+    }
+
+    @Test
+    void attachGroupPhoto_uploadForAnotherGroup_throwsInvalidRequest() {
+        Upload elsewhere = groupPhoto(USER_ID, UploadStatus.PENDING);
+        elsewhere.setGroup(Group.builder().idGroup(99L).uid("other").build());
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(elsewhere));
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachGroupPhoto_anUploadAlreadySpent_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID))
+                .thenReturn(Optional.of(groupPhoto(USER_ID, UploadStatus.ATTACHED)));
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachGroupPhoto_objectNeverArrived_throwsInvalidRequest() {
+        stubPending(USER_ID);
+        when(objectStorage.head(KEY)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachGroupPhoto_objectIsADifferentSize_throwsInvalidRequest() {
+        stubPending(USER_ID);
+        when(objectStorage.head(KEY)).thenReturn(Optional.of(new StoredObject("image/png", 9999L)));
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachGroupPhoto_objectIsADifferentType_throwsInvalidRequest() {
+        stubPending(USER_ID);
+        when(objectStorage.head(KEY)).thenReturn(Optional.of(new StoredObject("image/jpeg", 12L)));
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachGroupPhoto_bytesAreNotTheDeclaredImage_throwsInvalidRequest() {
+        // The header said PNG and the bucket stored that header; only the bytes give it away.
+        stubPending(USER_ID);
+        when(objectStorage.head(KEY)).thenReturn(Optional.of(new StoredObject("image/png", 12L)));
+        when(objectStorage.readPrefix(KEY, 12)).thenReturn(Optional.of("<?php echo 1;".getBytes()));
+
+        assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
     }
 }

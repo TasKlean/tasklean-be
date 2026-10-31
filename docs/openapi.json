@@ -2059,7 +2059,7 @@
         "tags" : [ "Groups" ]
       },
       "put" : {
-        "description" : "Updates a group.",
+        "description" : "Updates a group. A <code>photoUid</code> is accepted only if it is the caller's own uploaded\n image for this group and its object matches what was signed for; sending none clears it.",
         "operationId" : "updateGroup",
         "parameters" : [ {
           "description" : "the group's public UID",
@@ -4620,9 +4620,10 @@
             "maxLength" : 255,
             "minLength" : 1
           },
-          "photoUrl" : {
+          "photoUid" : {
             "type" : "string",
-            "maxLength" : 500,
+            "description" : "The uid of an upload of yours, already PUT to the bucket; null clears the picture.",
+            "maxLength" : 100,
             "minLength" : 0
           }
         },
@@ -4660,7 +4661,7 @@
           "name" : {
             "type" : "string"
           },
-          "photoUrl" : {
+          "photoUid" : {
             "type" : "string"
           },
           "uid" : {
@@ -4766,7 +4767,7 @@
           "name" : {
             "type" : "string"
           },
-          "photoUrl" : {
+          "photoUid" : {
             "type" : "string"
           },
           "uid" : {

@@ -52,7 +52,7 @@ ON CONFLICT DO NOTHING;
 -- ============================================================================
 -- GROUPS (2 groups: "Apartment 4B" and "Family Home")
 -- ============================================================================
-INSERT INTO "group" (uid, name, description, photo_url, invite_code)
+INSERT INTO "group" (uid, name, description, photo_uid, invite_code)
 VALUES
     ('3ac1fa2b-e637-4db0-b74f-7f8c61a33350', 'Apartment 4B', 'Roommates in apartment 4B', NULL, 'APT4B001'),
     ('7d95edc0-c88b-493b-bf80-dd9414c21512', 'Family Home', 'The Williams family household', NULL, 'FAMLY002')

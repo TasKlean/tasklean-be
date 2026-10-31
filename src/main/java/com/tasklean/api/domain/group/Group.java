@@ -21,14 +21,15 @@ public class Group extends BaseEntity {
     @Column(name = "uid", unique = true, nullable = false, length = 500)
     private String uid;
 
-    @Column(name = "name", nullable = false, length = 255)
+    @Column(name = "name", nullable = false)
     private String name;
 
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "photo_url", length = 500)
-    private String photoUrl;
+    // The uid of our own upload, not a URL: see PROJECT_BIBLE "Image uploads".
+    @Column(name = "photo_uid", length = 100)
+    private String photoUid;
 
     @Column(name = "invite_code", unique = true, nullable = false, length = 50)
     private String inviteCode;

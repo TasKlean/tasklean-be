@@ -203,7 +203,8 @@ class GroupControllerSecurityTest {
     @Test
     void updateGroup_groupAdmin_ok() throws Exception {
         callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
-        when(groupService.updateGroup(org.mockito.ArgumentMatchers.eq(GROUP_UID), org.mockito.ArgumentMatchers.any()))
+        when(groupService.updateGroup(org.mockito.ArgumentMatchers.eq(GROUP_UID),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.anyLong()))
                 .thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
 
         mockMvc.perform(put("/api/groups/{uid}", GROUP_UID)

@@ -18,6 +18,7 @@ public class GroupRequest {
     @Size(max = FieldLimits.DESCRIPTION)
     private String description;
 
-    @Size(max = FieldLimits.PHOTO_URL)
-    private String photoUrl;
+    /** The uid of an upload of yours, already PUT to the bucket; null clears the picture. */
+    @Size(max = FieldLimits.UID)
+    private String photoUid;
 }
