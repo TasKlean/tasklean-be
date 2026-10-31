@@ -37,22 +37,19 @@ services:
       timeout: 5s
       retries: 5
 
-  # Local S3 for image uploads. LocalStack rather than MinIO because MinIO's community images now
-  # require registry credentials, and rather than a mock because it validates the signatures we
-  # produce - a presigning bug has to fail here, not on the production bucket.
+  # Local S3 for image uploads.
   localstack:
     image: localstack/localstack:4.9.2
     container_name: tasklean-s3
     environment:
       SERVICES: s3
       S3_BUCKET: ${S3_BUCKET:-tasklean-dev}
-      # Off by default, which would accept an upload whose size or type differs from the one we
-      # signed for - and then the production bucket would be the first to refuse it.
+      # Off by default, which would accept an upload whose size or type differs from signature
       S3_SKIP_SIGNATURE_VALIDATION: 0
     ports:
       - "4566:4566"
     volumes:
-      # Creates the bucket and applies the CORS rules on every start, so no console step exists.
+      # Creates the bucket and applies the CORS rules on every start
       - ./docker/localstack:/etc/localstack/init/ready.d:ro
       - localstack_data:/var/lib/localstack
     healthcheck:

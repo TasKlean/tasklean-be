@@ -56,6 +56,12 @@ public class RateLimitProperties {
      */
     private Tier join = new Tier(10, Duration.ofHours(1));
 
+    /**
+     * Asking for a signed upload - keyed by user id, on top of the api tiers. Cheap for us and
+     * expensive in bucket bytes, so the quota is on minting signatures, not on using them.
+     */
+    private Tier upload = new Tier(20, Duration.ofHours(1));
+
     @Getter
     @Setter
     @NoArgsConstructor

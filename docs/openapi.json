@@ -52,6 +52,9 @@
     "description" : "User profiles: the caller's own via /me, plus platform-admin listing and role management.",
     "name" : "Users"
   }, {
+    "description" : "Signed URLs for uploading an image to the bucket and reading it back.",
+    "name" : "Uploads"
+  }, {
     "description" : "The caller's own two-factor setup: enroll an authenticator app, turn it on or off, and manage recovery codes.",
     "name" : "Two-factor authentication"
   }, {
@@ -3104,6 +3107,96 @@
         "tags" : [ "Tasks" ]
       }
     },
+    "/api/uploads" : {
+      "post" : {
+        "description" : "Signs an upload for one image. Who may ask depends on what the image is for — a group photo\n needs that group's admin.",
+        "operationId" : "createUpload",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/UploadRequest"
+              }
+            }
+          },
+          "description" : "what the image is for, its content type and its exact size in bytes",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseUploadResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the upload's uid and the URL to PUT the bytes to"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Signs an upload for one image.",
+        "tags" : [ "Uploads" ]
+      }
+    },
+    "/api/uploads/{uid}" : {
+      "get" : {
+        "description" : "Signs a short-lived URL for reading an uploaded image, for a caller allowed to see the thing\n it belongs to.",
+        "operationId" : "getUrl",
+        "parameters" : [ {
+          "description" : "the upload's public uid",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseSignedUrlResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the URL and how long it stays valid"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Signs a short-lived URL for reading an uploaded image, for a caller allowed to see the thing\n it belongs to.",
+        "tags" : [ "Uploads" ]
+      }
+    },
     "/api/user-settings" : {
       "get" : {
         "description" : "Fetches the caller's settings, falling back to the defaults when none are saved yet.",
@@ -3962,6 +4055,24 @@
           }
         }
       },
+      "ApiResponseSignedUrlResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/SignedUrlResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseTagResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -4061,6 +4172,24 @@
           },
           "data" : {
             "$ref" : "#/components/schemas/TwoFactorStatusResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
+      "ApiResponseUploadResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/UploadResponse"
           },
           "message" : {
             "type" : "string"
@@ -4859,6 +4988,19 @@
           }
         }
       },
+      "SignedUrlResponse" : {
+        "type" : "object",
+        "description" : "A short-lived URL an uploaded image can be read from. It is a credential, so it is handed to an\n authorized caller per request rather than stored anywhere.",
+        "properties" : {
+          "expiresInSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "url" : {
+            "type" : "string"
+          }
+        }
+      },
       "TagRequest" : {
         "type" : "object",
         "properties" : {
@@ -5206,6 +5348,53 @@
           }
         },
         "required" : [ "challengeToken", "code" ]
+      },
+      "UploadRequest" : {
+        "type" : "object",
+        "properties" : {
+          "contentType" : {
+            "type" : "string",
+            "description" : "The image's type. JPEG, PNG and WebP only, and anything else is refused before a signature\n exists — no SVG, which is a script container rather than a photo.",
+            "maxLength" : 100,
+            "minLength" : 1,
+            "pattern" : "image/(jpeg|png|webp)"
+          },
+          "purpose" : {
+            "type" : "string",
+            "description" : "What the image is for; it decides who may ask for the upload.",
+            "enum" : [ "GROUP_PHOTO" ]
+          },
+          "sizeBytes" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "The exact byte count the upload will send; it is signed, so it has to be known up front.",
+            "exclusiveMinimum" : 0,
+            "maximum" : 5242880
+          },
+          "targetUid" : {
+            "type" : "string",
+            "description" : "The uid of what the image is for — the group, for a group photo.",
+            "maxLength" : 100,
+            "minLength" : 1
+          }
+        },
+        "required" : [ "contentType", "purpose", "sizeBytes", "targetUid" ]
+      },
+      "UploadResponse" : {
+        "type" : "object",
+        "description" : "A signed upload. The caller PUTs the bytes straight to <code>uploadUrl</code> with exactly the\n content type and length it asked for, then sends <code>uid</code> on the entity it belongs to.",
+        "properties" : {
+          "expiresInSeconds" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "uid" : {
+            "type" : "string"
+          },
+          "uploadUrl" : {
+            "type" : "string"
+          }
+        }
       },
       "UserRequest" : {
         "type" : "object",
