@@ -578,7 +578,7 @@ Denied requests (authenticated but unauthorized) return **403** via `GlobalExcep
 ### Profile hierarchy
 
 ```
-application.properties          ← base (database, JWT, mail, OAuth — all via env vars)
+application.properties          ← base (database, JWT, mail, OAuth, image bucket — all via env vars)
   └── application-dev.properties   ← verbose logging, seed data, Flyway clean enabled, 1-year JWT
   └── application-prod.properties  ← minimal logging, Flyway clean disabled
 ```
@@ -603,6 +603,13 @@ Active profile set via `SPRING_PROFILES_ACTIVE` env var (defaults to `dev`).
 | `MAIL_FROM` | optional (defaults to `noreply@tasklean.app`) | Sender on outgoing mail; a real-delivery provider only accepts a verified address |
 | `MAIL_SMTP_AUTH` | optional (base defaults true, dev false) | Whether to authenticate; off in dev because Mailpit speaks plain SMTP |
 | `MAIL_SMTP_STARTTLS` | optional (base defaults true, dev false) | Whether to upgrade the connection with STARTTLS |
+| `S3_ENDPOINT` | required outside dev (dev defaults to the LocalStack container) | S3-compatible endpoint — `https://<account-id>.r2.cloudflarestorage.com` for Cloudflare R2 |
+| `S3_BUCKET` | required outside dev (dev defaults to `tasklean-dev`) | Bucket holding uploaded images; one per environment |
+| `S3_ACCESS_KEY` | required outside dev (dev defaults to LocalStack's `test`) | Bucket access key id, scoped to that one bucket |
+| `S3_SECRET_KEY` | required outside dev (dev defaults to LocalStack's `test`) | Bucket secret key |
+| `S3_REGION` | optional (base defaults `auto`, dev `us-east-1`) | R2 ignores it but the SDK demands a value; LocalStack wants a real one |
+| `S3_PATH_STYLE` | optional (base defaults false, dev true) | Address the bucket as `endpoint/bucket/key`; LocalStack needs it, R2 serves either shape |
+| `S3_UPLOAD_TTL` / `S3_DOWNLOAD_TTL` | optional (default `5m` / `15m`) | How long a signed upload / download URL lives. A signed URL is a credential, so short |
 | `SPRING_PROFILES_ACTIVE` | base | Profile selector (defaults to `dev`) |
 
 All secrets are loaded from `.env` at the project root via `spring.config.import=optional:file:.env[.properties]` in `application.properties`. No external library needed — Spring Boot 4.1 reads `.env` natively as a properties source. The `.env` file is gitignored — create it locally from `.env.example`. On Render (prod), these are set as environment variables directly.
@@ -612,7 +619,6 @@ All secrets are loaded from `.env` at the project root via `spring.config.import
 - `server.port=8080`
 - `spring.jpa.hibernate.ddl-auto=validate` (Flyway owns schema)
 - `spring.flyway.baseline-on-migrate=true` (safe for first run)
-- `spring.servlet.multipart.max-file-size=5MB` / `max-request-size=8MB` (task photos)
 - `jwt.expiration=900000` (15 min access token)
 - `jwt.refresh-expiration=1209600000` (14 day refresh token)
 - `spring.flyway.clean-disabled=false` in dev, `true` in prod
@@ -623,15 +629,18 @@ All secrets are loaded from `.env` at the project root via `spring.config.import
 
 ```bash
 docker-compose up -d          # Start PostgreSQL 16 (5432) + Mailpit (SMTP 1025, inbox UI 8025)
+                              # + LocalStack S3 (4566), bucket and CORS created on start
 mvnw.cmd spring-boot:run      # Start API on port 8080 (dev profile active by default)
 
-docker-compose stop           # Stop both (preserves data)
+docker-compose stop           # Stop all three (preserves data)
 docker-compose down -v        # Destroy the Postgres container + volume (full reset)
 ```
 
-Docker Compose runs Postgres and Mailpit — the app itself runs on the host. The Compose file reads `DB_USERNAME` and `DB_PASSWORD` from `.env` with defaults. On fresh start after `down -v`, Flyway re-runs all migrations + seed data automatically.
+Docker Compose runs Postgres, Mailpit and LocalStack — the app itself runs on the host. The Compose file reads `DB_USERNAME` and `DB_PASSWORD` from `.env` with defaults. On fresh start after `down -v`, Flyway re-runs all migrations + seed data automatically.
 
 **Mail in dev goes to Mailpit**, the local SMTP catcher: everything the app sends is captured and nothing leaves the machine, so there is no account and no quota. Read it at **http://localhost:8025**; it keeps the last 500 messages **in memory only**, so a restart empties the inbox. The dev profile defaults `MAIL_HOST`/`MAIL_PORT` to `localhost:1025` with auth and STARTTLS off, so a fresh clone sends mail with no configuration — but a `MAIL_HOST` left set in `.env` wins over that default, and a *blank* one overrides it with an empty string rather than falling back. Outside dev the four `MAIL_*` values are required and point at a hosted sandbox (see **Configuration strategy**); swapping provider is env-only and touches no code.
+
+**The image bucket in dev is LocalStack**, and `docker/localstack/init-bucket.sh` creates the bucket and applies its CORS rules on every start, so a fresh clone uploads with no configuration and no console step. Production is **Cloudflare R2**, told apart from the local one by `storage.*` env vars alone — see `docs/bucket-setup.md` for the token, the CORS policy and the rule that the bucket must stay private. **LocalStack is MinIO's replacement because MinIO's community images now require registry credentials**, which would break clone-and-run; it is an emulator rather than an enforcer, so two differences matter. Its signature validation is off by default and would accept an upload whose size or content type differs from the one we signed for, which is why Compose sets `S3_SKIP_SIGNATURE_VALIDATION: 0` (with it set, an oversize PUT answers 403 exactly as R2 does). And it enforces no bucket policy, so an unsigned GET succeeds locally while R2 refuses it — local dev therefore cannot prove the privacy property, and the API never treats the bucket's own refusal as the only guard.
 
 ### Production
 
