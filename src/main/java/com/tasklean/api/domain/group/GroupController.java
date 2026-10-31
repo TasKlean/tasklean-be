@@ -6,6 +6,8 @@ import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.JoinGroupRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
+import com.tasklean.api.domain.groupmember.GroupMemberService;
+import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,7 +21,7 @@ import java.util.List;
 
 /**
  * REST endpoints for groups (households) — create, fetch, list the caller's own, list all
- * (admin), join by invite code, update, and delete.
+ * (admin), list a group's members, join by invite code, update, and delete.
  */
 @Tag(name = "Groups", description = "Households: create one, discover your own, join by invite code, rotate the code, update and delete.")
 @RestController
@@ -28,6 +30,9 @@ import java.util.List;
 public class GroupController {
 
     private final GroupService groupService;
+    // A group's members are part of the group resource; the individual membership is managed
+    // through its own /api/group-members endpoints.
+    private final GroupMemberService groupMemberService;
 
     /**
      * Creates a group. Any authenticated user; the creator becomes the group's first admin.
@@ -124,6 +129,18 @@ public class GroupController {
     @PostMapping("/{uid}/invite-code")
     public ResponseEntity<ApiResponse<GroupResponse>> rotateInviteCode(@PathVariable String uid) {
         return ResponseEntity.ok(ApiResponse.success(groupService.rotateInviteCode(uid)));
+    }
+
+    /**
+     * Lists a group's active members, each with the user behind the membership.
+     *
+     * @param uid the group's public UID
+     * @return {@code 200 OK} with the group's active members
+     */
+    @PreAuthorize("hasRole('ADMIN') or @groupSecurity.isMember(#uid)")
+    @GetMapping("/{uid}/members")
+    public ResponseEntity<ApiResponse<List<GroupMemberResponse>>> getMembers(@PathVariable String uid) {
+        return ResponseEntity.ok(ApiResponse.success(groupMemberService.getMembers(uid)));
     }
 
     /**

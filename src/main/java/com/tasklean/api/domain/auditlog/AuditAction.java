@@ -13,6 +13,7 @@ public enum AuditAction {
     COMPLETE,
     MEMBER_ADDED,
     MEMBER_REMOVED,
+    MEMBER_LEFT,
     ROLE_CHANGED,
 
     // Authentication / account events (subject is the user; no group context)

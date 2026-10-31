@@ -6,6 +6,7 @@ import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
@@ -49,6 +50,10 @@ class GroupControllerSecurityTest {
 
     @MockitoBean
     private JwtService jwtService;
+
+    // GroupController serves the group's own member collection, so the slice needs this too.
+    @MockitoBean
+    private GroupMemberService groupMemberService;
 
     @MockitoBean
     private GroupRepository groupRepository;
@@ -127,6 +132,31 @@ class GroupControllerSecurityTest {
                 .thenReturn(GroupResponse.builder().uid(GROUP_UID).build());
 
         mockMvc.perform(get("/api/groups/{uid}", GROUP_UID).with(as(UserRole.ADMIN)))
+                .andExpect(status().isOk());
+    }
+
+    // --- getMembers: the group's own member collection, open to any member or platform ADMIN ---
+
+    @Test
+    void getMembers_nonMember_forbidden() throws Exception {
+        mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getMembers_plainMember_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        when(groupMemberService.getMembers(GROUP_UID)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getMembers_platformAdmin_ok() throws Exception {
+        when(groupMemberService.getMembers(GROUP_UID)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());
     }
 

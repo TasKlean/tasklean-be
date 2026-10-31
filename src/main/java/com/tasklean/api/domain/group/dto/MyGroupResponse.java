@@ -18,22 +18,21 @@ import java.time.LocalDateTime;
 @Builder
 public class MyGroupResponse {
 
-    private Long id;
     private String uid;
     private String name;
     private String description;
     private String photoUrl;
     private String inviteCode;
     private GroupRole myRole;
+    private Integer memberCount;
     private LocalDateTime dateJoined;
     private LocalDateTime dateCreated;
     private LocalDateTime dateUpdated;
 
-    public static MyGroupResponse from(GroupMember membership) {
+    public static MyGroupResponse from(GroupMember membership, long memberCount) {
         Group group = membership.getGroup();
         boolean isAdmin = membership.getRole() == GroupRole.GROUP_ADMIN;
         return MyGroupResponse.builder()
-                .id(group.getIdGroup())
                 .uid(group.getUid())
                 .name(group.getName())
                 .description(group.getDescription())
@@ -41,6 +40,7 @@ public class MyGroupResponse {
                 // Inviting is a GROUP_ADMIN power, so only an admin is handed the code to share.
                 .inviteCode(isAdmin ? group.getInviteCode() : null)
                 .myRole(membership.getRole())
+                .memberCount((int) memberCount)
                 .dateJoined(membership.getDateJoined())
                 .dateCreated(group.getDateCreated())
                 .dateUpdated(group.getDateUpdated())

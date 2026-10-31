@@ -23,6 +23,9 @@ public class GroupMember {
     @Column(name = "id_group_member")
     private Long idGroupMember;
 
+    @Column(name = "uid", unique = true, nullable = false, length = 500)
+    private String uid;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 50)
     private GroupRole role;

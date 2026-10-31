@@ -70,41 +70,45 @@ public class GroupSecurity {
     }
 
     /**
-     * Whether the caller may view the given membership — i.e. is an active member of that
-     * membership's group.
+     * Whether the caller may view the given membership — i.e. is an active member of its group.
      *
-     * @param groupMemberId the target membership id
+     * @param memberUid the target membership's public UID
      * @return {@code true} if the caller shares the group
      */
-    public boolean canViewMember(Long groupMemberId) {
-        return groupMemberRepository.findById(groupMemberId)
-                .map(target -> isMemberOfGroup(target.getGroup().getIdGroup()))
-                .orElse(false);
+    public boolean canViewMember(String memberUid) {
+        return onMembersGroup(memberUid, this::isMemberOfGroup);
     }
 
     /**
      * Whether the caller may manage the given membership (change role, remove) — i.e. is an active
-     * admin of that membership's group.
+     * admin of its group.
      *
-     * @param groupMemberId the target membership id
+     * @param memberUid the target membership's public UID
      * @return {@code true} if the caller is an admin of the membership's group
      */
-    public boolean canManageMember(Long groupMemberId) {
-        return groupMemberRepository.findById(groupMemberId)
-                .map(target -> isAdminOfGroup(target.getGroup().getIdGroup()))
-                .orElse(false);
+    public boolean canManageMember(String memberUid) {
+        return onMembersGroup(memberUid, this::isAdminOfGroup);
     }
 
     /**
-     * Whether the given membership belongs to the caller (used to allow leaving a group).
+     * Whether the given membership is the caller's own (which is what makes leaving a group
+     * distinct from being removed from it).
      *
-     * @param groupMemberId the target membership id
-     * @return {@code true} if the membership is the caller's own
+     * @param memberUid the target membership's public UID
+     * @return {@code true} if the membership belongs to the caller
      */
-    public boolean isSelfMember(Long groupMemberId) {
+    public boolean isSelfMember(String memberUid) {
         Long userId = currentUserId();
-        return userId != null && groupMemberRepository.findById(groupMemberId)
+        return userId != null && groupMemberRepository.findByUid(memberUid)
                 .map(target -> userId.equals(target.getUser().getIdUser()))
+                .orElse(false);
+    }
+
+    // The membership's own group is the authorization boundary, so every membership-scoped check
+    // resolves it first and then asks the same question as the group-scoped checks.
+    private boolean onMembersGroup(String memberUid, java.util.function.Predicate<Long> check) {
+        return groupMemberRepository.findByUid(memberUid)
+                .map(target -> check.test(target.getGroup().getIdGroup()))
                 .orElse(false);
     }
 
