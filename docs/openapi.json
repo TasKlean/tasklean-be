@@ -34,11 +34,11 @@
     "description" : "Households: create one, discover your own, join by invite code, rotate the code, update and delete.",
     "name" : "Groups"
   }, {
+    "description" : "Membership of a household: add, fetch, change role, remove or leave.",
+    "name" : "Group members"
+  }, {
     "description" : "Group-scoped task tags.",
     "name" : "Tags"
-  }, {
-    "description" : "Membership of a household: add, list, change role, remove, or leave.",
-    "name" : "Group members"
   }, {
     "description" : "In-app notifications for the signed-in user.",
     "name" : "Notifications"
@@ -1630,51 +1630,8 @@
       }
     },
     "/api/group-members" : {
-      "get" : {
-        "description" : "Lists a group's active members.",
-        "operationId" : "getMembersByGroup",
-        "parameters" : [ {
-          "description" : "the group id",
-          "in" : "query",
-          "name" : "groupId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListGroupMemberResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the members"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Lists a group's active members.",
-        "tags" : [ "Group members" ]
-      },
       "post" : {
-        "description" : "Adds a user to a group.",
+        "description" : "Adds a user to a group directly. This is platform tooling: a household admin invites people\n by sharing the group's invite code, which is the only route that asks for the joiner's consent.",
         "operationId" : "addMember",
         "requestBody" : {
           "content" : {
@@ -1684,7 +1641,7 @@
               }
             }
           },
-          "description" : "the membership details (user, group, role)",
+          "description" : "the group, the user to add, and the role to give them",
           "required" : true
         },
         "responses" : {
@@ -1714,22 +1671,21 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Adds a user to a group.",
+        "summary" : "Adds a user to a group directly.",
         "tags" : [ "Group members" ]
       }
     },
-    "/api/group-members/{id}" : {
+    "/api/group-members/{memberUid}" : {
       "delete" : {
-        "description" : "Soft-removes a member from a group.",
+        "description" : "Removes a membership (soft). A member removing their own membership is leaving the group,\n which the service records as a distinct event.",
         "operationId" : "removeMember",
         "parameters" : [ {
-          "description" : "the membership id",
+          "description" : "the membership's public UID",
           "in" : "path",
-          "name" : "id",
+          "name" : "memberUid",
           "required" : true,
           "schema" : {
-            "type" : "integer",
-            "format" : "int64"
+            "type" : "string"
           }
         } ],
         "responses" : {
@@ -1759,20 +1715,19 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Soft-removes a member from a group.",
+        "summary" : "Removes a membership (soft).",
         "tags" : [ "Group members" ]
       },
       "get" : {
-        "description" : "Fetches a membership by id.",
+        "description" : "Fetches a membership by its UID.",
         "operationId" : "getMember",
         "parameters" : [ {
-          "description" : "the membership id",
+          "description" : "the membership's public UID",
           "in" : "path",
-          "name" : "id",
+          "name" : "memberUid",
           "required" : true,
           "schema" : {
-            "type" : "integer",
-            "format" : "int64"
+            "type" : "string"
           }
         } ],
         "responses" : {
@@ -1802,33 +1757,34 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Fetches a membership by id.",
+        "summary" : "Fetches a membership by its UID.",
         "tags" : [ "Group members" ]
       }
     },
-    "/api/group-members/{id}/role" : {
+    "/api/group-members/{memberUid}/role" : {
       "patch" : {
-        "description" : "Changes a member's role.",
+        "description" : "Changes a member's role within their group.",
         "operationId" : "updateRole",
         "parameters" : [ {
-          "description" : "the membership id",
+          "description" : "the membership's public UID",
           "in" : "path",
-          "name" : "id",
+          "name" : "memberUid",
           "required" : true,
           "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        }, {
-          "description" : "the new role",
-          "in" : "query",
-          "name" : "role",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
+            "type" : "string"
           }
         } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/GroupMemberRoleRequest"
+              }
+            }
+          },
+          "description" : "the new role",
+          "required" : true
+        },
         "responses" : {
           "200" : {
             "content" : {
@@ -1856,7 +1812,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Changes a member's role.",
+        "summary" : "Changes a member's role within their group.",
         "tags" : [ "Group members" ]
       }
     },
@@ -2194,6 +2150,50 @@
           }
         },
         "summary" : "Issues a new invite code for a group, invalidating the previous one.",
+        "tags" : [ "Groups" ]
+      }
+    },
+    "/api/groups/{uid}/members" : {
+      "get" : {
+        "description" : "Lists a group's active members, each with the user behind the membership.",
+        "operationId" : "getMembers",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListGroupMemberResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the group's active members"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a group's active members, each with the user behind the membership.",
         "tags" : [ "Groups" ]
       }
     },
@@ -4418,27 +4418,29 @@
       "GroupMemberRequest" : {
         "type" : "object",
         "properties" : {
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "groupUid" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
           },
           "role" : {
             "type" : "string",
             "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
           },
-          "userId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "userUid" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
           }
         },
-        "required" : [ "groupId", "role", "userId" ]
+        "required" : [ "groupUid", "role", "userUid" ]
       },
       "GroupMemberResponse" : {
         "type" : "object",
+        "description" : "A membership as returned by the API. It carries the member's user summary rather than ids, so a\n client can render a household roster from this one response.",
         "properties" : {
-          "addedById" : {
-            "type" : "integer",
-            "format" : "int64"
+          "addedBy" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
           },
           "dateJoined" : {
             "type" : "string",
@@ -4448,50 +4450,58 @@
             "type" : "string",
             "format" : "date-time"
           },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
           "isActive" : {
             "type" : "boolean"
           },
-          "removedById" : {
-            "type" : "integer",
-            "format" : "int64"
+          "removedBy" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
           },
           "role" : {
             "type" : "string",
             "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
           },
-          "userId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "uid" : {
+            "type" : "string"
+          },
+          "user" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
           }
         }
+      },
+      "GroupMemberRoleRequest" : {
+        "type" : "object",
+        "properties" : {
+          "role" : {
+            "type" : "string",
+            "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
+          }
+        },
+        "required" : [ "role" ]
       },
       "GroupRequest" : {
         "type" : "object",
         "properties" : {
           "description" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 2000,
+            "minLength" : 0
           },
           "name" : {
             "type" : "string",
+            "maxLength" : 255,
             "minLength" : 1
           },
           "photoUrl" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 500,
+            "minLength" : 0
           }
         },
         "required" : [ "name" ]
       },
       "GroupResponse" : {
         "type" : "object",
-        "description" : "A group as returned by the API. The invite code is a shareable join secret, so it is exposed\n only through {@link com.tasklean.api.domain.group.dto.GroupResponse#withInviteCode(Group) #withInviteCode(Group)} — for callers allowed to invite.",
+        "description" : "A group as returned by the API. The invite code is a shareable join secret, so it is exposed\n only through {@link com.tasklean.api.domain.group.dto.GroupResponse#forAdmin(Group, long) #forAdmin(Group, long)} — for callers allowed to invite.",
         "properties" : {
           "dateCreated" : {
             "type" : "string",
@@ -4504,15 +4514,19 @@
           "description" : {
             "type" : "string"
           },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
           "inviteCode" : {
             "type" : "string"
           },
           "isActive" : {
             "type" : "boolean"
+          },
+          "memberCount" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "myRole" : {
+            "type" : "string",
+            "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
           },
           "name" : {
             "type" : "string"
@@ -4609,12 +4623,12 @@
           "description" : {
             "type" : "string"
           },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
           "inviteCode" : {
             "type" : "string"
+          },
+          "memberCount" : {
+            "type" : "integer",
+            "format" : "int32"
           },
           "myRole" : {
             "type" : "string",
@@ -5231,10 +5245,6 @@
           "email" : {
             "type" : "string"
           },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
           "isActive" : {
             "type" : "boolean"
           },
@@ -5300,6 +5310,24 @@
             "type" : "string",
             "description" : "the colour-scheme preference",
             "enum" : [ "LIGHT", "DARK", "SYSTEM" ]
+          }
+        }
+      },
+      "UserSummaryResponse" : {
+        "type" : "object",
+        "description" : "The slice of a user that other people are allowed to see — enough to render them in a list.\n Deliberately omits email and account state; those belong to the account's owner and to staff.",
+        "properties" : {
+          "lastName" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "photoUrl" : {
+            "type" : "string"
+          },
+          "uid" : {
+            "type" : "string"
           }
         }
       },

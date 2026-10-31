@@ -36,6 +36,7 @@ class GroupSecurityTest {
 
     private static final Long USER_ID = 1L;
     private static final Long GROUP_ID = 10L;
+    private static final String MEMBER_UID = "mem-1";
 
     @AfterEach
     void clearContext() {
@@ -51,6 +52,7 @@ class GroupSecurityTest {
     private GroupMember membership(GroupRole role, boolean active) {
         return GroupMember.builder()
                 .idGroupMember(5L)
+                .uid(MEMBER_UID)
                 .role(role)
                 .isActive(active)
                 .group(Group.builder().idGroup(GROUP_ID).build())
@@ -131,34 +133,63 @@ class GroupSecurityTest {
         assertThat(groupSecurity.isMember("missing")).isFalse();
     }
 
-    // --- membership-id based ---
+
+    // --- membership-uid based ---
 
     @Test
     void canManageMember_callerAdminOfMembersGroup_returnsTrue() {
         authenticate();
-        when(groupMemberRepository.findById(5L)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID))
                 .thenReturn(Optional.of(membership(GroupRole.GROUP_ADMIN, true)));
 
-        assertThat(groupSecurity.canManageMember(5L)).isTrue();
+        assertThat(groupSecurity.canManageMember(MEMBER_UID)).isTrue();
+    }
+
+    @Test
+    void canManageMember_callerOnlyAPlainMember_returnsFalse() {
+        authenticate();
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID))
+                .thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
+
+        assertThat(groupSecurity.canManageMember(MEMBER_UID)).isFalse();
     }
 
     @Test
     void canViewMember_callerMemberOfMembersGroup_returnsTrue() {
         authenticate();
-        when(groupMemberRepository.findById(5L)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID))
                 .thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
 
-        assertThat(groupSecurity.canViewMember(5L)).isTrue();
+        assertThat(groupSecurity.canViewMember(MEMBER_UID)).isTrue();
+    }
+
+    @Test
+    void canViewMember_unknownMembership_returnsFalse() {
+        authenticate();
+        when(groupMemberRepository.findByUid("missing")).thenReturn(Optional.empty());
+
+        assertThat(groupSecurity.canViewMember("missing")).isFalse();
+    }
+
+    @Test
+    void canViewMember_callerNotInMembersGroup_returnsFalse() {
+        authenticate();
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
+        // No membership of that group for the caller.
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID)).thenReturn(Optional.empty());
+
+        assertThat(groupSecurity.canViewMember(MEMBER_UID)).isFalse();
     }
 
     @Test
     void isSelfMember_ownMembership_returnsTrue() {
         authenticate();
-        when(groupMemberRepository.findById(5L)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(membership(GroupRole.GROUP_MEMBER, true)));
 
-        assertThat(groupSecurity.isSelfMember(5L)).isTrue();
+        assertThat(groupSecurity.isSelfMember(MEMBER_UID)).isTrue();
     }
 
     @Test
@@ -166,11 +197,17 @@ class GroupSecurityTest {
         authenticate();
         GroupMember others = GroupMember.builder()
                 .idGroupMember(5L)
+                .uid(MEMBER_UID)
                 .group(Group.builder().idGroup(GROUP_ID).build())
                 .user(User.builder().idUser(999L).build())
                 .build();
-        when(groupMemberRepository.findById(5L)).thenReturn(Optional.of(others));
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(others));
 
-        assertThat(groupSecurity.isSelfMember(5L)).isFalse();
+        assertThat(groupSecurity.isSelfMember(MEMBER_UID)).isFalse();
+    }
+
+    @Test
+    void isSelfMember_anonymous_returnsFalse() {
+        assertThat(groupSecurity.isSelfMember(MEMBER_UID)).isFalse();
     }
 }

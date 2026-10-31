@@ -1,7 +1,10 @@
 package com.tasklean.api.domain.groupmember.dto;
 
+import com.tasklean.api.common.validation.FieldLimits;
 import com.tasklean.api.domain.groupmember.GroupRole;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.*;
 
 @Getter
@@ -10,11 +13,13 @@ import lombok.*;
 @AllArgsConstructor
 public class GroupMemberRequest {
 
-    @NotNull
-    private Long userId;
+    @NotBlank
+    @Size(min = 1, max = FieldLimits.UID)
+    private String groupUid;
 
-    @NotNull
-    private Long groupId;
+    @NotBlank
+    @Size(min = 1, max = FieldLimits.UID)
+    private String userUid;
 
     @NotNull
     private GroupRole role;

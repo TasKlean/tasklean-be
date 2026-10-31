@@ -2,6 +2,9 @@ package com.tasklean.api.domain.groupmember;
 
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.DuplicateResourceException;
+import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
@@ -16,11 +19,13 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Clock;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -46,47 +51,131 @@ class GroupMemberServiceTest {
 
     private static final Long MEMBER_ID = 5L;
     private static final Long GROUP_ID = 10L;
+    private static final Long USER_ID = 1L;
+    private static final Long OTHER_USER_ID = 2L;
+    private static final String GROUP_UID = "group-uid";
+    private static final String MEMBER_UID = "member-uid";
+    private static final String USER_UID = "user-uid";
 
-    private GroupMember admin(boolean active) {
+    private Group group() {
+        return Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build();
+    }
+
+    private User user() {
+        return User.builder().idUser(USER_ID).uid(USER_UID).name("Alice").lastName("Smith").build();
+    }
+
+    private GroupMember member(GroupRole role, boolean active) {
         return GroupMember.builder()
                 .idGroupMember(MEMBER_ID)
-                .role(GroupRole.GROUP_ADMIN)
+                .uid(MEMBER_UID)
+                .role(role)
                 .isActive(active)
-                .group(Group.builder().idGroup(GROUP_ID).build())
-                .user(User.builder().idUser(1L).build())
+                .group(group())
+                .user(user())
                 .build();
+    }
+
+    private void stubGroup() {
+        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.of(group()));
+    }
+
+    private void stubMembership(GroupMember member) {
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(member));
+    }
+
+    private void stubAdminCount(long count) {
+        when(groupMemberRepository.countByGroupIdGroupAndRoleAndIsActiveTrue(GROUP_ID, GroupRole.GROUP_ADMIN))
+                .thenReturn(count);
+    }
+
+    private GroupMemberRequest request(GroupRole role) {
+        GroupMemberRequest request = new GroupMemberRequest();
+        request.setGroupUid(GROUP_UID);
+        request.setUserUid(USER_UID);
+        request.setRole(role);
+        return request;
+    }
+
+    // --- lookups ---
+
+    @Test
+    void getMember_unknownUid_throwsNotFound() {
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupMemberService.getMember(MEMBER_UID))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getMembers_unknownGroup_throwsNotFound() {
+        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupMemberService.getMembers(GROUP_UID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).findByGroupUidAndIsActiveTrue(any());
+    }
+
+    @Test
+    void getMembers_activeMembers_carryTheUserSummaryNotIds() {
+        stubGroup();
+        when(groupMemberRepository.findByGroupUidAndIsActiveTrue(GROUP_UID))
+                .thenReturn(List.of(member(GroupRole.GROUP_ADMIN, true)));
+
+        var members = groupMemberService.getMembers(GROUP_UID);
+
+        // A roster has to be renderable from this one response; before, it held only numeric ids.
+        assertThat(members).singleElement().satisfies(m -> {
+            assertThat(m.getUid()).isEqualTo(MEMBER_UID);
+            assertThat(m.getUser().getUid()).isEqualTo(USER_UID);
+            assertThat(m.getUser().getName()).isEqualTo("Alice");
+            assertThat(m.getUser().getLastName()).isEqualTo("Smith");
+        });
     }
 
     // --- addMember ---
 
     @Test
-    void addMember_newMembership_persistsWithRole() {
-        GroupMemberRequest request = new GroupMemberRequest();
-        request.setUserId(1L);
-        request.setGroupId(GROUP_ID);
-        request.setRole(GroupRole.GROUP_MEMBER);
-
-        when(groupMemberRepository.existsByUserIdUserAndGroupIdGroup(1L, GROUP_ID)).thenReturn(false);
-        when(userRepository.findById(1L)).thenReturn(Optional.of(User.builder().idUser(1L).build()));
-        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(Group.builder().idGroup(GROUP_ID).build()));
+    void addMember_newMembership_persistsWithRoleAndUid() {
+        stubGroup();
+        when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.of(user()));
         when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
 
-        var response = groupMemberService.addMember(request);
+        var response = groupMemberService.addMember(request(GroupRole.GROUP_MEMBER));
 
         assertThat(response.getRole()).isEqualTo(GroupRole.GROUP_MEMBER);
+        assertThat(response.getUid()).isNotBlank();
     }
 
     @Test
     void addMember_alreadyMember_throwsDuplicate() {
-        GroupMemberRequest request = new GroupMemberRequest();
-        request.setUserId(1L);
-        request.setGroupId(GROUP_ID);
-        request.setRole(GroupRole.GROUP_MEMBER);
+        stubGroup();
+        when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID))
+                .thenReturn(Optional.of(member(GroupRole.GROUP_MEMBER, true)));
 
-        when(groupMemberRepository.existsByUserIdUserAndGroupIdGroup(1L, GROUP_ID)).thenReturn(true);
-
-        assertThatThrownBy(() -> groupMemberService.addMember(request))
+        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER)))
                 .isInstanceOf(DuplicateResourceException.class);
+        verify(groupMemberRepository, never()).save(any());
+    }
+
+    @Test
+    void addMember_unknownGroup_throwsNotFound() {
+        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).save(any());
+    }
+
+    @Test
+    void addMember_unknownUser_throwsNotFound() {
+        stubGroup();
+        when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER)))
+                .isInstanceOf(ResourceNotFoundException.class);
         verify(groupMemberRepository, never()).save(any());
     }
 
@@ -94,11 +183,10 @@ class GroupMemberServiceTest {
 
     @Test
     void updateMemberRole_demotingLastAdmin_throws() {
-        when(groupMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(admin(true)));
-        when(groupMemberRepository.countByGroupIdGroupAndRoleAndIsActiveTrue(GROUP_ID, GroupRole.GROUP_ADMIN))
-                .thenReturn(1L);
+        stubMembership(member(GroupRole.GROUP_ADMIN, true));
+        stubAdminCount(1L);
 
-        assertThatThrownBy(() -> groupMemberService.updateMemberRole(MEMBER_ID, GroupRole.GROUP_MEMBER))
+        assertThatThrownBy(() -> groupMemberService.updateMemberRole(MEMBER_UID, GroupRole.GROUP_MEMBER))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("at least one admin");
         verify(groupMemberRepository, never()).save(any());
@@ -106,59 +194,84 @@ class GroupMemberServiceTest {
 
     @Test
     void updateMemberRole_demotingWithAnotherAdmin_succeeds() {
-        GroupMember member = admin(true);
-        when(groupMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
-        when(groupMemberRepository.countByGroupIdGroupAndRoleAndIsActiveTrue(GROUP_ID, GroupRole.GROUP_ADMIN))
-                .thenReturn(2L);
+        GroupMember member = member(GroupRole.GROUP_ADMIN, true);
+        stubMembership(member);
+        stubAdminCount(2L);
         when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
 
-        groupMemberService.updateMemberRole(MEMBER_ID, GroupRole.GROUP_MEMBER);
+        groupMemberService.updateMemberRole(MEMBER_UID, GroupRole.GROUP_MEMBER);
 
         assertThat(member.getRole()).isEqualTo(GroupRole.GROUP_MEMBER);
     }
 
     @Test
     void updateMemberRole_promotingMember_succeeds() {
-        GroupMember member = GroupMember.builder()
-                .idGroupMember(MEMBER_ID)
-                .role(GroupRole.GROUP_MEMBER)
-                .isActive(true)
-                .group(Group.builder().idGroup(GROUP_ID).build())
-                .user(User.builder().idUser(1L).build())
-                .build();
-        when(groupMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
+        GroupMember member = member(GroupRole.GROUP_MEMBER, true);
+        stubMembership(member);
         when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
 
-        groupMemberService.updateMemberRole(MEMBER_ID, GroupRole.GROUP_ADMIN);
+        groupMemberService.updateMemberRole(MEMBER_UID, GroupRole.GROUP_ADMIN);
 
         assertThat(member.getRole()).isEqualTo(GroupRole.GROUP_ADMIN);
     }
 
-    // --- removeMember (last-admin protection) ---
+    // --- removeMember: the same state change, two different events ---
+
+    @Test
+    void removeMember_someoneElse_recordsMemberRemoved() {
+        GroupMember member = member(GroupRole.GROUP_MEMBER, true);
+        stubMembership(member);
+
+        boolean left = groupMemberService.removeMember(MEMBER_UID, OTHER_USER_ID);
+
+        assertThat(left).isFalse();
+        assertThat(member.getIsActive()).isFalse();
+        assertThat(member.getDateLeft()).isNotNull();
+        verify(auditLogService).recordEvent(eq(AuditEntityType.GROUP_MEMBER), eq(MEMBER_ID),
+                eq(AuditAction.MEMBER_REMOVED), any(), any());
+    }
+
+    @Test
+    void removeMember_ownMembership_recordsMemberLeft() {
+        GroupMember member = member(GroupRole.GROUP_MEMBER, true);
+        stubMembership(member);
+
+        boolean left = groupMemberService.removeMember(MEMBER_UID, USER_ID);
+
+        // Walking out and being shown the door are the same row change but not the same event.
+        assertThat(left).isTrue();
+        verify(auditLogService).recordEvent(eq(AuditEntityType.GROUP_MEMBER), eq(MEMBER_ID),
+                eq(AuditAction.MEMBER_LEFT), any(), any());
+    }
 
     @Test
     void removeMember_lastAdmin_throws() {
-        when(groupMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(admin(true)));
-        when(groupMemberRepository.countByGroupIdGroupAndRoleAndIsActiveTrue(GROUP_ID, GroupRole.GROUP_ADMIN))
-                .thenReturn(1L);
+        stubMembership(member(GroupRole.GROUP_ADMIN, true));
+        stubAdminCount(1L);
 
-        assertThatThrownBy(() -> groupMemberService.removeMember(MEMBER_ID))
+        assertThatThrownBy(() -> groupMemberService.removeMember(MEMBER_UID, USER_ID))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("at least one admin");
         verify(groupMemberRepository, never()).save(any());
     }
 
     @Test
-    void removeMember_withAnotherAdmin_softDeletes() {
-        GroupMember member = admin(true);
-        when(groupMemberRepository.findById(MEMBER_ID)).thenReturn(Optional.of(member));
-        when(groupMemberRepository.countByGroupIdGroupAndRoleAndIsActiveTrue(GROUP_ID, GroupRole.GROUP_ADMIN))
-                .thenReturn(2L);
+    void removeMember_adminWithAnotherAdmin_softDeletes() {
+        GroupMember member = member(GroupRole.GROUP_ADMIN, true);
+        stubMembership(member);
+        stubAdminCount(2L);
 
-        groupMemberService.removeMember(MEMBER_ID);
+        groupMemberService.removeMember(MEMBER_UID, OTHER_USER_ID);
 
         assertThat(member.getIsActive()).isFalse();
-        assertThat(member.getDateLeft()).isNotNull();
         verify(groupMemberRepository).save(member);
+    }
+
+    @Test
+    void removeMember_unknownUid_throwsNotFound() {
+        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupMemberService.removeMember(MEMBER_UID, USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

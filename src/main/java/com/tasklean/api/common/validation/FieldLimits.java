@@ -33,6 +33,15 @@ public final class FieldLimits {
     /** Our opaque tokens are a 43-character Base64 URL encoding of 32 random bytes. */
     public static final int TOKEN = 64;
 
+    /** A public entity identifier - a UUID string. The narrowest uid column ("user") holds 100. */
+    public static final int UID = 100;
+
+    /** The name column on "group". */
+    public static final int GROUP_NAME = 255;
+
+    /** A free-text description. The column is TEXT, so this bound is ours, not Postgres's. */
+    public static final int DESCRIPTION = 2000;
+
     /** A Google ID token is a JWT of roughly 1-2KB; enough headroom without inviting a flood. */
     public static final int GOOGLE_ID_TOKEN = 4096;
 

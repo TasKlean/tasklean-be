@@ -1,22 +1,25 @@
 package com.tasklean.api.domain.groupmember;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberRequest;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
+import com.tasklean.api.domain.groupmember.dto.GroupMemberRoleRequest;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 /**
- * REST endpoints for group membership — add member, fetch, list by group, change role, and remove.
+ * REST endpoints for a single group membership — add, fetch, change role, and remove or leave.
+ * A membership is addressed by its own UID; the group's own listing of its members lives on
+ * {@code GET /api/groups/{uid}/members}.
  */
-@Tag(name = "Group members", description = "Membership of a household: add, list, change role, remove, or leave.")
+@Tag(name = "Group members", description = "Membership of a household: add, fetch, change role, remove or leave.")
 @RestController
 @RequestMapping("/api/group-members")
 @RequiredArgsConstructor
@@ -25,66 +28,61 @@ public class GroupMemberController {
     private final GroupMemberService groupMemberService;
 
     /**
-     * Adds a user to a group.
+     * Adds a user to a group directly. This is platform tooling: a household admin invites people
+     * by sharing the group's invite code, which is the only route that asks for the joiner's consent.
      *
-     * @param request the membership details (user, group, role)
+     * @param request the group, the user to add, and the role to give them
      * @return {@code 201 Created} with the created membership
      */
-    @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.isAdminOfGroup(#request.groupId)")
+    @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping
-    public ResponseEntity<ApiResponse<GroupMemberResponse>> addMember(@Valid @RequestBody GroupMemberRequest request) {
+    public ResponseEntity<ApiResponse<GroupMemberResponse>> addMember(
+            @Valid @RequestBody GroupMemberRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(groupMemberService.addMember(request)));
     }
 
     /**
-     * Fetches a membership by id.
+     * Fetches a membership by its UID.
      *
-     * @param id the membership id
+     * @param memberUid the membership's public UID
      * @return {@code 200 OK} with the membership
      */
-    @PreAuthorize("hasRole('ADMIN') or @groupSecurity.canViewMember(#id)")
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<GroupMemberResponse>> getMember(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success(groupMemberService.getMemberById(id)));
+    @PreAuthorize("hasRole('ADMIN') or @groupSecurity.canViewMember(#memberUid)")
+    @GetMapping("/{memberUid}")
+    public ResponseEntity<ApiResponse<GroupMemberResponse>> getMember(@PathVariable String memberUid) {
+        return ResponseEntity.ok(ApiResponse.success(groupMemberService.getMember(memberUid)));
     }
 
     /**
-     * Lists a group's active members.
+     * Changes a member's role within their group.
      *
-     * @param groupId the group id
-     * @return {@code 200 OK} with the members
-     */
-    @PreAuthorize("hasRole('ADMIN') or @groupSecurity.isMemberOfGroup(#groupId)")
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<GroupMemberResponse>>> getMembersByGroup(@RequestParam Long groupId) {
-        return ResponseEntity.ok(ApiResponse.success(groupMemberService.getMembersByGroup(groupId)));
-    }
-
-    /**
-     * Changes a member's role.
-     *
-     * @param id   the membership id
-     * @param role the new role
+     * @param memberUid the membership's public UID
+     * @param request   the new role
      * @return {@code 200 OK} with the updated membership
      */
-    @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.canManageMember(#id)")
-    @PatchMapping("/{id}/role")
+    @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.canManageMember(#memberUid)")
+    @PatchMapping("/{memberUid}/role")
     public ResponseEntity<ApiResponse<GroupMemberResponse>> updateRole(
-            @PathVariable Long id, @RequestParam GroupRole role) {
-        return ResponseEntity.ok(ApiResponse.success(groupMemberService.updateMemberRole(id, role)));
+            @PathVariable String memberUid, @Valid @RequestBody GroupMemberRoleRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(
+                groupMemberService.updateMemberRole(memberUid, request.getRole())));
     }
 
     /**
-     * Soft-removes a member from a group.
+     * Removes a membership (soft). A member removing their own membership is leaving the group,
+     * which the service records as a distinct event.
      *
-     * @param id the membership id
+     * @param memberUid the membership's public UID
+     * @param principal the authenticated caller
      * @return {@code 200 OK} with a confirmation message
      */
-    @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.canManageMember(#id) or @groupSecurity.isSelfMember(#id)")
-    @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponse<Void>> removeMember(@PathVariable Long id) {
-        groupMemberService.removeMember(id);
-        return ResponseEntity.ok(ApiResponse.success("Member removed", null));
+    @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.canManageMember(#memberUid)"
+            + " or @groupSecurity.isSelfMember(#memberUid)")
+    @DeleteMapping("/{memberUid}")
+    public ResponseEntity<ApiResponse<Void>> removeMember(
+            @PathVariable String memberUid, @AuthenticationPrincipal AuthPrincipal principal) {
+        boolean left = groupMemberService.removeMember(memberUid, principal.userId());
+        return ResponseEntity.ok(ApiResponse.success(left ? "Left group" : "Member removed", null));
     }
 }

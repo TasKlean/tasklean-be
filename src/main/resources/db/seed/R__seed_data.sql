@@ -64,21 +64,21 @@ ON CONFLICT DO NOTHING;
 -- Bob   = GROUP_MEMBER of Apartment 4B
 -- Charlie = GROUP_ADMIN of Family Home, GROUP_MEMBER of Apartment 4B
 -- ============================================================================
-INSERT INTO group_member (role, user_id, group_id)
+INSERT INTO group_member (uid, role, user_id, group_id)
 VALUES
-    ('GROUP_ADMIN',
+    ('1f8c4a60-0d21-4c9e-9b4f-2a7e51d0c001', 'GROUP_ADMIN',
      (SELECT id_user FROM "user" WHERE email = 'alice@example.com'),
      (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
-    ('GROUP_MEMBER',
+    ('1f8c4a60-0d21-4c9e-9b4f-2a7e51d0c002', 'GROUP_MEMBER',
      (SELECT id_user FROM "user" WHERE email = 'bob@example.com'),
      (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
-    ('GROUP_MEMBER',
+    ('1f8c4a60-0d21-4c9e-9b4f-2a7e51d0c003', 'GROUP_MEMBER',
      (SELECT id_user FROM "user" WHERE email = 'charlie@example.com'),
      (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
-    ('GROUP_ADMIN',
+    ('1f8c4a60-0d21-4c9e-9b4f-2a7e51d0c004', 'GROUP_ADMIN',
      (SELECT id_user FROM "user" WHERE email = 'charlie@example.com'),
      (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002')),
-    ('GROUP_MEMBER',
+    ('1f8c4a60-0d21-4c9e-9b4f-2a7e51d0c005', 'GROUP_MEMBER',
      (SELECT id_user FROM "user" WHERE email = 'alice@example.com'),
      (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002'))
 ON CONFLICT DO NOTHING;

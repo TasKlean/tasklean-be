@@ -11,6 +11,7 @@ import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.groupmember.GroupMemberRepository.GroupMemberCount;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Manages groups (households) — lookup by UID, listing, creation, updates, and
@@ -40,8 +44,8 @@ public class GroupService {
     private final Clock clock;
 
     /**
-     * Returns a group by its public UID, as seen by the given caller. The invite code is included
-     * only when the caller is an admin of that group.
+     * Returns a group by its public UID, as seen by the given caller. A member also gets their own
+     * role back, and an admin the invite code.
      *
      * @param uid          the group's public UID
      * @param callerUserId the id of the authenticated caller
@@ -51,9 +55,10 @@ public class GroupService {
     public GroupResponse getGroupByUid(String uid, Long callerUserId) {
         Group group = groupRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
-        return isGroupAdmin(callerUserId, group.getIdGroup())
-                ? GroupResponse.withInviteCode(group)
-                : GroupResponse.from(group);
+        long memberCount = memberCount(group);
+        return activeMembership(callerUserId, group.getIdGroup())
+                .map(m -> GroupResponse.forMember(group, m.getRole(), memberCount))
+                .orElseGet(() -> GroupResponse.from(group, memberCount));
     }
 
     /**
@@ -63,8 +68,10 @@ public class GroupService {
      * @return all groups
      */
     public List<GroupResponse> getAllGroups() {
-        return groupRepository.findAll().stream()
-                .map(GroupResponse::from)
+        List<Group> groups = groupRepository.findAll();
+        Map<Long, Long> counts = memberCounts(groups.stream().map(Group::getIdGroup).toList());
+        return groups.stream()
+                .map(g -> GroupResponse.from(g, counts.getOrDefault(g.getIdGroup(), 0L)))
                 .toList();
     }
 
@@ -76,10 +83,14 @@ public class GroupService {
      * @return the user's active memberships as group summaries, newest membership last
      */
     public List<MyGroupResponse> getMyGroups(Long userId) {
-        return groupMemberRepository.findByUserIdUserAndIsActiveTrue(userId).stream()
+        List<GroupMember> memberships = groupMemberRepository.findByUserIdUserAndIsActiveTrue(userId).stream()
                 // A membership can outlive its group's soft-deletion, so filter on the group too.
                 .filter(m -> Boolean.TRUE.equals(m.getGroup().getIsActive()))
-                .map(MyGroupResponse::from)
+                .toList();
+        Map<Long, Long> counts = memberCounts(
+                memberships.stream().map(m -> m.getGroup().getIdGroup()).toList());
+        return memberships.stream()
+                .map(m -> MyGroupResponse.from(m, counts.getOrDefault(m.getGroup().getIdGroup(), 0L)))
                 .toList();
     }
 
@@ -108,6 +119,7 @@ public class GroupService {
 
         // The creator is the group's first admin.
         GroupMember creator = GroupMember.builder()
+                .uid(UUID.randomUUID().toString())
                 .user(userRepository.getReferenceById(creatorUserId))
                 .group(saved)
                 .role(GroupRole.GROUP_ADMIN)
@@ -120,7 +132,7 @@ public class GroupService {
                 AuditAction.MEMBER_ADDED, "Creator added as group admin", saved);
 
         // The creator is the group's admin, so they get the invite code straight away to share.
-        return GroupResponse.withInviteCode(saved);
+        return GroupResponse.forMember(saved, GroupRole.GROUP_ADMIN, 1);
     }
 
     /**
@@ -147,6 +159,7 @@ public class GroupService {
                 .findByUserIdUserAndGroupIdGroup(userId, group.getIdGroup())
                 .map(this::rejoin)
                 .orElseGet(() -> GroupMember.builder()
+                        .uid(UUID.randomUUID().toString())
                         .user(userRepository.getReferenceById(userId))
                         .group(group)
                         .role(GroupRole.GROUP_MEMBER)
@@ -155,11 +168,11 @@ public class GroupService {
                         .build());
 
         GroupMember saved = groupMemberRepository.save(membership);
-        log.info("User joined group via invite code: groupUid={} groupMemberId={}",
-                group.getUid(), saved.getIdGroupMember());
+        log.info("User joined group via invite code: groupUid={} memberUid={}",
+                group.getUid(), saved.getUid());
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(),
                 AuditAction.MEMBER_ADDED, "Member joined via invite code", group);
-        return MyGroupResponse.from(saved);
+        return MyGroupResponse.from(saved, memberCount(group));
     }
 
     // Reactivates a membership the user previously left. The unique (user_id, group_id) constraint
@@ -195,7 +208,7 @@ public class GroupService {
         auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), saved);
         // Only a group admin (or SUPER_ADMIN) can reach this endpoint, so the code is safe to return.
-        return GroupResponse.withInviteCode(saved);
+        return GroupResponse.forAdmin(saved, memberCount(saved));
     }
 
     /**
@@ -219,7 +232,7 @@ public class GroupService {
         auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "invite code rotated"), saved);
         // Only a group admin (or SUPER_ADMIN) can reach this, so returning the code is safe.
-        return GroupResponse.withInviteCode(saved);
+        return GroupResponse.forAdmin(saved, memberCount(saved));
     }
 
     /**
@@ -243,13 +256,27 @@ public class GroupService {
         return "Group \"" + name + "\" " + verb;
     }
 
-    // Mirrors @groupSecurity.isAdminOfGroup, but resolves the role from an explicit user id rather
-    // than the SecurityContext, so the service stays usable outside a request (jobs, tests).
-    private boolean isGroupAdmin(Long userId, Long groupId) {
-        return userId != null && groupMemberRepository.findByUserIdUserAndGroupIdGroup(userId, groupId)
-                .filter(m -> Boolean.TRUE.equals(m.getIsActive()))
-                .map(m -> m.getRole() == GroupRole.GROUP_ADMIN)
-                .orElse(false);
+    // Mirrors @groupSecurity's membership lookup, but resolves from an explicit user id rather than
+    // the SecurityContext, so the service stays usable outside a request (jobs, tests).
+    private Optional<GroupMember> activeMembership(Long userId, Long groupId) {
+        if (userId == null) {
+            return Optional.empty();
+        }
+        return groupMemberRepository.findByUserIdUserAndGroupIdGroup(userId, groupId)
+                .filter(m -> Boolean.TRUE.equals(m.getIsActive()));
+    }
+
+    private long memberCount(Group group) {
+        return groupMemberRepository.countByGroupIdGroupAndIsActiveTrue(group.getIdGroup());
+    }
+
+    // One aggregate query for a whole list of groups, rather than a count per group.
+    private Map<Long, Long> memberCounts(List<Long> groupIds) {
+        if (groupIds.isEmpty()) {
+            return Map.of();
+        }
+        return groupMemberRepository.countActiveByGroupIds(groupIds).stream()
+                .collect(Collectors.toMap(GroupMemberCount::getGroupId, GroupMemberCount::getTotal));
     }
 
     private String generateInviteCode() {

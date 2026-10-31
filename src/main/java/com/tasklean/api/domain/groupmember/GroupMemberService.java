@@ -21,10 +21,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 /**
- * Manages group membership — adding members, role changes, lookups, and removal.
- * A user can belong to a given group only once.
+ * Manages group membership — listing a group's members, adding, role changes, and removal or
+ * leaving. A membership is addressed by its own UID; the group it belongs to is read off the
+ * membership, and authorization against that group happens in {@code @groupSecurity}.
  */
 @Slf4j
 @Service
@@ -38,62 +40,51 @@ public class GroupMemberService {
     private final Clock clock;
 
     /**
-     * Returns a group membership by its id.
+     * Returns a group's active members.
      *
-     * @param id the membership id
-     * @return the membership
-     * @throws ResourceNotFoundException if no membership has that id
-     */
-    public GroupMemberResponse getMemberById(Long id) {
-        GroupMember member = groupMemberRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
-        return GroupMemberResponse.from(member);
-    }
-
-    /**
-     * Returns the active members of a group.
-     *
-     * @param groupId the group id
+     * @param groupUid the group's public UID
      * @return the group's active members
+     * @throws ResourceNotFoundException if no group has that UID
      */
-    public List<GroupMemberResponse> getMembersByGroup(Long groupId) {
-        return groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(groupId).stream()
+    public List<GroupMemberResponse> getMembers(String groupUid) {
+        requireGroup(groupUid);
+        return groupMemberRepository.findByGroupUidAndIsActiveTrue(groupUid).stream()
                 .map(GroupMemberResponse::from)
                 .toList();
     }
 
     /**
-     * Returns a user's active memberships (the groups they belong to).
+     * Returns one membership by its UID.
      *
-     * @param userId the user id
-     * @return the user's active memberships
+     * @param memberUid the membership's public UID
+     * @return the membership
+     * @throws ResourceNotFoundException if no membership has that UID
      */
-    public List<GroupMemberResponse> getGroupsByUser(Long userId) {
-        return groupMemberRepository.findByUserIdUserAndIsActiveTrue(userId).stream()
-                .map(GroupMemberResponse::from)
-                .toList();
+    public GroupMemberResponse getMember(String memberUid) {
+        return GroupMemberResponse.from(requireMembership(memberUid));
     }
 
     /**
      * Adds a user to a group with the requested role.
      *
-     * @param request the membership details (user, group, role)
+     * @param request the group, the user to add, and the role to give them
      * @return the created membership
-     * @throws DuplicateResourceException if the user is already a member of the group
-     * @throws ResourceNotFoundException  if the user or group does not exist
+     * @throws DuplicateResourceException if the user already has a membership of the group
+     * @throws ResourceNotFoundException  if the group or the user does not exist
      */
     @Transactional
     public GroupMemberResponse addMember(GroupMemberRequest request) {
-        if (groupMemberRepository.existsByUserIdUserAndGroupIdGroup(request.getUserId(), request.getGroupId())) {
+        String groupUid = request.getGroupUid();
+        Group group = requireGroup(groupUid);
+        if (groupMemberRepository.findByUserUidAndGroupUid(request.getUserUid(), groupUid).isPresent()) {
             throw new DuplicateResourceException("User is already a member of this group");
         }
 
-        User user = userRepository.findById(request.getUserId())
+        User user = userRepository.findByUid(request.getUserUid())
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
-        Group group = groupRepository.findById(request.getGroupId())
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
         GroupMember member = GroupMember.builder()
+                .uid(UUID.randomUUID().toString())
                 .user(user)
                 .group(group)
                 .role(request.getRole())
@@ -101,34 +92,33 @@ public class GroupMemberService {
                 .dateJoined(LocalDateTime.now(clock))
                 .build();
         GroupMember saved = groupMemberRepository.save(member);
-        log.info("Group member added: id={} user={} group={}", saved.getIdGroupMember(), user.getIdUser(), group.getIdGroup());
+        log.info("Group member added: memberUid={} groupUid={}", saved.getUid(), groupUid);
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.MEMBER_ADDED,
                 "Member added with role " + saved.getRole(), group);
         return GroupMemberResponse.from(saved);
     }
 
     /**
-     * Changes a member's role (an authorization-relevant change).
+     * Changes a member's role within their group (an authorization-relevant change).
      *
-     * @param id   the membership id
-     * @param role the new role
+     * @param memberUid the membership's public UID
+     * @param role      the new role
      * @return the updated membership
-     * @throws ResourceNotFoundException if no membership has that id
+     * @throws ResourceNotFoundException if no membership has that UID
      * @throws BusinessRuleException     if this would demote the group's last admin
      */
     @Transactional
-    public GroupMemberResponse updateMemberRole(Long id, GroupRole role) {
-        GroupMember member = groupMemberRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
+    public GroupMemberResponse updateMemberRole(String memberUid, GroupRole role) {
+        GroupMember member = requireMembership(memberUid);
 
         if (member.getRole() == GroupRole.GROUP_ADMIN && role != GroupRole.GROUP_ADMIN
                 && Boolean.TRUE.equals(member.getIsActive()) && isLastAdmin(member)) {
-            throw new BusinessRuleException("A group must have at least one admin");
+            throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
 
         member.setRole(role);
         // Authorization-relevant state change → INFO.
-        log.info("Group member role changed: id={} role={}", id, role);
+        log.info("Group member role changed: memberUid={} role={}", memberUid, role);
         GroupMember saved = groupMemberRepository.save(member);
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.ROLE_CHANGED,
                 "Role changed to " + role, saved.getGroup());
@@ -136,28 +126,48 @@ public class GroupMemberService {
     }
 
     /**
-     * Soft-removes a member from a group and stamps their leave time.
+     * Removes a membership and stamps its leave time (soft). A caller removing their own
+     * membership is leaving the group, which is recorded as a distinct event — the two are the
+     * same state change but not the same thing to a reader of the trail.
      *
-     * @param id the membership id
-     * @throws ResourceNotFoundException if no membership has that id
+     * @param memberUid    the membership's public UID
+     * @param callerUserId the id of the authenticated caller
+     * @return {@code true} if the caller left their own group, {@code false} if they removed someone
+     * @throws ResourceNotFoundException if no membership has that UID
      * @throws BusinessRuleException     if this would remove the group's last admin
      */
     @Transactional
-    public void removeMember(Long id) {
-        GroupMember member = groupMemberRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
+    public boolean removeMember(String memberUid, Long callerUserId) {
+        GroupMember member = requireMembership(memberUid);
+        boolean left = member.getUser().getIdUser().equals(callerUserId);
+        deactivate(member);
+        log.info("Group member {}: memberUid={} groupUid={}", left ? "left" : "removed",
+                memberUid, member.getGroup().getUid());
+        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(),
+                left ? AuditAction.MEMBER_LEFT : AuditAction.MEMBER_REMOVED,
+                left ? "Member left group" : "Member removed from group", member.getGroup());
+        return left;
+    }
 
+    // The last-admin guard, then the soft delete.
+    private void deactivate(GroupMember member) {
         if (member.getRole() == GroupRole.GROUP_ADMIN && Boolean.TRUE.equals(member.getIsActive())
                 && isLastAdmin(member)) {
-            throw new BusinessRuleException("A group must have at least one admin");
+            throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
-
         member.setIsActive(false);
         member.setDateLeft(LocalDateTime.now(clock));
         groupMemberRepository.save(member);
-        log.info("Group member removed: id={}", id);
-        auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(), AuditAction.MEMBER_REMOVED,
-                "Member removed from group", member.getGroup());
+    }
+
+    private Group requireGroup(String groupUid) {
+        return groupRepository.findByUid(groupUid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+    }
+
+    private GroupMember requireMembership(String memberUid) {
+        return groupMemberRepository.findByUid(memberUid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
     }
 
     // Whether the given member is the only remaining active admin of their group.
