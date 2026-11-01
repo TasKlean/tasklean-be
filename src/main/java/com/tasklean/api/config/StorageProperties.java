@@ -35,4 +35,16 @@ public class StorageProperties {
 
     /** How long a download URL is valid. Shorter: the frontend re-asks for one per page view. */
     private Duration downloadTtl = Duration.ofMinutes(15);
+
+    /** How long a signed-for upload may stay unattached before the sweep collects its object. */
+    private Duration pendingGrace = Duration.ofHours(24);
+
+    /**
+     * How long a replaced image survives. Must outlast {@code downloadTtl}, or a URL already handed
+     * out would resolve to a deleted object.
+     */
+    private Duration supersededGrace = Duration.ofHours(1);
+
+    /** Most objects one sweep will delete, so a backlog drains over several runs. */
+    private int sweepBatch = 200;
 }

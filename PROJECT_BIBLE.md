@@ -337,6 +337,16 @@ A key is never stored because a client said so. `PUT /api/groups/{uid}` takes a 
 
 Two shapes follow from the upload naming its target: **a photo cannot be set at create time** (the group does not exist yet to be named, so a `photoUid` on `POST /api/groups` is a 400), and **re-sending the photo a group already has is a no-op** so a repeated save is harmless. Sending no `photoUid` clears the picture.
 
+### Collecting the images nothing points at
+
+A signed upload the browser abandons, and a photo that has been replaced, both leave an object in the bucket that nothing will ever ask for. `UploadSweeper` (`@Scheduled`, every 6 hours) deletes those objects and marks their rows `DELETED`: a `PENDING` row after `storage.pending-grace` (24h) and a `SUPERSEDED` one after `storage.superseded-grace` (1h, which must outlast `download-ttl` or a URL already handed out would break). `storage.sweep-batch` caps one run at 200 objects, so a backlog drains over several runs instead of one long one.
+
+**Two orderings matter.** The object is deleted *before* the row is marked: interrupted in between, the next run deletes an object that is already gone, which the port treats as success — whereas marking first would leak the object for good, since nothing would look at that row again. And each row commits on its own, outside any shared transaction, so an unreachable object costs that object and not the run; the row keeps its status and is retried. This is why the sweep is its own component rather than a method on `UploadService`, whose other writes are one statement inside one transaction.
+
+An `ATTACHED` row is never collected, so a live photo is never at risk: the group's column and the row's status change in the same transaction.
+
+Unlike the rate limiter, this needs no seam for running more than one instance: two sweeps racing would delete the same objects and run the same idempotent update, which wastes bucket calls and breaks nothing.
+
 ### HTTP status codes
 
 - `200` — success (GET, PUT, PATCH, DELETE, login)
@@ -389,7 +399,7 @@ Supabase auto-exposes every `public`-schema table through its PostgREST API usin
 - Expiration: **14 days** (configurable via `jwt.refresh-expiration` in ms)
 - **Single-use with rotation**: each refresh revokes the old token and issues a new pair
 - Logout revokes **all** refresh tokens for the user
-- Scheduled cleanup (`@Scheduled`, every 6 hours) purges expired and revoked tokens from DB
+- Scheduled cleanup (`@Scheduled`, every 6 hours) purges expired and revoked tokens from DB (the other scheduled jobs: the password-reset token purge, the hourly two-factor challenge purge, and `UploadSweeper`)
 - Entity: `RefreshToken` (table `refresh_token`, V13 migration)
 
 ### Client session architecture (decided)
@@ -851,6 +861,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `RequestContextTest` | 12 | `clientIp` returns the forwarded user IP on a trusted hop, ignores it otherwise, and is null with no bound request; `trustedClientIp` returns it only on a trusted hop (null for a resolvable-but-untrusted caller, null unbound); `userAgent` prefers `X-Device-User-Agent` over the transport header and truncates an over-long one to 512; `deviceId` present/absent, and rejected rather than clipped when over 255 |
 | `AccountSecurityTest` | 4 | `isSelf` — matching uid / different uid / anonymous / non-principal |
 | `UploadServiceTest` | 20 | createUpload (the row is `PENDING` and its key is derived from the uid the API publishes, one opaque identifier rather than two; the signature is for the exact type and size asked for; jpeg and webp get their own extensions; the response reports the TTL; an unknown group is not found and nothing is signed); downloadUrl (signs the stored key, unknown uid not found); attachGroupPhoto — the happy path stamps `ATTACHED` + `date_attached`, clearing and replacing both supersede the old row, re-sending the current photo touches nothing, and each refusal is its own case: unknown uid, someone else's upload (checked before the bucket is even asked), an upload for another group, one already spent, an object that never arrived, a different size, a different type, and bytes that are not the declared image |
+| `UploadSweeperTest` | 6 | Deletes the object **before** marking the row; the cutoffs come from the two grace periods and the page size from `sweep-batch`; nothing collectable leaves the bucket untouched; one unreachable object still lets the rest be collected, and its own row keeps its status for the next run |
 | `UploadControllerSecurityTest` | 14 | `@WebMvcTest` slice with both security beans real — POST allows the target group's admin and SUPER_ADMIN, denies a plain member of that group, a caller outside it and a platform ADMIN (read-only); an SVG, an oversize body and a missing target are 400 before any signature exists; GET allows a member of the upload's group, a platform ADMIN and the requester of a still-pending upload, and denies a caller outside the group, someone else's pending upload and an unknown uid |
 | `GroupSecurityTest` | 16 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); by membership uid — `canManageMember` (caller admin of that group / only a plain member), `canViewMember` (shares the group / unknown membership / caller outside that group), `isSelfMember` (own / someone else's / anonymous) |
 | `GroupServiceTest` | 22 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found; getGroupByUid invite-code visibility (admin vs plain member); getMyGroups (role mapping, soft-deleted group skipped, invite-code visibility); joinByInviteCode (new member, case-insensitive code, unknown code, soft-deleted group, already a member, rejoin reactivates the same row without restoring admin); rotateInviteCode (replaces code + audits, not-found) |
@@ -880,7 +891,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **588 tests** across 50 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **594 tests** across 51 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
