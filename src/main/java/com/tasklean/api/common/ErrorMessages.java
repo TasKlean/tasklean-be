@@ -17,6 +17,12 @@ public final class ErrorMessages {
     public static final String ALREADY_GROUP_MEMBER = "You are already a member of this group";
     public static final String GROUP_MEMBER_NOT_FOUND = "Group member not found";
     public static final String GROUP_NEEDS_AN_ADMIN = "A group must have at least one admin";
+    public static final String UPLOAD_NOT_FOUND = "Upload not found";
+    // One message for every way an attach can fail: which check caught it is our business,
+    // and the caller's remedy is the same either way.
+    public static final String UPLOAD_NOT_USABLE = "That image could not be used; upload it again";
+    public static final String PHOTO_NEEDS_AN_EXISTING_GROUP =
+            "A group photo can only be set once the group exists";
     public static final String TASK_NOT_FOUND = "Task not found";
     public static final String CATEGORY_NOT_FOUND = "Category not found";
     public static final String TAG_NOT_FOUND = "Tag not found";

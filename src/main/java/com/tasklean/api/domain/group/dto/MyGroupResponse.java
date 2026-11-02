@@ -21,7 +21,7 @@ public class MyGroupResponse {
     private String uid;
     private String name;
     private String description;
-    private String photoUrl;
+    private String photoUid;
     private String inviteCode;
     private GroupRole myRole;
     private Integer memberCount;
@@ -36,7 +36,7 @@ public class MyGroupResponse {
                 .uid(group.getUid())
                 .name(group.getName())
                 .description(group.getDescription())
-                .photoUrl(group.getPhotoUrl())
+                .photoUid(group.getPhotoUid())
                 // Inviting is a GROUP_ADMIN power, so only an admin is handed the code to share.
                 .inviteCode(isAdmin ? group.getInviteCode() : null)
                 .myRole(membership.getRole())

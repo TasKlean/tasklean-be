@@ -2,6 +2,7 @@ package com.tasklean.api.domain.group;
 
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.BusinessRuleException;
+import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
@@ -13,6 +14,7 @@ import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository.GroupMemberCount;
 import com.tasklean.api.domain.groupmember.GroupRole;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +43,7 @@ public class GroupService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final UploadService uploadService;
     private final Clock clock;
 
     /**
@@ -98,17 +101,22 @@ public class GroupService {
      * Creates a group with a generated UID and a unique invite code, and adds the creator as
      * its first {@code GROUP_ADMIN}.
      *
-     * @param request       the group details (name, description, photo)
+     * @param request       the group details (name and description; a photo is set afterwards)
      * @param creatorUserId the id of the authenticated user creating the group
      * @return the created group
+     * @throws InvalidRequestException if a photo is sent, which the group must exist to accept
      */
     @Transactional
     public GroupResponse createGroup(GroupRequest request, Long creatorUserId) {
+        // An upload names the group it is for, so one cannot exist before the group does.
+        if (request.getPhotoUid() != null) {
+            throw new InvalidRequestException(ErrorMessages.PHOTO_NEEDS_AN_EXISTING_GROUP);
+        }
+
         Group group = Group.builder()
                 .uid(UUID.randomUUID().toString())
                 .name(request.getName())
                 .description(request.getDescription())
-                .photoUrl(request.getPhotoUrl())
                 .inviteCode(generateInviteCode())
                 .isActive(true)
                 .build();
@@ -190,20 +198,23 @@ public class GroupService {
     }
 
     /**
-     * Updates a group's name, description, and photo.
+     * Updates a group's name, description, and photo. A photo uid is only accepted once its
+     * object has been checked against what was signed for; sending none clears the picture.
      *
-     * @param uid     the group's public UID
-     * @param request the new group details
+     * @param uid          the group's public UID
+     * @param request      the new group details
+     * @param callerUserId the id of the authenticated caller
      * @return the updated group
      * @throws ResourceNotFoundException if no group has that UID
+     * @throws InvalidRequestException   if the photo is not this caller's usable upload for it
      */
     @Transactional
-    public GroupResponse updateGroup(String uid, GroupRequest request) {
+    public GroupResponse updateGroup(String uid, GroupRequest request, Long callerUserId) {
         Group group = groupRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
         group.setName(request.getName());
         group.setDescription(request.getDescription());
-        group.setPhotoUrl(request.getPhotoUrl());
+        group.setPhotoUid(uploadService.attachGroupPhoto(request.getPhotoUid(), group, callerUserId));
         Group saved = groupRepository.save(group);
         auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), saved);

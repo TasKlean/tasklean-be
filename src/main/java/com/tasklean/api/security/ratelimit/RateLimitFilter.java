@@ -97,6 +97,11 @@ public class RateLimitFilter extends OncePerRequestFilter {
             LimitCheck perIp = new LimitCheck("apiIp", "apiIp:" + ip, properties.getApiPerIp());
 
             // Other special authenticated checks
+            if (path.equals("/api/uploads")) {
+                // Only the POST lives at this exact path. Reading an image is an item path, so it
+                // stays on the api tiers, since one screen reads many.
+                return List.of(perUser, perIp, new LimitCheck("upload", "upload:" + userId, properties.getUpload()));
+            }
             if (path.equals("/api/groups/join")) {
                 // Redeeming an invite code is guessable, so it adds a tighter quota on top.
                 return List.of(perUser, perIp, new LimitCheck("join", "join:" + userId, properties.getJoin()));

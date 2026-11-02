@@ -45,6 +45,16 @@ public final class FieldLimits {
     /** A Google ID token is a JWT of roughly 1-2KB; enough headroom without inviting a flood. */
     public static final int GOOGLE_ID_TOKEN = 4096;
 
+    /** An image MIME type; the allowlist on the field is what actually narrows it. */
+    public static final int CONTENT_TYPE = 100;
+
+    /**
+     * The largest image we sign for, in bytes. One cap for every purpose rather than one each:
+     * the point is to refuse something absurd, and a @Max on the request makes it a 400 before
+     * a signature exists. Phone photos are 3-8MB, so the frontend downscales first.
+     */
+    public static final long IMAGE_BYTES = 5L * 1024 * 1024;
+
     /** The per-login nonce secret the frontend generates and we only hash. */
     public static final int NONCE = 256;
 

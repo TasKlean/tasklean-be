@@ -67,6 +67,21 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Maps a request that is well-formed but unusable against stored state to 400, attaching its
+     * {@code code} when it has one so the client can tell "retry the upload" from "fix the form".
+     *
+     * @param ex the thrown exception
+     * @return a 400 response with the message and, when set, the exception's error code
+     */
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ApiResponse<Void>> handleInvalidRequest(InvalidRequestException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ex.getCode() == null
+                        ? ApiResponse.error(ex.getMessage())
+                        : ApiResponse.error(ex.getMessage(), ex.getCode()));
+    }
+
+    /**
      * Maps a coded authentication failure to 401, attaching its {@code code} so the client can
      * branch on a constant rather than matching the message. More specific than
      * {@link #handleBadCredentials} (its superclass), so Spring routes every subclass here.

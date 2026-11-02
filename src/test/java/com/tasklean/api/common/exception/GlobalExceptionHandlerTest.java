@@ -55,6 +55,29 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleInvalidRequest_codedFailure_returns400WithThatCode() {
+        ResponseEntity<ApiResponse<Void>> response = handler.handleInvalidRequest(
+                new InvalidRequestException(ErrorMessages.UPLOAD_NOT_USABLE, ErrorCodes.UPLOAD_NOT_USABLE));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::getMessage, ApiResponse::getCode)
+                .containsExactly(ErrorMessages.UPLOAD_NOT_USABLE, ErrorCodes.UPLOAD_NOT_USABLE);
+    }
+
+    @Test
+    void handleInvalidRequest_uncodedFailure_returns400WithNoCode() {
+        // The envelope omits the field entirely, so a client cannot read an absent code as one.
+        ResponseEntity<ApiResponse<Void>> response =
+                handler.handleInvalidRequest(new InvalidRequestException("Nothing to change"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getCode()).isNull();
+    }
+
+    @Test
     void handleBusinessRule_returns409WithMessage() {
         ResponseEntity<ApiResponse<Void>> response =
                 handler.handleBusinessRule(new BusinessRuleException("A group must have at least one admin"));

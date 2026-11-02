@@ -105,17 +105,21 @@ public class GroupController {
     }
 
     /**
-     * Updates a group.
+     * Updates a group. A {@code photoUid} is accepted only if it is the caller's own uploaded
+     * image for this group and its object matches what was signed for; sending none clears it.
      *
-     * @param uid     the group's public UID
-     * @param request the new group details
+     * @param uid       the group's public UID
+     * @param request   the new group details
+     * @param principal the authenticated caller
      * @return {@code 200 OK} with the updated group
      */
     @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.isAdmin(#uid)")
     @PutMapping("/{uid}")
     public ResponseEntity<ApiResponse<GroupResponse>> updateGroup(
-            @PathVariable String uid, @Valid @RequestBody GroupRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(groupService.updateGroup(uid, request)));
+            @PathVariable String uid, @Valid @RequestBody GroupRequest request,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                groupService.updateGroup(uid, request, principal.userId())));
     }
 
     /**

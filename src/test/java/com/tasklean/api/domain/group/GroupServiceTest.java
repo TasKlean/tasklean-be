@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.group;
 
 import com.tasklean.api.common.exception.BusinessRuleException;
+import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
@@ -9,6 +10,7 @@ import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -28,6 +30,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -45,6 +48,9 @@ class GroupServiceTest {
 
     @Mock
     private AuditLogService auditLogService;
+
+    @Mock
+    private UploadService uploadService;
 
     @Spy
     private Clock clock = Clock.systemUTC();
@@ -265,7 +271,7 @@ class GroupServiceTest {
         when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
         when(groupRepository.save(any(Group.class))).thenAnswer(i -> i.getArgument(0));
 
-        groupService.updateGroup("grp-1", updateRequest());
+        groupService.updateGroup("grp-1", updateRequest(), 1L);
 
         assertThat(existing.getName()).isEqualTo("Renamed");
         verify(auditLogService).recordEvent(any(), any(), any(), any(), any());
@@ -274,7 +280,8 @@ class GroupServiceTest {
     @Test
     void updateGroup_missing_throws() {
         when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> groupService.updateGroup("nope", updateRequest())).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> groupService.updateGroup("nope", updateRequest(), 1L))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
@@ -314,5 +321,46 @@ class GroupServiceTest {
     void deleteGroup_missing_throws() {
         when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> groupService.deleteGroup("nope")).isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void createGroup_withAPhoto_throwsInvalidRequest() {
+        // An upload names the group it is for, so it cannot exist before the group does.
+        GroupRequest request = new GroupRequest();
+        request.setName("Home");
+        request.setPhotoUid("some-upload");
+
+        assertThatThrownBy(() -> groupService.createGroup(request, 1L))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(groupRepository, never()).save(any());
+    }
+
+    @Test
+    void updateGroup_photo_storesWhateverTheAttachAllows() {
+        Group existing = group();
+        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.save(any(Group.class))).thenAnswer(i -> i.getArgument(0));
+        GroupRequest request = updateRequest();
+        request.setPhotoUid("new-upload");
+        when(uploadService.attachGroupPhoto("new-upload", existing, 1L)).thenReturn("new-upload");
+
+        groupService.updateGroup("grp-1", request, 1L);
+
+        // The service never writes the uid the caller sent, only the one the attach vouched for.
+        assertThat(existing.getPhotoUid()).isEqualTo("new-upload");
+    }
+
+    @Test
+    void updateGroup_unusablePhoto_isNotSaved() {
+        Group existing = group();
+        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        GroupRequest request = updateRequest();
+        request.setPhotoUid("never-uploaded");
+        when(uploadService.attachGroupPhoto("never-uploaded", existing, 1L))
+                .thenThrow(new InvalidRequestException("nope"));
+
+        assertThatThrownBy(() -> groupService.updateGroup("grp-1", request, 1L))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(groupRepository, never()).save(any());
     }
 }
