@@ -98,8 +98,8 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
             // Other special authenticated checks
             if (path.equals("/api/uploads")) {
-                // Only the POST lives at this exact path; reading an image is /api/uploads/{uid}
-                // and stays on the api tiers, since one screen reads many.
+                // Only the POST lives at this exact path. Reading an image is an item path, so it
+                // stays on the api tiers, since one screen reads many.
                 return List.of(perUser, perIp, new LimitCheck("upload", "upload:" + userId, properties.getUpload()));
             }
             if (path.equals("/api/groups/join")) {
