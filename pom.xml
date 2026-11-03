@@ -127,7 +127,7 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
-			<version>33.1.0-jre</version>
+			<version>33.7.1-jre</version>
 		</dependency>
 		<!-- RFC 6238 TOTP (authenticator-app two-factor codes). Kotlin library, used only
 		     behind the TwoFactorProvider port so a hosted factor service can replace it. -->
