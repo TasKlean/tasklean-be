@@ -42,6 +42,14 @@ public final class FieldLimits {
     /** A free-text description. The column is TEXT, so this bound is ours, not Postgres's. */
     public static final int DESCRIPTION = 2000;
 
+    /**
+     * A search string a list endpoint narrows itself by. Nothing is stored, so the bound is only to
+     * refuse a paste: longer than this is nobody's search. Mirrors the frontend's own
+     * {@code QUERY_MAX_LENGTH} - the frontend trims to it before sending, so a longer value
+     * arriving means a hand-edited URL, and the 400 is the point.
+     */
+    public static final int SEARCH_TEXT = 100;
+
     /** A Google ID token is a JWT of roughly 1-2KB; enough headroom without inviting a flood. */
     public static final int GOOGLE_ID_TOKEN = 4096;
 
