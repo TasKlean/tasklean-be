@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -29,6 +30,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /** Spring's own code for a field error raised because the value could not be converted. */
+    private static final String TYPE_MISMATCH = "typeMismatch";
 
     /**
      * Maps a missing resource to 404.
@@ -173,7 +177,8 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Maps bean-validation failures on request bodies to 400, joining field errors into one message.
+     * Maps bean-validation failures on a request body, or on query parameters bound as an object,
+     * to 400, joining field errors into one message.
      *
      * @param ex the validation exception
      * @return a 400 response listing the field errors
@@ -181,10 +186,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
-                .map(e -> e.getField() + ": " + e.getDefaultMessage())
+                .map(e -> e.getField() + ": " + fieldMessage(e))
                 .collect(Collectors.joining(", "));
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                 .body(ApiResponse.error(message));
+    }
+
+    // A value that would not convert at all carries Spring's own message, which names the target
+    // class and the package it sits in. The caller is told which field, not what we are built of.
+    private String fieldMessage(FieldError error) {
+        return TYPE_MISMATCH.equals(error.getCode())
+                ? ErrorMessages.NOT_A_VALID_VALUE
+                : error.getDefaultMessage();
     }
 
     /**

@@ -5,12 +5,14 @@ import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.JoinGroupRequest;
+import com.tasklean.api.domain.group.dto.MyGroupFilterRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -67,15 +69,19 @@ public class GroupController {
 
     /**
      * Lists the groups the caller is an active member of, each with the caller's own role in it.
+     * Narrowed and ordered by the query parameters; sent without any, the whole list comes back
+     * ordered by name.
      *
+     * @param filter    an optional search string, the roles to keep and the ordering to apply
      * @param principal the authenticated caller
      * @return {@code 200 OK} with the caller's groups
      */
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/mine")
     public ResponseEntity<ApiResponse<List<MyGroupResponse>>> getMyGroups(
+            @Valid @ParameterObject MyGroupFilterRequest filter,
             @AuthenticationPrincipal AuthPrincipal principal) {
-        return ResponseEntity.ok(ApiResponse.success(groupService.getMyGroups(principal.userId())));
+        return ResponseEntity.ok(ApiResponse.success(groupService.getMyGroups(principal.userId(), filter)));
     }
 
     /**

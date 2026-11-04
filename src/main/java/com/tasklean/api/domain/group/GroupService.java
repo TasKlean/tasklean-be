@@ -9,6 +9,7 @@ import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.group.dto.MyGroupFilterRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
@@ -44,6 +45,7 @@ public class GroupService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final UploadService uploadService;
+    private final MyGroupFilter myGroupFilter;
     private final Clock clock;
 
     /**
@@ -83,18 +85,22 @@ public class GroupService {
      * in the group. This is how a normal user discovers their own households.
      *
      * @param userId the id of the authenticated user
-     * @return the user's active memberships as group summaries, newest membership last
+     * @param filter what the caller asked the list to be narrowed and ordered by
+     * @return the user's active memberships as group summaries, narrowed and ordered as asked
      */
-    public List<MyGroupResponse> getMyGroups(Long userId) {
+    public List<MyGroupResponse> getMyGroups(Long userId, MyGroupFilterRequest filter) {
         List<GroupMember> memberships = groupMemberRepository.findByUserIdUserAndIsActiveTrue(userId).stream()
                 // A membership can outlive its group's soft-deletion, so filter on the group too.
                 .filter(m -> Boolean.TRUE.equals(m.getGroup().getIsActive()))
                 .toList();
         Map<Long, Long> counts = memberCounts(
                 memberships.stream().map(m -> m.getGroup().getIdGroup()).toList());
-        return memberships.stream()
+        List<MyGroupResponse> groups = memberships.stream()
                 .map(m -> MyGroupResponse.from(m, counts.getOrDefault(m.getGroup().getIdGroup(), 0L)))
                 .toList();
+
+        // After the counts are attached, not before: one of the orderings is by member count.
+        return myGroupFilter.apply(groups, filter);
     }
 
     /**

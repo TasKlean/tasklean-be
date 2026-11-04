@@ -35,6 +35,7 @@ public final class ErrorMessages {
     public static final String ACCESS_DENIED = "You do not have permission to perform this action";
     public static final String RATE_LIMITED = "Too many requests, please try again later";
     public static final String MALFORMED_REQUEST = "Malformed or invalid request body";
+    public static final String NOT_A_VALID_VALUE = "is not a valid value";
     public static final String INTERNAL_ERROR = "An unexpected error occurred";
 
     public static final String EMAIL_DELIVERY_FAILED =

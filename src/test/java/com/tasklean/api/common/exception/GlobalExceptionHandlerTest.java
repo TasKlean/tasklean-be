@@ -200,6 +200,25 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleValidation_unconvertibleValue_doesNotEchoTheTargetType() {
+        MethodParameter parameter = mock(MethodParameter.class);
+        BindingResult bindingResult = mock(BindingResult.class);
+        when(bindingResult.getFieldErrors()).thenReturn(List.of(new FieldError(
+                "obj", "sort", "NOPE", true, new String[]{"typeMismatch"}, null,
+                "Failed to convert property value of type 'java.lang.String' to required type "
+                        + "'com.tasklean.api.domain.group.GroupSort' for property 'sort'")));
+        MethodArgumentNotValidException ex = new MethodArgumentNotValidException(parameter, bindingResult);
+
+        ResponseEntity<ApiResponse<Void>> response = handler.handleValidation(ex);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getMessage())
+                .isEqualTo("sort: " + ErrorMessages.NOT_A_VALID_VALUE)
+                .doesNotContain("com.tasklean");
+    }
+
+    @Test
     void handleDataIntegrityViolation_returns400WithGenericMessage() {
         ResponseEntity<ApiResponse<Void>> response =
                 handler.handleDataIntegrityViolation(valueTooLong());
