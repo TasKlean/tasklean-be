@@ -1943,8 +1943,40 @@
     },
     "/api/groups/mine" : {
       "get" : {
-        "description" : "Lists the groups the caller is an active member of, each with the caller's own role in it.",
+        "description" : "Lists the groups the caller is an active member of, each with the caller's own role in it.\n Narrowed and ordered by the query parameters; sent without any, the whole list comes back\n ordered by name.",
         "operationId" : "getMyGroups",
+        "parameters" : [ {
+          "description" : "Matched case-insensitively against a group's name and its description.",
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "The roles to keep, repeatable. Naming neither role, or naming both, is the whole list.",
+          "in" : "query",
+          "name" : "role",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
+            }
+          }
+        }, {
+          "description" : "The ordering to apply. Omitted, the list comes back ordered by name, A to Z.",
+          "in" : "query",
+          "name" : "sort",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "NAME_ASC", "NAME_DESC", "JOINED_DESC", "CREATED_DESC", "MEMBERS_DESC" ]
+          }
+        } ],
         "responses" : {
           "200" : {
             "content" : {
@@ -1955,6 +1987,9 @@
               }
             },
             "description" : "<code>200 OK</code> with the caller's groups"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
           },
           "401" : {
             "$ref" : "#/components/responses/Unauthorized"

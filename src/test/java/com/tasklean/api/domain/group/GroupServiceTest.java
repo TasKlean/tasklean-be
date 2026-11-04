@@ -6,9 +6,11 @@ import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
+import com.tasklean.api.domain.group.dto.MyGroupFilterRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.groupmember.GroupMemberRepository.GroupMemberCount;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.User;
@@ -52,6 +54,11 @@ class GroupServiceTest {
     @Mock
     private UploadService uploadService;
 
+    // Real rather than mocked: it depends on nothing, and two of these tests are about the
+    // service handing it a list the counts have already landed on.
+    @Spy
+    private MyGroupFilter myGroupFilter = new MyGroupFilter();
+
     @Spy
     private Clock clock = Clock.systemUTC();
 
@@ -87,6 +94,20 @@ class GroupServiceTest {
     private Group group() {
         return Group.builder().idGroup(10L).uid("grp-1").name("Home")
                 .inviteCode("JOIN1234").isActive(true).build();
+    }
+
+    private GroupMemberCount count(Long groupId, Long total) {
+        return new GroupMemberCount() {
+            @Override
+            public Long getGroupId() {
+                return groupId;
+            }
+
+            @Override
+            public Long getTotal() {
+                return total;
+            }
+        };
     }
 
     private GroupRequest updateRequest() {
@@ -146,7 +167,7 @@ class GroupServiceTest {
         when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
                 .thenReturn(List.of(membership(g, GroupRole.GROUP_MEMBER)));
 
-        List<MyGroupResponse> mine = groupService.getMyGroups(1L);
+        List<MyGroupResponse> mine = groupService.getMyGroups(1L, new MyGroupFilterRequest());
 
         assertThat(mine).singleElement().satisfies(m -> {
             assertThat(m.getUid()).isEqualTo("grp-1");
@@ -161,7 +182,7 @@ class GroupServiceTest {
         when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
                 .thenReturn(List.of(membership(deleted, GroupRole.GROUP_ADMIN)));
 
-        assertThat(groupService.getMyGroups(1L)).isEmpty();
+        assertThat(groupService.getMyGroups(1L, new MyGroupFilterRequest())).isEmpty();
     }
 
     @Test
@@ -169,7 +190,8 @@ class GroupServiceTest {
         when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
                 .thenReturn(List.of(membership(group(), GroupRole.GROUP_ADMIN)));
 
-        assertThat(groupService.getMyGroups(1L).getFirst().getInviteCode()).isEqualTo("JOIN1234");
+        assertThat(groupService.getMyGroups(1L, new MyGroupFilterRequest()).getFirst().getInviteCode())
+                .isEqualTo("JOIN1234");
     }
 
     @Test
@@ -177,7 +199,34 @@ class GroupServiceTest {
         when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
                 .thenReturn(List.of(membership(group(), GroupRole.GROUP_MEMBER)));
 
-        assertThat(groupService.getMyGroups(1L).getFirst().getInviteCode()).isNull();
+        assertThat(groupService.getMyGroups(1L, new MyGroupFilterRequest()).getFirst().getInviteCode()).isNull();
+    }
+
+    @Test
+    void getMyGroups_narrowsByTheFilterItWasGiven() {
+        when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L))
+                .thenReturn(List.of(membership(group(), GroupRole.GROUP_MEMBER)));
+
+        MyGroupFilterRequest filter = new MyGroupFilterRequest();
+        filter.setRole(List.of(GroupRole.GROUP_ADMIN));
+
+        assertThat(groupService.getMyGroups(1L, filter)).isEmpty();
+    }
+
+    @Test
+    void getMyGroups_membersDesc_ordersByCountsThatLandedFirst() {
+        Group small = group();
+        Group big = Group.builder().idGroup(11L).uid("grp-2").name("Away").isActive(true).build();
+        when(groupMemberRepository.findByUserIdUserAndIsActiveTrue(1L)).thenReturn(List.of(
+                membership(small, GroupRole.GROUP_MEMBER), membership(big, GroupRole.GROUP_MEMBER)));
+        when(groupMemberRepository.countActiveByGroupIds(List.of(10L, 11L)))
+                .thenReturn(List.of(count(10L, 2L), count(11L, 7L)));
+
+        MyGroupFilterRequest filter = new MyGroupFilterRequest();
+        filter.setSort(GroupSort.MEMBERS_DESC);
+
+        assertThat(groupService.getMyGroups(1L, filter))
+                .extracting(MyGroupResponse::getUid).containsExactly("grp-2", "grp-1");
     }
 
     @Test

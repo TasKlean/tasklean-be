@@ -26,5 +26,6 @@ public class MyGroupFilterRequest {
     /** The roles to keep, repeatable. Naming neither role, or naming both, is the whole list. */
     private List<GroupRole> role;
 
+    /** The ordering to apply. Omitted, the list comes back ordered by name, A to Z. */
     private GroupSort sort = GroupSort.NAME_ASC;
 }

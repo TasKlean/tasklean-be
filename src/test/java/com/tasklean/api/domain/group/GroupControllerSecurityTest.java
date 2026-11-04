@@ -26,6 +26,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.util.List;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -99,12 +101,26 @@ class GroupControllerSecurityTest {
 
     @Test
     void getMyGroups_plainUser_ok() throws Exception {
-        when(groupService.getMyGroups(USER_ID)).thenReturn(List.of());
+        when(groupService.getMyGroups(eq(USER_ID), any())).thenReturn(List.of());
 
         // Also guards route precedence: if the literal /mine lost to /{uid}, a non-member USER
         // would be denied by @groupSecurity.isMember("mine") instead of getting their groups.
         mockMvc.perform(get("/api/groups/mine").with(as(UserRole.USER)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void getMyGroups_searchOverTheLimit_rejectedAsBadRequest() throws Exception {
+        // The bound is on an object rather than on a bare parameter precisely so this is a 400:
+        // a constraint on the parameter itself would have surfaced as a 500.
+        mockMvc.perform(get("/api/groups/mine").param("q", "x".repeat(101)).with(as(UserRole.USER)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getMyGroups_unknownSort_rejectedAsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/groups/mine").param("sort", "NOT_A_SORT").with(as(UserRole.USER)))
+                .andExpect(status().isBadRequest());
     }
 
     // --- getGroup: member or platform ADMIN ---
