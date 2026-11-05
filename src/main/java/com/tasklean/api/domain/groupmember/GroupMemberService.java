@@ -24,9 +24,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Manages group membership — listing a group's members, adding, role changes, and removal or
- * leaving. A membership is addressed by its own UID; the group it belongs to is read off the
- * membership, and authorization against that group happens in {@code @groupSecurity}.
+ * Manages group membership — listing a group's members, adding, role changes, removal or leaving,
+ * and ending every membership when the group itself is deleted. A membership is addressed by its
+ * own UID; the group it belongs to is read off the membership, and authorization against that
+ * group happens in {@code @groupSecurity}.
  */
 @Slf4j
 @Service
@@ -41,11 +42,15 @@ public class GroupMemberService {
 
     /**
      * Returns a group's active members.
+     * <p>
+     * Runs in a transaction because the response resolves {@code added_by}/{@code removed_by}
+     * through two lazy hops; without one it would work only while {@code open-in-view} stays on.
      *
      * @param groupUid the group's public UID
      * @return the group's active members
-     * @throws ResourceNotFoundException if no group has that UID
+     * @throws ResourceNotFoundException if no active group has that UID
      */
+    @Transactional(readOnly = true)
     public List<GroupMemberResponse> getMembers(String groupUid) {
         requireGroup(groupUid);
         return groupMemberRepository.findByGroupUidAndIsActiveTrue(groupUid).stream()
@@ -60,6 +65,7 @@ public class GroupMemberService {
      * @return the membership
      * @throws ResourceNotFoundException if no membership has that UID
      */
+    @Transactional(readOnly = true)
     public GroupMemberResponse getMember(String memberUid) {
         return GroupMemberResponse.from(requireMembership(memberUid));
     }
@@ -67,13 +73,14 @@ public class GroupMemberService {
     /**
      * Adds a user to a group with the requested role.
      *
-     * @param request the group, the user to add, and the role to give them
+     * @param request      the group, the user to add, and the role to give them
+     * @param callerUserId the id of the authenticated caller
      * @return the created membership
      * @throws DuplicateResourceException if the user already has a membership of the group
-     * @throws ResourceNotFoundException  if the group or the user does not exist
+     * @throws ResourceNotFoundException  if the user does not exist, or the group does not or is deleted
      */
     @Transactional
-    public GroupMemberResponse addMember(GroupMemberRequest request) {
+    public GroupMemberResponse addMember(GroupMemberRequest request, Long callerUserId) {
         String groupUid = request.getGroupUid();
         Group group = requireGroup(groupUid);
         if (groupMemberRepository.findByUserUidAndGroupUid(request.getUserUid(), groupUid).isPresent()) {
@@ -90,6 +97,7 @@ public class GroupMemberService {
                 .role(request.getRole())
                 .isActive(true)
                 .dateJoined(LocalDateTime.now(clock))
+                .addedBy(actingMember(callerUserId, group.getIdGroup()))
                 .build();
         GroupMember saved = groupMemberRepository.save(member);
         log.info("Group member added: memberUid={} groupUid={}", saved.getUid(), groupUid);
@@ -104,15 +112,15 @@ public class GroupMemberService {
      * @param memberUid the membership's public UID
      * @param role      the new role
      * @return the updated membership
-     * @throws ResourceNotFoundException if no membership has that UID
+     * @throws ResourceNotFoundException if no membership has that UID, or it is no longer active
      * @throws BusinessRuleException     if this would demote the group's last admin
      */
     @Transactional
     public GroupMemberResponse updateMemberRole(String memberUid, GroupRole role) {
-        GroupMember member = requireMembership(memberUid);
+        GroupMember member = requireActiveMembership(memberUid);
 
         if (member.getRole() == GroupRole.GROUP_ADMIN && role != GroupRole.GROUP_ADMIN
-                && Boolean.TRUE.equals(member.getIsActive()) && isLastAdmin(member)) {
+                && isLastAdmin(member)) {
             throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
 
@@ -133,14 +141,14 @@ public class GroupMemberService {
      * @param memberUid    the membership's public UID
      * @param callerUserId the id of the authenticated caller
      * @return {@code true} if the caller left their own group, {@code false} if they removed someone
-     * @throws ResourceNotFoundException if no membership has that UID
+     * @throws ResourceNotFoundException if no membership has that UID, or it is already removed
      * @throws BusinessRuleException     if this would remove the group's last admin
      */
     @Transactional
     public boolean removeMember(String memberUid, Long callerUserId) {
-        GroupMember member = requireMembership(memberUid);
+        GroupMember member = requireActiveMembership(memberUid);
         boolean left = member.getUser().getIdUser().equals(callerUserId);
-        deactivate(member);
+        deactivate(member, left ? member : actingMember(callerUserId, member.getGroup().getIdGroup()));
         log.info("Group member {}: memberUid={} groupUid={}", left ? "left" : "removed",
                 memberUid, member.getGroup().getUid());
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(),
@@ -149,22 +157,70 @@ public class GroupMemberService {
         return left;
     }
 
-    // The last-admin guard, then the soft delete.
-    private void deactivate(GroupMember member) {
-        if (member.getRole() == GroupRole.GROUP_ADMIN && Boolean.TRUE.equals(member.getIsActive())
-                && isLastAdmin(member)) {
+    /**
+     * Deactivates every active membership of a group, for when the group itself is being deleted.
+     * Deliberately skips the last-admin guard: that rule protects a living group from losing its
+     * only admin, and there is no group left to protect.
+     *
+     * @param group        the group being deleted
+     * @param callerUserId the id of the authenticated caller
+     * @return how many memberships were deactivated
+     */
+    @Transactional
+    public int deactivateAllForGroup(Group group, Long callerUserId) {
+        List<GroupMember> members = groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(group.getIdGroup());
+        // Resolved once, before the loop deactivates it too: an admin deleting their own group is
+        // recorded as having removed themselves along with everyone else.
+        GroupMember actor = actingMember(callerUserId, group.getIdGroup());
+        LocalDateTime now = LocalDateTime.now(clock);
+        for (GroupMember member : members) {
+            member.setIsActive(false);
+            member.setDateLeft(now);
+            member.setRemovedBy(actor);
+            groupMemberRepository.save(member);
+            auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(),
+                    AuditAction.MEMBER_REMOVED, "Membership ended with the group's deletion", group);
+        }
+        log.info("Group memberships ended with the group: groupUid={} members={}",
+                group.getUid(), members.size());
+        return members.size();
+    }
+
+    // The last-admin guard, then the soft delete. The caller has already proven the membership is
+    // active, so the guard only has to ask whether it is the last admin.
+    private void deactivate(GroupMember member, GroupMember removedBy) {
+        if (member.getRole() == GroupRole.GROUP_ADMIN && isLastAdmin(member)) {
             throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
         member.setIsActive(false);
         member.setDateLeft(LocalDateTime.now(clock));
+        member.setRemovedBy(removedBy);
         groupMemberRepository.save(member);
     }
 
+    // Both attribution columns point at a membership, not a user, so a SUPER_ADMIN acting from the
+    // platform dashboard has nothing to point at and the column stays null. That is by design.
+    private GroupMember actingMember(Long callerUserId, Long groupId) {
+        return groupMemberRepository.findByUserIdUserAndGroupIdGroup(callerUserId, groupId)
+                .filter(m -> Boolean.TRUE.equals(m.getIsActive()))
+                .orElse(null);
+    }
+
     private Group requireGroup(String groupUid) {
-        return groupRepository.findByUid(groupUid)
+        return groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
     }
 
+    // Writes target an active membership only. A left or removed one is history: writing to it
+    // would set a role nobody holds, or stamp a second departure over the first.
+    private GroupMember requireActiveMembership(String memberUid) {
+        return groupMemberRepository.findByUid(memberUid)
+                .filter(m -> Boolean.TRUE.equals(m.getIsActive()))
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
+    }
+
+    // Reads stay permissive: the row carries date_left and removed_by, which is the record of who
+    // removed whom, and the response is built for exactly that.
     private GroupMember requireMembership(String memberUid) {
         return groupMemberRepository.findByUid(memberUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));

@@ -14,6 +14,7 @@ import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -54,6 +55,7 @@ class GroupMemberServiceTest {
     private static final Long USER_ID = 1L;
     private static final Long OTHER_USER_ID = 2L;
     private static final String GROUP_UID = "group-uid";
+    private static final Long ACTOR_ID = 6L;
     private static final String MEMBER_UID = "member-uid";
     private static final String USER_UID = "user-uid";
 
@@ -77,7 +79,24 @@ class GroupMemberServiceTest {
     }
 
     private void stubGroup() {
-        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.of(group()));
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.of(group()));
+    }
+
+    // A second membership, so "who did this" can be told apart from "who it happened to".
+    private GroupMember actor() {
+        return GroupMember.builder()
+                .idGroupMember(ACTOR_ID)
+                .uid("actor-member-uid")
+                .role(GroupRole.GROUP_ADMIN)
+                .isActive(true)
+                .group(group())
+                .user(User.builder().idUser(OTHER_USER_ID).uid("actor-user-uid").build())
+                .build();
+    }
+
+    private void stubActor(GroupMember actor) {
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(OTHER_USER_ID, GROUP_ID))
+                .thenReturn(Optional.ofNullable(actor));
     }
 
     private void stubMembership(GroupMember member) {
@@ -108,8 +127,153 @@ class GroupMemberServiceTest {
     }
 
     @Test
+    void deactivateAllForGroup_endsEveryActiveMembership() {
+        GroupMember admin = member(GroupRole.GROUP_ADMIN, true);
+        GroupMember plain = member(GroupRole.GROUP_MEMBER, true);
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID))
+                .thenReturn(List.of(admin, plain));
+
+        assertThat(groupMemberService.deactivateAllForGroup(group(), USER_ID)).isEqualTo(2);
+
+        assertThat(admin.getIsActive()).isFalse();
+        assertThat(plain.getIsActive()).isFalse();
+        assertThat(admin.getDateLeft()).isNotNull();
+    }
+
+    @Test
+    void deactivateAllForGroup_lastAdmin_isNotProtected() {
+        // The last-admin guard exists to keep a living group governable. Applying it here would
+        // make a group with one admin undeletable.
+        GroupMember onlyAdmin = member(GroupRole.GROUP_ADMIN, true);
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID))
+                .thenReturn(List.of(onlyAdmin));
+
+        assertThat(groupMemberService.deactivateAllForGroup(group(), USER_ID)).isEqualTo(1);
+        assertThat(onlyAdmin.getIsActive()).isFalse();
+    }
+
+    @Test
+    void deactivateAllForGroup_auditsOneEventPerMember() {
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID))
+                .thenReturn(List.of(member(GroupRole.GROUP_ADMIN, true), member(GroupRole.GROUP_MEMBER, true)));
+
+        groupMemberService.deactivateAllForGroup(group(), USER_ID);
+
+        verify(auditLogService, times(2)).recordEvent(
+                eq(AuditEntityType.GROUP_MEMBER), any(), eq(AuditAction.MEMBER_REMOVED), any(), any());
+    }
+
+    @Test
+    void deactivateAllForGroup_noMembers_doesNothing() {
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID)).thenReturn(List.of());
+
+        assertThat(groupMemberService.deactivateAllForGroup(group(), USER_ID)).isZero();
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
+    void addMember_callerIsAMemberOfTheGroup_attributesTheAdd() {
+        stubGroup();
+        GroupMember acting = actor();
+        stubActor(acting);
+        when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.of(user()));
+        ArgumentCaptor<GroupMember> saved = ArgumentCaptor.forClass(GroupMember.class);
+        when(groupMemberRepository.save(saved.capture())).thenAnswer(i -> i.getArgument(0));
+
+        groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), OTHER_USER_ID);
+
+        assertThat(saved.getValue().getAddedBy()).isEqualTo(acting);
+    }
+
+    @Test
+    void addMember_callerHasNoMembershipOfTheGroup_leavesAddedByNull() {
+        // The columns point at a membership, not a user, so a SUPER_ADMIN acting from the platform
+        // dashboard has nothing to point at. Null is the designed answer, not a missed case.
+        stubGroup();
+        stubActor(null);
+        when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.of(user()));
+        ArgumentCaptor<GroupMember> saved = ArgumentCaptor.forClass(GroupMember.class);
+        when(groupMemberRepository.save(saved.capture())).thenAnswer(i -> i.getArgument(0));
+
+        groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), OTHER_USER_ID);
+
+        assertThat(saved.getValue().getAddedBy()).isNull();
+    }
+
+    @Test
+    void removeMember_someoneElse_attributesTheRemover() {
+        GroupMember member = member(GroupRole.GROUP_MEMBER, true);
+        GroupMember acting = actor();
+        stubMembership(member);
+        stubActor(acting);
+
+        groupMemberService.removeMember(MEMBER_UID, OTHER_USER_ID);
+
+        assertThat(member.getRemovedBy()).isEqualTo(acting);
+    }
+
+    @Test
+    void removeMember_ownMembership_attributesThemselves() {
+        GroupMember member = member(GroupRole.GROUP_MEMBER, true);
+        stubMembership(member);
+
+        groupMemberService.removeMember(MEMBER_UID, USER_ID);
+
+        // Leaving is self-attributed without a second lookup: the membership is the actor.
+        assertThat(member.getRemovedBy()).isEqualTo(member);
+    }
+
+    @Test
+    void deactivateAllForGroup_attributesTheMemberWhoDeletedTheGroup() {
+        GroupMember target = member(GroupRole.GROUP_MEMBER, true);
+        GroupMember acting = actor();
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID))
+                .thenReturn(List.of(target));
+        stubActor(acting);
+
+        groupMemberService.deactivateAllForGroup(group(), OTHER_USER_ID);
+
+        assertThat(target.getRemovedBy()).isEqualTo(acting);
+    }
+
+    @Test
+    void updateMemberRole_inactiveMembership_throwsNotFound() {
+        // Left or removed is history. Giving it a role would have set GROUP_ADMIN on a row nobody
+        // holds, and a rejoin resets the role anyway, so the write was pure noise.
+        stubMembership(member(GroupRole.GROUP_MEMBER, false));
+
+        assertThatThrownBy(() -> groupMemberService.updateMemberRole(MEMBER_UID, GroupRole.GROUP_ADMIN))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).save(any());
+    }
+
+    @Test
+    void removeMember_alreadyRemoved_throwsNotFound() {
+        // Without this it stamped a second date_left over the first and audited a second removal.
+        stubMembership(member(GroupRole.GROUP_MEMBER, false));
+
+        assertThatThrownBy(() -> groupMemberService.removeMember(MEMBER_UID, USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).save(any());
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
+    void getMember_inactiveMembership_isStillReadable() {
+        // Deliberately asymmetric with the writes above: the row is how the API answers "who
+        // removed whom", so reading it has to keep working after the member is gone.
+        GroupMember gone = member(GroupRole.GROUP_MEMBER, false);
+        gone.setRemovedBy(actor());
+        stubMembership(gone);
+
+        assertThat(groupMemberService.getMember(MEMBER_UID).getRemovedBy()).isNotNull();
+    }
+
+    @Test
     void getMembers_unknownGroup_throwsNotFound() {
-        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> groupMemberService.getMembers(GROUP_UID))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -142,7 +306,7 @@ class GroupMemberServiceTest {
         when(userRepository.findByUid(USER_UID)).thenReturn(Optional.of(user()));
         when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
 
-        var response = groupMemberService.addMember(request(GroupRole.GROUP_MEMBER));
+        var response = groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), USER_ID);
 
         assertThat(response.getRole()).isEqualTo(GroupRole.GROUP_MEMBER);
         assertThat(response.getUid()).isNotBlank();
@@ -154,16 +318,16 @@ class GroupMemberServiceTest {
         when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID))
                 .thenReturn(Optional.of(member(GroupRole.GROUP_MEMBER, true)));
 
-        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER)))
+        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), USER_ID))
                 .isInstanceOf(DuplicateResourceException.class);
         verify(groupMemberRepository, never()).save(any());
     }
 
     @Test
     void addMember_unknownGroup_throwsNotFound() {
-        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER)))
+        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), USER_ID))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(groupMemberRepository, never()).save(any());
     }
@@ -174,7 +338,7 @@ class GroupMemberServiceTest {
         when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
         when(userRepository.findByUid(USER_UID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER)))
+        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), USER_ID))
                 .isInstanceOf(ResourceNotFoundException.class);
         verify(groupMemberRepository, never()).save(any());
     }

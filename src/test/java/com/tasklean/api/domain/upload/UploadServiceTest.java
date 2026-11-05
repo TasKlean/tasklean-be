@@ -63,7 +63,7 @@ class UploadServiceTest {
     }
 
     private void stubTargetAndSave() {
-        when(groupRepository.findByUid(GROUP_UID))
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID))
                 .thenReturn(Optional.of(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build()));
         when(userRepository.getReferenceById(USER_ID))
                 .thenReturn(User.builder().idUser(USER_ID).build());
@@ -148,7 +148,7 @@ class UploadServiceTest {
 
     @Test
     void createUpload_unknownGroup_throwsNotFoundAndSignsNothing() {
-        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> uploadService.createUpload(request("image/png", 10L), USER_ID))
                 .isInstanceOf(ResourceNotFoundException.class);

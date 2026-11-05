@@ -62,7 +62,7 @@ Package root: `com.tasklean.api`
 ## Conventions
 
 - **Primary keys**: `id_<entity>` column, `BIGSERIAL` in SQL, `Long` with `@GeneratedValue(IDENTITY)` in Java.
-- **Soft deletes**: all entities use `is_active` boolean, never hard-delete rows.
+- **Soft deletes**: all entities use `is_active` boolean, never hard-delete rows. **A soft-deleted row must stop being reachable by uid** - the service lookup filters it (`findByUidAndIsActiveTrue`) so it answers 404, while the `@PreAuthorize` resolver keeps the unfiltered lookup, which is what keeps a former member's 404 distinct from a stranger's 403. A soft delete that only hides the row from its list endpoint leaves it fully operable by uid - that was the group bug (see PROJECT_BIBLE **Reaching a soft-deleted group**).
 - **UIDs**: user-facing identifier (`uid` column) separate from internal PK. Present on `user`, `group`, `task`.
 - **Timestamps**: `BaseEntity` provides `date_created`/`date_updated` via Hibernate `@CreationTimestamp`/`@UpdateTimestamp`. Entities not extending `BaseEntity` (`GroupMember`, `Notification`, `AuditLog`, `TaskCompletion`, `TaskTag`, `TwoFactorRecoveryCode`, `TwoFactorChallenge`) manage their own `date_created`.
 - **Flyway migrations**: `src/main/resources/db/migration/V<N>__description.sql`. Next available version is V26. **An applied migration is immutable, comments included** — editing one changes its checksum and every database that already ran it refuses to start.

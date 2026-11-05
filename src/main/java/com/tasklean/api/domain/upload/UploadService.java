@@ -48,7 +48,7 @@ public class UploadService {
      * @param request      what the image is for, its type and its exact size
      * @param callerUserId the id of the authenticated caller
      * @return the upload's uid and the URL to PUT to
-     * @throws ResourceNotFoundException if the target does not exist
+     * @throws ResourceNotFoundException if the target does not exist or has been deleted
      */
     @Transactional
     public UploadResponse createUpload(UploadRequest request, Long callerUserId) {
@@ -161,6 +161,17 @@ public class UploadService {
         }
     }
 
+    /**
+     * Releases a group's photo, for when the group itself is being deleted. The row is marked
+     * superseded so the sweep collects the object; left attached, nothing would ever collect it.
+     *
+     * @param group the group being deleted
+     */
+    @Transactional
+    public void releaseGroupPhoto(Group group) {
+        supersedeCurrentPhoto(group, null);
+    }
+
     // A replaced photo's object is nobody's any more, so the sweep collects it.
     private void supersedeCurrentPhoto(Group group, String replacementUid) {
         Optional.ofNullable(group.getPhotoUid())
@@ -178,7 +189,7 @@ public class UploadService {
     }
 
     private Group requireGroup(String groupUid) {
-        return groupRepository.findByUid(groupUid)
+        return groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
     }
 

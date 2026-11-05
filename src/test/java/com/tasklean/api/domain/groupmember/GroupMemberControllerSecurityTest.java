@@ -131,7 +131,7 @@ class GroupMemberControllerSecurityTest {
 
     @Test
     void addMember_superAdmin_created() throws Exception {
-        when(groupMemberService.addMember(any()))
+        when(groupMemberService.addMember(any(), any()))
                 .thenReturn(GroupMemberResponse.builder().uid(MEMBER_UID).build());
 
         mockMvc.perform(post("/api/group-members")
