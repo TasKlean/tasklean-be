@@ -14,6 +14,7 @@ import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository.GroupMemberCount;
+import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.UserRepository;
@@ -42,6 +43,7 @@ public class GroupService {
 
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final GroupMemberService groupMemberService;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final UploadService uploadService;
@@ -250,7 +252,8 @@ public class GroupService {
     }
 
     /**
-     * Soft-deletes a group (sets it inactive).
+     * Soft-deletes a group: the group itself, every active membership of it, and its photo. One
+     * transaction, so a group is never left deleted with its members still in it.
      *
      * @param uid the group's public UID
      * @throws ResourceNotFoundException if no active group has that UID
@@ -258,7 +261,13 @@ public class GroupService {
     @Transactional
     public void deleteGroup(String uid) {
         Group group = requireActiveGroup(uid);
+        // Both read the group as it still stands: the cascade needs its active memberships, and
+        // releasing the photo needs the uid about to be cleared. Left attached, the object would
+        // belong to a group nobody can reach and no sweep would ever collect it.
+        groupMemberService.deactivateAllForGroup(group);
+        uploadService.releaseGroupPhoto(group);
         group.setIsActive(false);
+        group.setPhotoUid(null);
         groupRepository.save(group);
         log.info("Group soft-deleted: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.GROUP, group.getIdGroup(), AuditAction.DELETE,

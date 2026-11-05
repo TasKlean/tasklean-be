@@ -11,6 +11,7 @@ import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository.GroupMemberCount;
+import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.User;
@@ -54,6 +55,9 @@ class GroupServiceTest {
 
     @Mock
     private UploadService uploadService;
+
+    @Mock
+    private GroupMemberService groupMemberService;
 
     // Real rather than mocked: it depends on nothing, and two of these tests are about the
     // service handing it a list the counts have already landed on.
@@ -376,6 +380,21 @@ class GroupServiceTest {
 
         assertThat(existing.getIsActive()).isFalse();
         verify(auditLogService).recordEvent(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void deleteGroup_endsEveryMembershipAndReleasesThePhoto() {
+        Group existing = group();
+        existing.setPhotoUid("photo-1");
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
+
+        groupService.deleteGroup("grp-1");
+
+        // A membership outliving its group is what left a deleted group's photo uncollectable and
+        // its members still authorized against it.
+        verify(groupMemberService).deactivateAllForGroup(existing);
+        verify(uploadService).releaseGroupPhoto(existing);
+        assertThat(existing.getPhotoUid()).isNull();
     }
 
     @Test

@@ -24,9 +24,10 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Manages group membership — listing a group's members, adding, role changes, and removal or
- * leaving. A membership is addressed by its own UID; the group it belongs to is read off the
- * membership, and authorization against that group happens in {@code @groupSecurity}.
+ * Manages group membership — listing a group's members, adding, role changes, removal or leaving,
+ * and ending every membership when the group itself is deleted. A membership is addressed by its
+ * own UID; the group it belongs to is read off the membership, and authorization against that
+ * group happens in {@code @groupSecurity}.
  */
 @Slf4j
 @Service
@@ -147,6 +148,30 @@ public class GroupMemberService {
                 left ? AuditAction.MEMBER_LEFT : AuditAction.MEMBER_REMOVED,
                 left ? "Member left group" : "Member removed from group", member.getGroup());
         return left;
+    }
+
+    /**
+     * Deactivates every active membership of a group, for when the group itself is being deleted.
+     * Deliberately skips the last-admin guard: that rule protects a living group from losing its
+     * only admin, and there is no group left to protect.
+     *
+     * @param group the group being deleted
+     * @return how many memberships were deactivated
+     */
+    @Transactional
+    public int deactivateAllForGroup(Group group) {
+        List<GroupMember> members = groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(group.getIdGroup());
+        LocalDateTime now = LocalDateTime.now(clock);
+        for (GroupMember member : members) {
+            member.setIsActive(false);
+            member.setDateLeft(now);
+            groupMemberRepository.save(member);
+            auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, member.getIdGroupMember(),
+                    AuditAction.MEMBER_REMOVED, "Membership ended with the group's deletion", group);
+        }
+        log.info("Group memberships ended with the group: groupUid={} members={}",
+                group.getUid(), members.size());
+        return members.size();
     }
 
     // The last-admin guard, then the soft delete.

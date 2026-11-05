@@ -161,6 +161,17 @@ public class UploadService {
         }
     }
 
+    /**
+     * Releases a group's photo, for when the group itself is being deleted. The row is marked
+     * superseded so the sweep collects the object; left attached, nothing would ever collect it.
+     *
+     * @param group the group being deleted
+     */
+    @Transactional
+    public void releaseGroupPhoto(Group group) {
+        supersedeCurrentPhoto(group, null);
+    }
+
     // A replaced photo's object is nobody's any more, so the sweep collects it.
     private void supersedeCurrentPhoto(Group group, String replacementUid) {
         Optional.ofNullable(group.getPhotoUid())

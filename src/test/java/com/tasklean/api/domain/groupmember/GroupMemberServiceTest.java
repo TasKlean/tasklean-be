@@ -108,6 +108,51 @@ class GroupMemberServiceTest {
     }
 
     @Test
+    void deactivateAllForGroup_endsEveryActiveMembership() {
+        GroupMember admin = member(GroupRole.GROUP_ADMIN, true);
+        GroupMember plain = member(GroupRole.GROUP_MEMBER, true);
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID))
+                .thenReturn(List.of(admin, plain));
+
+        assertThat(groupMemberService.deactivateAllForGroup(group())).isEqualTo(2);
+
+        assertThat(admin.getIsActive()).isFalse();
+        assertThat(plain.getIsActive()).isFalse();
+        assertThat(admin.getDateLeft()).isNotNull();
+    }
+
+    @Test
+    void deactivateAllForGroup_lastAdmin_isNotProtected() {
+        // The last-admin guard exists to keep a living group governable. Applying it here would
+        // make a group with one admin undeletable.
+        GroupMember onlyAdmin = member(GroupRole.GROUP_ADMIN, true);
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID))
+                .thenReturn(List.of(onlyAdmin));
+
+        assertThat(groupMemberService.deactivateAllForGroup(group())).isEqualTo(1);
+        assertThat(onlyAdmin.getIsActive()).isFalse();
+    }
+
+    @Test
+    void deactivateAllForGroup_auditsOneEventPerMember() {
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID))
+                .thenReturn(List.of(member(GroupRole.GROUP_ADMIN, true), member(GroupRole.GROUP_MEMBER, true)));
+
+        groupMemberService.deactivateAllForGroup(group());
+
+        verify(auditLogService, times(2)).recordEvent(
+                eq(AuditEntityType.GROUP_MEMBER), any(), eq(AuditAction.MEMBER_REMOVED), any(), any());
+    }
+
+    @Test
+    void deactivateAllForGroup_noMembers_doesNothing() {
+        when(groupMemberRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID)).thenReturn(List.of());
+
+        assertThat(groupMemberService.deactivateAllForGroup(group())).isZero();
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
     void getMembers_unknownGroup_throwsNotFound() {
         when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 
