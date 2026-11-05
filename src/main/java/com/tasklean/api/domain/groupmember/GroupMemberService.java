@@ -42,15 +42,11 @@ public class GroupMemberService {
 
     /**
      * Returns a group's active members.
-     * <p>
-     * Runs in a transaction because the response resolves {@code added_by}/{@code removed_by}
-     * through two lazy hops; without one it would work only while {@code open-in-view} stays on.
      *
      * @param groupUid the group's public UID
      * @return the group's active members
      * @throws ResourceNotFoundException if no active group has that UID
      */
-    @Transactional(readOnly = true)
     public List<GroupMemberResponse> getMembers(String groupUid) {
         requireGroup(groupUid);
         return groupMemberRepository.findByGroupUidAndIsActiveTrue(groupUid).stream()
@@ -65,9 +61,8 @@ public class GroupMemberService {
      * @return the membership
      * @throws ResourceNotFoundException if no membership has that UID
      */
-    @Transactional(readOnly = true)
     public GroupMemberResponse getMember(String memberUid) {
-        return GroupMemberResponse.from(requireMembership(memberUid));
+        return GroupMemberResponse.from(requireDetailedMembership(memberUid));
     }
 
     /**
@@ -221,8 +216,8 @@ public class GroupMemberService {
 
     // Reads stay permissive: the row carries date_left and removed_by, which is the record of who
     // removed whom, and the response is built for exactly that.
-    private GroupMember requireMembership(String memberUid) {
-        return groupMemberRepository.findByUid(memberUid)
+    private GroupMember requireDetailedMembership(String memberUid) {
+        return groupMemberRepository.findDetailedByUid(memberUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
     }
 
