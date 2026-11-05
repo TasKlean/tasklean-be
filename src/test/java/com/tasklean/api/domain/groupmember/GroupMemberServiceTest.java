@@ -239,6 +239,39 @@ class GroupMemberServiceTest {
     }
 
     @Test
+    void updateMemberRole_inactiveMembership_throwsNotFound() {
+        // Left or removed is history. Giving it a role would have set GROUP_ADMIN on a row nobody
+        // holds, and a rejoin resets the role anyway, so the write was pure noise.
+        stubMembership(member(GroupRole.GROUP_MEMBER, false));
+
+        assertThatThrownBy(() -> groupMemberService.updateMemberRole(MEMBER_UID, GroupRole.GROUP_ADMIN))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).save(any());
+    }
+
+    @Test
+    void removeMember_alreadyRemoved_throwsNotFound() {
+        // Without this it stamped a second date_left over the first and audited a second removal.
+        stubMembership(member(GroupRole.GROUP_MEMBER, false));
+
+        assertThatThrownBy(() -> groupMemberService.removeMember(MEMBER_UID, USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).save(any());
+        verifyNoInteractions(auditLogService);
+    }
+
+    @Test
+    void getMember_inactiveMembership_isStillReadable() {
+        // Deliberately asymmetric with the writes above: the row is how the API answers "who
+        // removed whom", so reading it has to keep working after the member is gone.
+        GroupMember gone = member(GroupRole.GROUP_MEMBER, false);
+        gone.setRemovedBy(actor());
+        stubMembership(gone);
+
+        assertThat(groupMemberService.getMember(MEMBER_UID).getRemovedBy()).isNotNull();
+    }
+
+    @Test
     void getMembers_unknownGroup_throwsNotFound() {
         when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 

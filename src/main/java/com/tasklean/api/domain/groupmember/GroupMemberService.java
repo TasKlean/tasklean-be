@@ -112,15 +112,15 @@ public class GroupMemberService {
      * @param memberUid the membership's public UID
      * @param role      the new role
      * @return the updated membership
-     * @throws ResourceNotFoundException if no membership has that UID
+     * @throws ResourceNotFoundException if no membership has that UID, or it is no longer active
      * @throws BusinessRuleException     if this would demote the group's last admin
      */
     @Transactional
     public GroupMemberResponse updateMemberRole(String memberUid, GroupRole role) {
-        GroupMember member = requireMembership(memberUid);
+        GroupMember member = requireActiveMembership(memberUid);
 
         if (member.getRole() == GroupRole.GROUP_ADMIN && role != GroupRole.GROUP_ADMIN
-                && Boolean.TRUE.equals(member.getIsActive()) && isLastAdmin(member)) {
+                && isLastAdmin(member)) {
             throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
 
@@ -141,12 +141,12 @@ public class GroupMemberService {
      * @param memberUid    the membership's public UID
      * @param callerUserId the id of the authenticated caller
      * @return {@code true} if the caller left their own group, {@code false} if they removed someone
-     * @throws ResourceNotFoundException if no membership has that UID
+     * @throws ResourceNotFoundException if no membership has that UID, or it is already removed
      * @throws BusinessRuleException     if this would remove the group's last admin
      */
     @Transactional
     public boolean removeMember(String memberUid, Long callerUserId) {
-        GroupMember member = requireMembership(memberUid);
+        GroupMember member = requireActiveMembership(memberUid);
         boolean left = member.getUser().getIdUser().equals(callerUserId);
         deactivate(member, left ? member : actingMember(callerUserId, member.getGroup().getIdGroup()));
         log.info("Group member {}: memberUid={} groupUid={}", left ? "left" : "removed",
@@ -186,10 +186,10 @@ public class GroupMemberService {
         return members.size();
     }
 
-    // The last-admin guard, then the soft delete.
+    // The last-admin guard, then the soft delete. The caller has already proven the membership is
+    // active, so the guard only has to ask whether it is the last admin.
     private void deactivate(GroupMember member, GroupMember removedBy) {
-        if (member.getRole() == GroupRole.GROUP_ADMIN && Boolean.TRUE.equals(member.getIsActive())
-                && isLastAdmin(member)) {
+        if (member.getRole() == GroupRole.GROUP_ADMIN && isLastAdmin(member)) {
             throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
         member.setIsActive(false);
@@ -211,6 +211,16 @@ public class GroupMemberService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
     }
 
+    // Writes target an active membership only. A left or removed one is history: writing to it
+    // would set a role nobody holds, or stamp a second departure over the first.
+    private GroupMember requireActiveMembership(String memberUid) {
+        return groupMemberRepository.findByUid(memberUid)
+                .filter(m -> Boolean.TRUE.equals(m.getIsActive()))
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
+    }
+
+    // Reads stay permissive: the row carries date_left and removed_by, which is the record of who
+    // removed whom, and the response is built for exactly that.
     private GroupMember requireMembership(String memberUid) {
         return groupMemberRepository.findByUid(memberUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
