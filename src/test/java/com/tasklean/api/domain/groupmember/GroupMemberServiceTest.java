@@ -26,6 +26,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -103,6 +104,11 @@ class GroupMemberServiceTest {
         when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.of(member));
     }
 
+    // The read path has its own finder, the one that fetches the users the response renders.
+    private void stubDetailedMembership(GroupMember member) {
+        when(groupMemberRepository.findDetailedByUid(MEMBER_UID)).thenReturn(Optional.of(member));
+    }
+
     private void stubAdminCount(long count) {
         when(groupMemberRepository.countByGroupIdGroupAndRoleAndIsActiveTrue(GROUP_ID, GroupRole.GROUP_ADMIN))
                 .thenReturn(count);
@@ -120,10 +126,21 @@ class GroupMemberServiceTest {
 
     @Test
     void getMember_unknownUid_throwsNotFound() {
-        when(groupMemberRepository.findByUid(MEMBER_UID)).thenReturn(Optional.empty());
+        when(groupMemberRepository.findDetailedByUid(MEMBER_UID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> groupMemberService.getMember(MEMBER_UID))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getMember_anyMembership_usesTheFinderThatFetchesTheUsers() {
+        // The response renders three users. Taking them from the plain finder left them as proxies,
+        // which only resolved while open-in-view held a session open past the service call.
+        stubDetailedMembership(member(GroupRole.GROUP_MEMBER, true));
+
+        groupMemberService.getMember(MEMBER_UID);
+
+        verify(groupMemberRepository, never()).findByUid(anyString());
     }
 
     @Test
@@ -266,7 +283,7 @@ class GroupMemberServiceTest {
         // removed whom", so reading it has to keep working after the member is gone.
         GroupMember gone = member(GroupRole.GROUP_MEMBER, false);
         gone.setRemovedBy(actor());
-        stubMembership(gone);
+        stubDetailedMembership(gone);
 
         assertThat(groupMemberService.getMember(MEMBER_UID).getRemovedBy()).isNotNull();
     }

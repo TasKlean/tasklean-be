@@ -203,6 +203,8 @@ All inserts use `ON CONFLICT DO NOTHING` or `NOT EXISTS` checks for idempotency.
 
 `ddl-auto=validate` — Hibernate validates entities against the Flyway-managed schema at startup but never modifies it. All schema changes go through migrations.
 
+`open-in-view=false`, set in base `application.properties` against Boot's default. Boot's default binds a JPA session to the whole request, so a lazy association resolves anywhere - including while Jackson serializes, past every exception handler. Off, the session ends with the service call, and a response that needs an association says so in its finder. Base rather than per profile, so dev fails exactly where prod would. See **Fetching what a response needs**.
+
 ## API design
 
 ### Response envelope
@@ -828,6 +830,19 @@ public class EntityResponse {
 
 Response DTOs flatten relationships to IDs. Nullable FKs use ternary null-checks in the `from()` method.
 
+### Fetching what a response needs
+
+With `open-in-view=false` there is no session left when a DTO is built, so what a mapper reads decides what the query must fetch:
+
+- **An id is free.** `entity.getParent().getIdParent()` is served by the proxy without a database hit, which is why the flat-DTO pattern above needs nothing extra. Most mappers here are in this group.
+- **Any other field initializes the proxy.** `MyGroupResponse` reads the group's name, `GroupMemberResponse` reads the user behind the membership and behind each attribution. Those paths belong in the finder's `@EntityGraph`.
+
+Fetch in the query, not by wrapping the read in `@Transactional(readOnly = true)`. Both stop the exception, but the graph is correct for every caller rather than only inside a transaction, and it fixes the N+1 in the same stroke - measured on `/api/groups/mine` for a user in two groups: 4 queries with the transaction, 2 with the graph.
+
+A finder shared with the authorization layer stays graph-free: `GroupSecurity` reads ids and roles, so `findByUid` must not pay for joins nobody looks at. That is why `getMember` has its own `findDetailedByUid`.
+
+`LazyFetchContractTest` asserts the paths each DTO-feeding finder declares, and that the authorization finder declares none. It exists because no mocked-repository test can catch this: a mock returns a fully built object, never a proxy. The real guard is the flag being off in dev, where a missing path is an immediate 500.
+
 ### Service pattern
 
 - `@Service @RequiredArgsConstructor` — constructor injection via Lombok
@@ -904,7 +919,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `GroupSecurityTest` | 16 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); by membership uid — `canManageMember` (caller admin of that group / only a plain member), `canViewMember` (shares the group / unknown membership / caller outside that group), `isSelfMember` (own / someone else's / anonymous) |
 | `GroupServiceTest` | 29 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found (and that the lookup never falls back to the unfiltered `findByUid`, which is what let a deleted group stay editable; delete ends every membership, releases the photo and clears `photo_uid`); getGroupByUid invite-code visibility (admin vs plain member); getMyGroups (role mapping, soft-deleted group skipped, invite-code visibility, the filter it is handed narrows the list, and `MEMBERS_DESC` orders by counts that landed before the sort); joinByInviteCode (new member, case-insensitive code, unknown code, soft-deleted group, already a member, rejoin reactivates the same row without restoring admin); rotateInviteCode (replaces code + audits, not-found) |
 | `MyGroupFilterTest` | 17 | The caller-visible behaviour of the group list filter, with no mocks: each of the five orderings, name as every tiebreak, and a name compare that ignores case **and** accents (the frontend's `sensitivity: "base"`); a missing date or member count sorts last; an absent *and* a null sort both fall back to name; the search is trimmed, matches name or description case-insensitively, and deliberately does **not** match across the two fields; one role narrows, both roles and an empty list do not; the caller's own list is left in its order |
-| `GroupMemberServiceTest` | 27 | Lookups by uid (unknown membership / unknown group, the latter before any member query runs); the member list carries the user summary rather than ids; addMember (success with a generated uid / duplicate / unknown group / unknown user); role change with last-admin protection (blocked when last, allowed with another admin, promote); attribution (`added_by`/`removed_by` point at the acting membership, stay null when the caller has no membership of the group, and are self-attributed when leaving); an inactive membership refuses a role change and a second removal but is still readable; deactivateAllForGroup (ends every active membership with `date_left`, is not stopped by the last-admin guard, audits one event per member, does nothing for an empty group); removeMember — **the caller decides the event**: someone else's membership audits `MEMBER_REMOVED`, the caller's own audits `MEMBER_LEFT`, plus last-admin blocked, admin removed when another remains, unknown uid → not found |
+| `GroupMemberServiceTest` | 28 | Lookups by uid (unknown membership / unknown group, the latter before any member query runs; the single-member read goes through the finder that fetches the users, not the one the authorization checks share); the member list carries the user summary rather than ids; addMember (success with a generated uid / duplicate / unknown group / unknown user); role change with last-admin protection (blocked when last, allowed with another admin, promote); attribution (`added_by`/`removed_by` point at the acting membership, stay null when the caller has no membership of the group, and are self-attributed when leaving); an inactive membership refuses a role change and a second removal but is still readable; deactivateAllForGroup (ends every active membership with `date_left`, is not stopped by the last-admin guard, audits one event per member, does nothing for an empty group); removeMember — **the caller decides the event**: someone else's membership audits `MEMBER_REMOVED`, the caller's own audits `MEMBER_LEFT`, plus last-admin blocked, admin removed when another remains, unknown uid → not found |
 | `GroupMemberControllerSecurityTest` | 13 | `@WebMvcTest` slice — each expression resolves the membership's group and then the caller's role in it: read allows a member of that group or a platform ADMIN and denies a caller outside it; POST is SUPER_ADMIN only (a group admin and a platform ADMIN are both denied); role change needs the group's admin or SUPER_ADMIN (platform ADMIN denied); DELETE allows the group's admin, allows a **plain member deleting their own** membership (leaving, via `isSelfMember`), and denies a plain member deleting someone else's or a caller outside the group |
 | `UserServiceTest` | 7 | updateUserRole (+ audit / unknown); get/getAll/update/delete + not-found |
 | `UserSettingsServiceTest` | 6 | getMySettings (existing row, no row returns defaults without writing); updateMySettings (creates the row on first write, updates an existing row in place without re-resolving the user, a lost unique-constraint race retries in a fresh transaction and updates the winner's row, unknown user → not found) |
@@ -928,10 +943,11 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `AuthRequestLimitsTest` | 7 | Every string field on an auth request body has a length bound (reflection over the package, so a new field cannot slip through); a name or email over its column is rejected, an email at exactly the maximum is accepted, and a password longer than the policy still logs in |
 | `PasswordPolicyValidatorTest` | 19 | Length bounds, each missing-class message/grammar, space-as-special, and the guessable variants (common/leet/tail/repeated/sequential); plus the `isValid` message wiring |
 | `PasswordPolicyContractTest` | 11 | Runs the validator against the shared FE/BE contract vectors (`password-policy-vectors.json`) |
+| `LazyFetchContractTest` | 4 | Every finder feeding a DTO that reads non-id fields declares those paths in its `@EntityGraph`, and the finder the authorization checks share declares none |
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **654 tests** across 55 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **659 tests** across 56 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.groupmember;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
@@ -14,8 +15,37 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
 
     List<GroupMember> findByGroupIdGroupAndIsActiveTrue(Long groupId);
 
+    /**
+     * A group's active members with the user behind each one, and behind each attribution, already
+     * loaded. The fetch is part of the query so the response maps without an open session, and the
+     * list costs one query instead of one per member per hop.
+     *
+     * @param groupUid the group's public UID
+     * @return the group's active memberships
+     */
+    @EntityGraph(attributePaths = {"user", "addedBy.user", "removedBy.user"})
     List<GroupMember> findByGroupUidAndIsActiveTrue(String groupUid);
 
+    /**
+     * One membership with the same associations loaded as {@link #findByGroupUidAndIsActiveTrue}.
+     * Separate from {@link #findByUid} because that one also serves the authorization checks, which
+     * read only ids and would pay for joins they never look at.
+     *
+     * @param uid the membership's public UID
+     * @return the membership, or empty if none has that UID
+     */
+    @EntityGraph(attributePaths = {"user", "addedBy.user", "removedBy.user"})
+    Optional<GroupMember> findDetailedByUid(String uid);
+
+    /**
+     * The user's active memberships with their groups already loaded, for the "my groups" list.
+     * Same reason as above: the group is read for its name, not its id, so fetching it in the query
+     * keeps the mapping independent of any session and turns one query per group into none.
+     *
+     * @param userId the user's internal id
+     * @return the user's active memberships
+     */
+    @EntityGraph(attributePaths = "group")
     List<GroupMember> findByUserIdUserAndIsActiveTrue(Long userId);
 
     Optional<GroupMember> findByUserIdUserAndGroupIdGroup(Long userId, Long groupId);
