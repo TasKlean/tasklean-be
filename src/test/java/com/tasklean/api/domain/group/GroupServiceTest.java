@@ -32,6 +32,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -130,21 +131,32 @@ class GroupServiceTest {
 
     @Test
     void getGroupByUid_found_returns() {
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(group()));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(group()));
         assertThat(groupService.getGroupByUid("grp-1", 1L).getUid()).isEqualTo("grp-1");
     }
 
     @Test
     void getGroupByUid_missing_throws() {
-        when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue("nope")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> groupService.getGroupByUid("nope", 1L))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
+    void getGroupByUid_softDeletedGroup_doesNotFallBackToTheUnfilteredLookup() {
+        // The 404 itself is covered above; what this pins is which query asks for it. A deleted
+        // group stayed fully readable and editable by uid while the service used findByUid.
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupService.getGroupByUid("grp-1", 1L))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupRepository, never()).findByUid(anyString());
+    }
+
+    @Test
     void getGroupByUid_asGroupAdmin_includesInviteCode() {
         Group g = group();
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(g));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(g));
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
                 .thenReturn(Optional.of(membership(g, GroupRole.GROUP_ADMIN)));
 
@@ -154,7 +166,7 @@ class GroupServiceTest {
     @Test
     void getGroupByUid_asPlainMember_hidesInviteCode() {
         Group g = group();
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(g));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(g));
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
                 .thenReturn(Optional.of(membership(g, GroupRole.GROUP_MEMBER)));
 
@@ -317,7 +329,7 @@ class GroupServiceTest {
     @Test
     void updateGroup_success() {
         Group existing = group();
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
         when(groupRepository.save(any(Group.class))).thenAnswer(i -> i.getArgument(0));
 
         groupService.updateGroup("grp-1", updateRequest(), 1L);
@@ -328,7 +340,7 @@ class GroupServiceTest {
 
     @Test
     void updateGroup_missing_throws() {
-        when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue("nope")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> groupService.updateGroup("nope", updateRequest(), 1L))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
@@ -336,7 +348,7 @@ class GroupServiceTest {
     @Test
     void rotateInviteCode_replacesCodeAndAudits() {
         Group existing = group();
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
         when(groupRepository.existsByInviteCode(any())).thenReturn(false);
         when(groupRepository.save(any(Group.class))).thenAnswer(i -> i.getArgument(0));
 
@@ -350,7 +362,7 @@ class GroupServiceTest {
 
     @Test
     void rotateInviteCode_missing_throws() {
-        when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue("nope")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> groupService.rotateInviteCode("nope"))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
@@ -358,7 +370,7 @@ class GroupServiceTest {
     @Test
     void deleteGroup_success_softDeletes() {
         Group existing = group();
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
 
         groupService.deleteGroup("grp-1");
 
@@ -368,7 +380,7 @@ class GroupServiceTest {
 
     @Test
     void deleteGroup_missing_throws() {
-        when(groupRepository.findByUid("nope")).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue("nope")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> groupService.deleteGroup("nope")).isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -387,7 +399,7 @@ class GroupServiceTest {
     @Test
     void updateGroup_photo_storesWhateverTheAttachAllows() {
         Group existing = group();
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
         when(groupRepository.save(any(Group.class))).thenAnswer(i -> i.getArgument(0));
         GroupRequest request = updateRequest();
         request.setPhotoUid("new-upload");
@@ -402,7 +414,7 @@ class GroupServiceTest {
     @Test
     void updateGroup_unusablePhoto_isNotSaved() {
         Group existing = group();
-        when(groupRepository.findByUid("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
         GroupRequest request = updateRequest();
         request.setPhotoUid("never-uploaded");
         when(uploadService.attachGroupPhoto("never-uploaded", existing, 1L))

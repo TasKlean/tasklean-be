@@ -44,7 +44,7 @@ public class GroupMemberService {
      *
      * @param groupUid the group's public UID
      * @return the group's active members
-     * @throws ResourceNotFoundException if no group has that UID
+     * @throws ResourceNotFoundException if no active group has that UID
      */
     public List<GroupMemberResponse> getMembers(String groupUid) {
         requireGroup(groupUid);
@@ -70,7 +70,7 @@ public class GroupMemberService {
      * @param request the group, the user to add, and the role to give them
      * @return the created membership
      * @throws DuplicateResourceException if the user already has a membership of the group
-     * @throws ResourceNotFoundException  if the group or the user does not exist
+     * @throws ResourceNotFoundException  if the user does not exist, or the group does not or is deleted
      */
     @Transactional
     public GroupMemberResponse addMember(GroupMemberRequest request) {
@@ -161,7 +161,7 @@ public class GroupMemberService {
     }
 
     private Group requireGroup(String groupUid) {
-        return groupRepository.findByUid(groupUid)
+        return groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
     }
 

@@ -368,6 +368,15 @@ The frontend holds the same query in its URL with its own vocabulary (`?show=adm
 
 Two things this does **not** add: pagination (the response is still a bare array, so a page would change the envelope for every existing caller) and a rate-limit tier of its own - a 300ms-debounced search sits well inside `api-per-user`'s 120/min.
 
+### Reaching a soft-deleted group
+
+A soft delete has to make the row unreachable, not merely absent from its list. `GET /api/groups/mine` always filtered on the group's own `is_active`, so a deleted group vanished from the list correctly - but every by-uid path used the unfiltered `findByUid`, so a member could still read the group, **rename it**, list its members, rotate its invite code and sign new uploads against it. Fixed by routing every service lookup through `findByUidAndIsActiveTrue`.
+
+Two decisions worth keeping:
+
+- **The lookup is filtered in the services, not in `GroupSecurity`.** Authorization still resolves membership through the unfiltered lookup, so the `@PreAuthorize` passes and the service throws 404. If the security bean filtered instead, a member of a deleted group would get **403**, which says "not yours" about something that was theirs. A stranger still gets 403 and learns nothing about whether the group exists.
+- **Joining was already safe.** `joinByInviteCode` filtered on `is_active` from the start and answers the same way for an unknown and a deleted code, so a stale invite never resurrects a group.
+
 ### HTTP status codes
 
 - `200` — success (GET, PUT, PATCH, DELETE, login)
@@ -888,7 +897,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UploadSweeperTest` | 6 | Deletes the object **before** marking the row; the cutoffs come from the two grace periods and the page size from `sweep-batch`; nothing collectable leaves the bucket untouched; one unreachable object still lets the rest be collected, and its own row keeps its status for the next run |
 | `UploadControllerSecurityTest` | 14 | `@WebMvcTest` slice with both security beans real — POST allows the target group's admin and SUPER_ADMIN, denies a plain member of that group, a caller outside it and a platform ADMIN (read-only); an SVG, an oversize body and a missing target are 400 before any signature exists; GET allows a member of the upload's group, a platform ADMIN and the requester of a still-pending upload, and denies a caller outside the group, someone else's pending upload and an unknown uid |
 | `GroupSecurityTest` | 16 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); by membership uid — `canManageMember` (caller admin of that group / only a plain member), `canViewMember` (shares the group / unknown membership / caller outside that group), `isSelfMember` (own / someone else's / anonymous) |
-| `GroupServiceTest` | 27 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found; getGroupByUid invite-code visibility (admin vs plain member); getMyGroups (role mapping, soft-deleted group skipped, invite-code visibility, the filter it is handed narrows the list, and `MEMBERS_DESC` orders by counts that landed before the sort); joinByInviteCode (new member, case-insensitive code, unknown code, soft-deleted group, already a member, rejoin reactivates the same row without restoring admin); rotateInviteCode (replaces code + audits, not-found) |
+| `GroupServiceTest` | 28 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found (and that the lookup never falls back to the unfiltered `findByUid`, which is what let a deleted group stay editable); getGroupByUid invite-code visibility (admin vs plain member); getMyGroups (role mapping, soft-deleted group skipped, invite-code visibility, the filter it is handed narrows the list, and `MEMBERS_DESC` orders by counts that landed before the sort); joinByInviteCode (new member, case-insensitive code, unknown code, soft-deleted group, already a member, rejoin reactivates the same row without restoring admin); rotateInviteCode (replaces code + audits, not-found) |
 | `MyGroupFilterTest` | 17 | The caller-visible behaviour of the group list filter, with no mocks: each of the five orderings, name as every tiebreak, and a name compare that ignores case **and** accents (the frontend's `sensitivity: "base"`); a missing date or member count sorts last; an absent *and* a null sort both fall back to name; the search is trimmed, matches name or description case-insensitively, and deliberately does **not** match across the two fields; one role narrows, both roles and an empty list do not; the caller's own list is left in its order |
 | `GroupMemberServiceTest` | 15 | Lookups by uid (unknown membership / unknown group, the latter before any member query runs); the member list carries the user summary rather than ids; addMember (success with a generated uid / duplicate / unknown group / unknown user); role change with last-admin protection (blocked when last, allowed with another admin, promote); removeMember — **the caller decides the event**: someone else's membership audits `MEMBER_REMOVED`, the caller's own audits `MEMBER_LEFT`, plus last-admin blocked, admin removed when another remains, unknown uid → not found |
 | `GroupMemberControllerSecurityTest` | 13 | `@WebMvcTest` slice — each expression resolves the membership's group and then the caller's role in it: read allows a member of that group or a platform ADMIN and denies a caller outside it; POST is SUPER_ADMIN only (a group admin and a platform ADMIN are both denied); role change needs the group's admin or SUPER_ADMIN (platform ADMIN denied); DELETE allows the group's admin, allows a **plain member deleting their own** membership (leaving, via `isSelfMember`), and denies a plain member deleting someone else's or a caller outside the group |
@@ -917,7 +926,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **640 tests** across 55 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **641 tests** across 55 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 

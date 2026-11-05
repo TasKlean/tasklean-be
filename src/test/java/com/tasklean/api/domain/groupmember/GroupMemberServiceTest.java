@@ -77,7 +77,7 @@ class GroupMemberServiceTest {
     }
 
     private void stubGroup() {
-        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.of(group()));
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.of(group()));
     }
 
     private void stubMembership(GroupMember member) {
@@ -109,7 +109,7 @@ class GroupMemberServiceTest {
 
     @Test
     void getMembers_unknownGroup_throwsNotFound() {
-        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> groupMemberService.getMembers(GROUP_UID))
                 .isInstanceOf(ResourceNotFoundException.class);
@@ -161,7 +161,7 @@ class GroupMemberServiceTest {
 
     @Test
     void addMember_unknownGroup_throwsNotFound() {
-        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER)))
                 .isInstanceOf(ResourceNotFoundException.class);

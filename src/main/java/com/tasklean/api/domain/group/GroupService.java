@@ -55,11 +55,10 @@ public class GroupService {
      * @param uid          the group's public UID
      * @param callerUserId the id of the authenticated caller
      * @return the group
-     * @throws ResourceNotFoundException if no group has that UID
+     * @throws ResourceNotFoundException if no active group has that UID
      */
     public GroupResponse getGroupByUid(String uid, Long callerUserId) {
-        Group group = groupRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+        Group group = requireActiveGroup(uid);
         long memberCount = memberCount(group);
         return activeMembership(callerUserId, group.getIdGroup())
                 .map(m -> GroupResponse.forMember(group, m.getRole(), memberCount))
@@ -211,13 +210,12 @@ public class GroupService {
      * @param request      the new group details
      * @param callerUserId the id of the authenticated caller
      * @return the updated group
-     * @throws ResourceNotFoundException if no group has that UID
+     * @throws ResourceNotFoundException if no active group has that UID
      * @throws InvalidRequestException   if the photo is not this caller's usable upload for it
      */
     @Transactional
     public GroupResponse updateGroup(String uid, GroupRequest request, Long callerUserId) {
-        Group group = groupRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+        Group group = requireActiveGroup(uid);
         group.setName(request.getName());
         group.setDescription(request.getDescription());
         group.setPhotoUid(uploadService.attachGroupPhoto(request.getPhotoUid(), group, callerUserId));
@@ -234,12 +232,11 @@ public class GroupService {
      *
      * @param uid the group's public UID
      * @return the group with its new invite code
-     * @throws ResourceNotFoundException if no group has that UID
+     * @throws ResourceNotFoundException if no active group has that UID
      */
     @Transactional
     public GroupResponse rotateInviteCode(String uid) {
-        Group group = groupRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+        Group group = requireActiveGroup(uid);
         // The old code is still persisted, so the uniqueness check in generateInviteCode also
         // guarantees the new code differs from it.
         group.setInviteCode(generateInviteCode());
@@ -256,17 +253,23 @@ public class GroupService {
      * Soft-deletes a group (sets it inactive).
      *
      * @param uid the group's public UID
-     * @throws ResourceNotFoundException if no group has that UID
+     * @throws ResourceNotFoundException if no active group has that UID
      */
     @Transactional
     public void deleteGroup(String uid) {
-        Group group = groupRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+        Group group = requireActiveGroup(uid);
         group.setIsActive(false);
         groupRepository.save(group);
         log.info("Group soft-deleted: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.GROUP, group.getIdGroup(), AuditAction.DELETE,
                 auditMessage(group.getName(), "deleted"), group);
+    }
+
+    // A soft-deleted group is a 404, not a hidden row that still answers by uid. Resolving it here
+    // rather than in GroupSecurity keeps a member's 404 distinct from a stranger's 403.
+    private Group requireActiveGroup(String uid) {
+        return groupRepository.findByUidAndIsActiveTrue(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
     }
 
     private static String auditMessage(String name, String verb) {

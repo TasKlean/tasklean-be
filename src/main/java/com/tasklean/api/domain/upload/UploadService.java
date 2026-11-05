@@ -48,7 +48,7 @@ public class UploadService {
      * @param request      what the image is for, its type and its exact size
      * @param callerUserId the id of the authenticated caller
      * @return the upload's uid and the URL to PUT to
-     * @throws ResourceNotFoundException if the target does not exist
+     * @throws ResourceNotFoundException if the target does not exist or has been deleted
      */
     @Transactional
     public UploadResponse createUpload(UploadRequest request, Long callerUserId) {
@@ -178,7 +178,7 @@ public class UploadService {
     }
 
     private Group requireGroup(String groupUid) {
-        return groupRepository.findByUid(groupUid)
+        return groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
     }
 
