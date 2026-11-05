@@ -154,15 +154,18 @@ public class GroupController {
     }
 
     /**
-     * Soft-deletes a group.
+     * Soft-deletes a group, and with it every membership of it: the members lose access, and the
+     * group's photo is released. The group and its memberships are kept as inactive rows.
      *
-     * @param uid the group's public UID
+     * @param uid       the group's public UID
+     * @param principal the authenticated caller
      * @return {@code 200 OK} with a confirmation message
      */
     @PreAuthorize("hasRole('SUPER_ADMIN') or @groupSecurity.isAdmin(#uid)")
     @DeleteMapping("/{uid}")
-    public ResponseEntity<ApiResponse<Void>> deleteGroup(@PathVariable String uid) {
-        groupService.deleteGroup(uid);
+    public ResponseEntity<ApiResponse<Void>> deleteGroup(
+            @PathVariable String uid, @AuthenticationPrincipal AuthPrincipal principal) {
+        groupService.deleteGroup(uid, principal.userId());
         return ResponseEntity.ok(ApiResponse.success("Group deleted", null));
     }
 }

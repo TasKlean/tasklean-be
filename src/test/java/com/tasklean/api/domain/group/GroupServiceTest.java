@@ -376,7 +376,7 @@ class GroupServiceTest {
         Group existing = group();
         when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
 
-        groupService.deleteGroup("grp-1");
+        groupService.deleteGroup("grp-1", 1L);
 
         assertThat(existing.getIsActive()).isFalse();
         verify(auditLogService).recordEvent(any(), any(), any(), any(), any());
@@ -388,11 +388,11 @@ class GroupServiceTest {
         existing.setPhotoUid("photo-1");
         when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
 
-        groupService.deleteGroup("grp-1");
+        groupService.deleteGroup("grp-1", 1L);
 
         // A membership outliving its group is what left a deleted group's photo uncollectable and
         // its members still authorized against it.
-        verify(groupMemberService).deactivateAllForGroup(existing);
+        verify(groupMemberService).deactivateAllForGroup(existing, 1L);
         verify(uploadService).releaseGroupPhoto(existing);
         assertThat(existing.getPhotoUid()).isNull();
     }
@@ -400,7 +400,7 @@ class GroupServiceTest {
     @Test
     void deleteGroup_missing_throws() {
         when(groupRepository.findByUidAndIsActiveTrue("nope")).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> groupService.deleteGroup("nope")).isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> groupService.deleteGroup("nope", 1L)).isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test

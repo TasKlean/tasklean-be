@@ -2010,7 +2010,7 @@
     },
     "/api/groups/{uid}" : {
       "delete" : {
-        "description" : "Soft-deletes a group.",
+        "description" : "Soft-deletes a group, and with it every membership of it: the members lose access, and the\n group's photo is released. The group and its memberships are kept as inactive rows.",
         "operationId" : "deleteGroup",
         "parameters" : [ {
           "description" : "the group's public UID",
@@ -2048,7 +2048,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Soft-deletes a group.",
+        "summary" : "Soft-deletes a group, and with it every membership of it: the members lose access, and the\n group's photo is released.",
         "tags" : [ "Groups" ]
       },
       "get" : {

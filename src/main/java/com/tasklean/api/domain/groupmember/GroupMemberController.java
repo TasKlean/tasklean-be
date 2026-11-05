@@ -31,15 +31,17 @@ public class GroupMemberController {
      * Adds a user to a group directly. This is platform tooling: a household admin invites people
      * by sharing the group's invite code, which is the only route that asks for the joiner's consent.
      *
-     * @param request the group, the user to add, and the role to give them
+     * @param request   the group, the user to add, and the role to give them
+     * @param principal the authenticated caller
      * @return {@code 201 Created} with the created membership
      */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @PostMapping
     public ResponseEntity<ApiResponse<GroupMemberResponse>> addMember(
-            @Valid @RequestBody GroupMemberRequest request) {
+            @Valid @RequestBody GroupMemberRequest request,
+            @AuthenticationPrincipal AuthPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(groupMemberService.addMember(request)));
+                .body(ApiResponse.success(groupMemberService.addMember(request, principal.userId())));
     }
 
     /**

@@ -255,16 +255,18 @@ public class GroupService {
      * Soft-deletes a group: the group itself, every active membership of it, and its photo. One
      * transaction, so a group is never left deleted with its members still in it.
      *
-     * @param uid the group's public UID
+     * @param uid          the group's public UID
+     * @param callerUserId the id of the authenticated caller, attributed as having ended the
+     *                     memberships
      * @throws ResourceNotFoundException if no active group has that UID
      */
     @Transactional
-    public void deleteGroup(String uid) {
+    public void deleteGroup(String uid, Long callerUserId) {
         Group group = requireActiveGroup(uid);
         // Both read the group as it still stands: the cascade needs its active memberships, and
         // releasing the photo needs the uid about to be cleared. Left attached, the object would
         // belong to a group nobody can reach and no sweep would ever collect it.
-        groupMemberService.deactivateAllForGroup(group);
+        groupMemberService.deactivateAllForGroup(group, callerUserId);
         uploadService.releaseGroupPhoto(group);
         group.setIsActive(false);
         group.setPhotoUid(null);
