@@ -20,6 +20,17 @@ public class AuditLogQueryRequest {
     /** The page size when the caller asks for none. */
     public static final int DEFAULT_LIMIT = 20;
 
+    /** Keeps only entries about this kind of entity, e.g. {@code TASK}. */
+    @Size(max = FieldLimits.UID)
+    private String entityType;
+
+    /**
+     * Keeps only entries about this one entity, identified the way the API addresses it. Needs
+     * {@code entityType} alongside it: the same identifier means different rows per type.
+     */
+    @Size(max = FieldLimits.UID)
+    private String entityRef;
+
     /** The previous page's {@code nextCursor}. Omitted, the feed starts at the newest entry. */
     @Size(max = FieldLimits.CURSOR)
     private String cursor;

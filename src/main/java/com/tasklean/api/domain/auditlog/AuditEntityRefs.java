@@ -15,6 +15,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -48,6 +49,36 @@ public class AuditEntityRefs {
         idsByType.forEach((type, ids) -> uidsFor(type, ids)
                 .forEach((id, uid) -> refs.put(new EntityKey(type, id), uid)));
         return refs;
+    }
+
+    /**
+     * Resolves one external reference back to the id the trail stores, for a caller filtering a
+     * feed by a single entity.
+     *
+     * @param entityType the audited entity type
+     * @param entityRef  the identifier the API addresses that entity by
+     * @return the stored id, or empty if nothing of that type has that reference
+     */
+    public Optional<Long> resolveId(String entityType, String entityRef) {
+        // Deliberately the unfiltered uid lookups: a soft-deleted entity still has a history, and
+        // refusing to show it would hide exactly the rows that explain where it went.
+        return switch (entityType) {
+            case AuditEntityType.TASK -> taskRepository.findByUid(entityRef).map(Task::getIdTask);
+            case AuditEntityType.GROUP -> groupRepository.findByUid(entityRef).map(Group::getIdGroup);
+            case AuditEntityType.GROUP_MEMBER ->
+                    groupMemberRepository.findByUid(entityRef).map(GroupMember::getIdGroupMember);
+            case AuditEntityType.USER -> userRepository.findByUid(entityRef).map(User::getIdUser);
+            // Addressed by their Long id everywhere else, so the reference already is the id.
+            default -> parsedId(entityRef);
+        };
+    }
+
+    private Optional<Long> parsedId(String entityRef) {
+        try {
+            return Optional.of(Long.parseLong(entityRef));
+        } catch (NumberFormatException e) {
+            return Optional.empty();
+        }
     }
 
     private Map<Long, String> uidsFor(String entityType, Set<Long> ids) {

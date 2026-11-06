@@ -3,41 +3,33 @@ package com.tasklean.api.domain.auditlog;
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.domain.user.UserRole;
 import com.tasklean.api.security.GroupSecurity;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Root;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.domain.Limit;
 
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * Which query a caller's trail read runs, and how a cursor reaches it. The narrowing itself is SQL
- * and is verified against the real database; what this pins down is that the choice between the two
- * queries is made by role, and that a plain member never reaches the unnarrowed one.
+ * Which predicate a caller's trail read carries. The specification is a lambda, so each case is
+ * settled by applying it to a recording criteria builder: the member rule shows up as a correlated
+ * subquery, and an admin's read must not carry one at all.
  */
 @ExtendWith(MockitoExtension.class)
 class AuditLogVisibilityTest {
 
     private static final Long GROUP_ID = 10L;
     private static final Long USER_ID = 1L;
-    private static final int LIMIT = 20;
-
-    @Mock
-    private AuditLogRepository auditLogRepository;
 
     @Mock
     private GroupSecurity groupSecurity;
@@ -45,115 +37,70 @@ class AuditLogVisibilityTest {
     @InjectMocks
     private AuditLogVisibility auditLogVisibility;
 
+    @SuppressWarnings("unchecked")
+    private final Root<AuditLog> root = mock(Root.class, RETURNS_DEEP_STUBS);
+
+    @SuppressWarnings("unchecked")
+    private final CriteriaQuery<Object> query = mock(CriteriaQuery.class, RETURNS_DEEP_STUBS);
+
+    private final CriteriaBuilder cb = mock(CriteriaBuilder.class, RETURNS_DEEP_STUBS);
+
     private AuthPrincipal caller(UserRole role) {
         return new AuthPrincipal(USER_ID, "usr-1", "user@example.com", role);
     }
 
-    private List<AuditLog> readAs(UserRole role) {
-        return auditLogVisibility.inGroup(GROUP_ID, caller(role), null, LIMIT);
+    private void applyAs(UserRole role) {
+        auditLogVisibility.inGroup(GROUP_ID, caller(role)).toPredicate(root, query, cb);
     }
-
-    // --- which query the page comes from ---
 
     @Test
     void inGroup_groupAdmin_readsTheWholeTrail() {
         when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(true);
 
-        readAs(UserRole.USER);
+        applyAs(UserRole.USER);
 
-        verify(auditLogRepository).findInGroup(eq(GROUP_ID), any(), any(), any());
-        verify(auditLogRepository, never())
-                .findInGroupVisibleToMember(anyLong(), anyLong(), anyString(), any(), any(), any());
+        verify(cb).equal(root.get("group").get("idGroup"), GROUP_ID);
+        // No subquery means no member rule: an admin reads every row in the group.
+        verify(query, never()).subquery(any(Class.class));
     }
 
     @Test
     void inGroup_plainMember_readsOnlyTheirOwnSlice() {
         when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(false);
 
-        readAs(UserRole.USER);
+        applyAs(UserRole.USER);
 
         // Keyed on CREATE: the trail is what says who made a thing, since only task stores it.
-        verify(auditLogRepository).findInGroupVisibleToMember(
-                eq(GROUP_ID), eq(USER_ID), eq(AuditAction.CREATE.name()), any(), any(), any());
-        verify(auditLogRepository, never()).findInGroup(any(), any(), any(), any());
+        verify(query).subquery(Long.class);
+        verify(cb).exists(any());
     }
 
     @Test
     void inGroup_platformAdmin_readsTheWholeTrailWithoutAMembership() {
         // Support access reads across households, so the group role is not even consulted.
-        readAs(UserRole.ADMIN);
+        applyAs(UserRole.ADMIN);
 
-        verify(auditLogRepository).findInGroup(eq(GROUP_ID), any(), any(), any());
+        verify(query, never()).subquery(any(Class.class));
         verifyNoInteractions(groupSecurity);
     }
 
     @Test
     void inGroup_superAdmin_readsTheWholeTrail() {
-        readAs(UserRole.SUPER_ADMIN);
+        applyAs(UserRole.SUPER_ADMIN);
 
-        verify(auditLogRepository).findInGroup(eq(GROUP_ID), any(), any(), any());
+        verify(query, never()).subquery(any(Class.class));
+        verifyNoInteractions(groupSecurity);
     }
 
     @Test
-    void inGroup_entriesFound_arePassedThroughUntouched() {
-        AuditLog entry = AuditLog.builder().uid("aud-1").build();
-        when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(true);
-        when(auditLogRepository.findInGroup(eq(GROUP_ID), any(), any(), any())).thenReturn(List.of(entry));
-
-        assertThat(readAs(UserRole.USER)).containsExactly(entry);
-    }
-
-    // --- how the cursor reaches the query ---
-
-    @Test
-    void inGroup_cursorPosition_isPassedToTheQueryAsBothItsKeys() {
-        // A timestamp alone is not a position: entries written in the same instant would repeat
-        // across pages or be skipped, so the row id rides along as the tiebreak.
-        when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(true);
-        LocalDateTime when = LocalDateTime.now(ZoneOffset.UTC);
-
-        auditLogVisibility.inGroup(GROUP_ID, caller(UserRole.USER), new AuditLogCursor.Position(when, 9L), LIMIT);
-
-        verify(auditLogRepository).findInGroup(GROUP_ID, when, 9L, Limit.of(LIMIT));
-    }
-
-    @Test
-    void inGroup_firstPage_asksWithNoPosition() {
-        when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(true);
-
-        readAs(UserRole.USER);
-
-        verify(auditLogRepository).findInGroup(GROUP_ID, null, null, Limit.of(LIMIT));
-    }
-
-    // --- the total beside the page runs through the same branch ---
-
-    @Test
-    void countInGroup_groupAdmin_countsTheWholeTrail() {
-        when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(true);
-
-        auditLogVisibility.countInGroup(GROUP_ID, caller(UserRole.USER));
-
-        verify(auditLogRepository).countInGroup(GROUP_ID);
-        verify(auditLogRepository, never()).countInGroupVisibleToMember(anyLong(), anyLong(), anyString());
-    }
-
-    @Test
-    void countInGroup_plainMember_countsOnlyTheirOwnSlice() {
-        // A total counting rows the member cannot read would promise pages that never arrive.
+    void inGroup_plainMember_staysScopedToTheGroupAsWellAsTheMemberRule() {
+        // The member rule is an extra narrowing, never a replacement: without the group predicate
+        // a member would read their own actions in every household at once.
         when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(false);
 
-        auditLogVisibility.countInGroup(GROUP_ID, caller(UserRole.USER));
+        applyAs(UserRole.USER);
 
-        verify(auditLogRepository).countInGroupVisibleToMember(GROUP_ID, USER_ID, AuditAction.CREATE.name());
-        verify(auditLogRepository, never()).countInGroup(any());
-    }
-
-    @Test
-    void countInGroup_platformAdmin_countsTheWholeTrailWithoutAMembership() {
-        auditLogVisibility.countInGroup(GROUP_ID, caller(UserRole.ADMIN));
-
-        verify(auditLogRepository).countInGroup(GROUP_ID);
-        verifyNoInteractions(groupSecurity);
+        verify(cb).equal(root.get("group").get("idGroup"), GROUP_ID);
+        verify(cb).and(any(), any());
     }
 }

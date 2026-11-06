@@ -11,11 +11,11 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -28,10 +28,16 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuditLogService {
 
+    // The feed's sort key, and the one the cursor encodes - the row id breaks a tie on the
+    // timestamp so two entries written in the same instant cannot repeat across pages.
+    private static final Sort NEWEST_FIRST =
+            Sort.by(Sort.Direction.DESC, "dateCreated").and(Sort.by(Sort.Direction.DESC, "idAuditLog"));
+
     private final AuditLogRepository auditLogRepository;
     private final AuditContext auditContext;
     private final AuditEntityRefs auditEntityRefs;
     private final AuditLogVisibility auditLogVisibility;
+    private final AuditLogFilter auditLogFilter;
     private final AuditLogCursor auditLogCursor;
     private final GroupRepository groupRepository;
 
@@ -106,11 +112,7 @@ public class AuditLogService {
         Group group = groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
-        int limit = pageSize(query);
-        List<AuditLog> read = auditLogVisibility.inGroup(
-                group.getIdGroup(), caller, auditLogCursor.decode(query.getCursor()), limit + 1);
-
-        return page(read, limit, auditLogVisibility.countInGroup(group.getIdGroup(), caller));
+        return page(auditLogFilter.narrow(auditLogVisibility.inGroup(group.getIdGroup(), caller), query), query);
     }
 
     /**
@@ -123,27 +125,29 @@ public class AuditLogService {
      * @throws InvalidRequestException if the cursor is not one we handed out
      */
     public AuditLogPage getAccountLogs(Long userId, AuditLogQueryRequest query) {
-        int limit = pageSize(query);
-        AuditLogCursor.Position after = auditLogCursor.decode(query.getCursor());
-
         // Keyed on the entity, not the actor: an event another person caused on this account
         // (a role grant, say) is still this account's history.
-        List<AuditLog> read = auditLogRepository.findForEntity(
-                AuditEntityType.USER, userId, timestamp(after), id(after), Limit.of(limit + 1));
+        Specification<AuditLog> scope = AuditLogSpecs.aboutEntity(AuditEntityType.USER, userId);
 
-        return page(read, limit, auditLogRepository.countForEntity(AuditEntityType.USER, userId));
+        return page(auditLogFilter.narrow(scope, query), query);
     }
 
-    // The query asks for one row more than the page holds, so a next cursor is handed out only
-    // when a further entry really exists rather than whenever the page came back full.
-    private AuditLogPage page(List<AuditLog> read, int limit, long total) {
+    // One row more than the page holds, so a next cursor means a further entry really exists; the
+    // total skips the cursor predicate, being the size of the feed rather than of what is left.
+    private AuditLogPage page(Specification<AuditLog> feed, AuditLogQueryRequest query) {
+        int limit = pageSize(query);
+        AuditLogCursor.Position after = auditLogCursor.decode(query.getCursor());
+        Specification<AuditLog> onePage = after == null
+                ? feed : feed.and(AuditLogSpecs.after(after.dateCreated(), after.id()));
+
+        List<AuditLog> read = auditLogRepository.findBy(onePage.and(AuditLogSpecs.withActorFetched()),
+                q -> q.sortBy(NEWEST_FIRST).limit(limit + 1).all());
         List<AuditLog> entries = read.size() > limit ? read.subList(0, limit) : read;
-        boolean more = read.size() > limit;
 
         return AuditLogPage.builder()
                 .items(toResponses(entries))
-                .nextCursor(more ? auditLogCursor.encode(entries.getLast()) : null)
-                .total(total)
+                .nextCursor(read.size() > limit ? auditLogCursor.encode(entries.getLast()) : null)
+                .total(auditLogRepository.count(feed))
                 .build();
     }
 
@@ -163,11 +167,4 @@ public class AuditLogService {
                 .toList();
     }
 
-    private LocalDateTime timestamp(AuditLogCursor.Position after) {
-        return after == null ? null : after.dateCreated();
-    }
-
-    private Long id(AuditLogCursor.Position after) {
-        return after == null ? null : after.id();
-    }
 }

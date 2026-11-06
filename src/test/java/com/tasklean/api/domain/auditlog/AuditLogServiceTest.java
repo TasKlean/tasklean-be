@@ -10,24 +10,31 @@ import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,6 +43,7 @@ import static org.mockito.Mockito.when;
 class AuditLogServiceTest {
 
     private static final String GROUP_UID = "grp-1";
+    private static final LocalDateTime NOW = LocalDateTime.now(ZoneOffset.UTC);
 
     @Mock
     private AuditLogRepository auditLogRepository;
@@ -50,6 +58,9 @@ class AuditLogServiceTest {
     private AuditLogVisibility auditLogVisibility;
 
     @Mock
+    private AuditLogFilter auditLogFilter;
+
+    @Mock
     private AuditLogCursor auditLogCursor;
 
     @Mock
@@ -57,6 +68,14 @@ class AuditLogServiceTest {
 
     @InjectMocks
     private AuditLogService auditLogService;
+
+    @BeforeEach
+    void collaboratorsPassTheirScopeThrough() {
+        // Lenient because the write tests touch neither; a read test that cares about the
+        // composition stubs these again, and the later stub is the one that answers.
+        lenient().when(auditLogVisibility.inGroup(any(), any())).thenReturn(Specification.unrestricted());
+        lenient().when(auditLogFilter.narrow(any(), any())).thenAnswer(call -> call.getArgument(0));
+    }
 
     // --- record ---
 
@@ -149,15 +168,16 @@ class AuditLogServiceTest {
                 .entityType(AuditEntityType.TASK)
                 .entityId(42L)
                 .action(AuditAction.UPDATE.name())
-                .actionMessage("Task \"Dishes\" updated")
+                .actionMessage("Task updated")
                 .actorUser(User.builder().idUser(1L).uid("usr-1").name("Alice").lastName("Smith").build())
                 .build();
         groupExists();
-        whenReadReturns(List.of(entry));
+        whenFeedHolds(List.of(entry));
         when(auditEntityRefs.resolve(List.of(entry)))
                 .thenReturn(Map.of(new AuditEntityRefs.EntityKey(AuditEntityType.TASK, 42L), "tsk-9"));
 
-        AuditLogResponse response = auditLogService.getGroupLogs(GROUP_UID, caller(), query(20)).getItems().getFirst();
+        AuditLogResponse response = auditLogService.getGroupLogs(GROUP_UID, caller(), query(20))
+                .getItems().getFirst();
 
         // The response names the entity and the person; neither is an internal id any more.
         assertThat(response.getUid()).isEqualTo("aud-1");
@@ -174,10 +194,10 @@ class AuditLogServiceTest {
                 .uid("aud-2").entityType(AuditEntityType.USER).entityId(1L)
                 .action(AuditAction.LOGIN.name()).actionMessage("User logged in").build();
         groupExists();
-        whenReadReturns(List.of(entry));
-        when(auditEntityRefs.resolve(List.of(entry))).thenReturn(Map.of());
+        whenFeedHolds(List.of(entry));
 
-        AuditLogResponse response = auditLogService.getGroupLogs(GROUP_UID, caller(), query(20)).getItems().getFirst();
+        AuditLogResponse response = auditLogService.getGroupLogs(GROUP_UID, caller(), query(20))
+                .getItems().getFirst();
 
         assertThat(response.getActor()).isNull();
         // Its target resolved to nothing, which must render as no reference rather than fail.
@@ -186,13 +206,9 @@ class AuditLogServiceTest {
 
     @Test
     void getGroupLogs_wholePage_resolvesRefsOnce() {
-        List<AuditLog> entries = List.of(
-                AuditLog.builder().uid("a").entityType(AuditEntityType.TASK).entityId(1L).build(),
-                AuditLog.builder().uid("b").entityType(AuditEntityType.TASK).entityId(2L).build(),
-                AuditLog.builder().uid("c").entityType(AuditEntityType.GROUP).entityId(3L).build());
+        List<AuditLog> entries = List.of(entryWithKey(3L), entryWithKey(2L), entryWithKey(1L));
         groupExists();
-        whenReadReturns(entries);
-        when(auditEntityRefs.resolve(entries)).thenReturn(Map.of());
+        whenFeedHolds(entries);
 
         auditLogService.getGroupLogs(GROUP_UID, caller(), query(20));
 
@@ -201,14 +217,19 @@ class AuditLogServiceTest {
     }
 
     @Test
-    void getGroupLogs_narrowing_isLeftToTheVisibilityComponent() {
-        // The service must not reach past it to the unnarrowed finder - that is the whole trail.
+    void getGroupLogs_always_readsTheFeedTheVisibilityRuleAndTheFilterAgreedOn() {
+        // The service composes and must add no predicate of its own: one built here would sit
+        // outside both the member rule and the caller's filter.
         groupExists();
-        whenReadReturns(List.of());
+        Specification<AuditLog> visible = Specification.unrestricted();
+        Specification<AuditLog> narrowed = Specification.unrestricted();
+        when(auditLogVisibility.inGroup(eq(10L), any())).thenReturn(visible);
+        when(auditLogFilter.narrow(eq(visible), any())).thenReturn(narrowed);
+        whenFeedHolds(List.of());
 
         auditLogService.getGroupLogs(GROUP_UID, caller(), query(20));
 
-        verify(auditLogRepository, never()).findInGroup(any(), any(), any(), any());
+        verify(auditLogRepository).count(narrowed);
     }
 
     @Test
@@ -221,16 +242,14 @@ class AuditLogServiceTest {
     }
 
     @Test
-    void getAccountLogs_always_readsTheEntriesAboutThatAccount() {
+    void getAccountLogs_always_narrowsItsOwnScopeByTheSameFilter() {
         // Keyed on the entity, not the actor: an event somebody else caused on this account is
         // still this account's history.
-        when(auditLogRepository.findForEntity(eq(AuditEntityType.USER), eq(7L), any(), any(), any()))
-                .thenReturn(List.of());
-        when(auditEntityRefs.resolve(List.of())).thenReturn(Map.of());
+        whenFeedHolds(List.of());
 
         assertThat(auditLogService.getAccountLogs(7L, query(20)).getItems()).isEmpty();
 
-        verify(auditLogRepository).countForEntity(AuditEntityType.USER, 7L);
+        verify(auditLogFilter).narrow(any(), any());
     }
 
     // --- paging ---
@@ -239,7 +258,7 @@ class AuditLogServiceTest {
     void getGroupLogs_moreEntriesThanThePageHolds_handsOutANextCursor() {
         // The read asks for one row beyond the page, so the extra one is what proves there is more.
         groupExists();
-        whenReadReturns(List.of(entryWithKey(3L), entryWithKey(2L), entryWithKey(1L)));
+        whenFeedHolds(List.of(entryWithKey(3L), entryWithKey(2L), entryWithKey(1L)));
         when(auditLogCursor.encode(any())).thenReturn("next-cursor");
 
         AuditLogPage page = auditLogService.getGroupLogs(GROUP_UID, caller(), query(2));
@@ -251,7 +270,7 @@ class AuditLogServiceTest {
     @Test
     void getGroupLogs_lastPage_handsOutNoCursor() {
         groupExists();
-        whenReadReturns(List.of(entryWithKey(2L), entryWithKey(1L)));
+        whenFeedHolds(List.of(entryWithKey(2L), entryWithKey(1L)));
 
         AuditLogPage page = auditLogService.getGroupLogs(GROUP_UID, caller(), query(5));
 
@@ -261,45 +280,63 @@ class AuditLogServiceTest {
 
     @Test
     void getGroupLogs_pageExactlyFull_handsOutNoCursor() {
-        // The boundary a "was the page full" test gets wrong: 2 of 2 asked for, nothing beyond.
+        // The boundary a "was the page full" check gets wrong: 2 of 2 asked for, nothing beyond.
         groupExists();
-        whenReadReturns(List.of(entryWithKey(2L), entryWithKey(1L)));
+        whenFeedHolds(List.of(entryWithKey(2L), entryWithKey(1L)));
 
         assertThat(auditLogService.getGroupLogs(GROUP_UID, caller(), query(2)).getNextCursor()).isNull();
     }
 
     @Test
-    void getGroupLogs_cursorOnTheRequest_isDecodedAndReadAfter() {
+    void getGroupLogs_always_asksForOneRowBeyondThePageNewestFirst() {
         groupExists();
-        AuditLogCursor.Position position = new AuditLogCursor.Position(NOW, 9L);
-        when(auditLogCursor.decode("page-2")).thenReturn(position);
-        whenReadReturns(List.of());
+        whenFeedHolds(List.of());
 
-        AuditLogQueryRequest request = query(20);
-        request.setCursor("page-2");
-        auditLogService.getGroupLogs(GROUP_UID, caller(), request);
+        auditLogService.getGroupLogs(GROUP_UID, caller(), query(20));
 
-        verify(auditLogVisibility).inGroup(10L, caller(), position, 21);
+        RecordedQuery recorded = appliedFluentQuery();
+        assertThat(recorded.limit).isEqualTo(21);
+        // Both keys in this order: the id alone cannot order a feed, and the timestamp alone
+        // cannot break a tie inside it.
+        assertThat(recorded.sort).isEqualTo(
+                Sort.by(Sort.Direction.DESC, "dateCreated").and(Sort.by(Sort.Direction.DESC, "idAuditLog")));
     }
 
     @Test
     void getGroupLogs_noLimitAsked_readsTheDefaultPage() {
-        // "limit=" with nothing after it binds to null, which must not reach Limit.of as a zero.
+        // "limit=" with nothing after it binds to null, which must not reach the query as a zero.
         groupExists();
-        whenReadReturns(List.of());
+        whenFeedHolds(List.of());
 
-        auditLogService.getGroupLogs(GROUP_UID, caller(), new AuditLogQueryRequest(null, null));
+        auditLogService.getGroupLogs(GROUP_UID, caller(), new AuditLogQueryRequest(null, null, null, null));
 
-        verify(auditLogVisibility).inGroup(eq(10L), any(), any(), eq(AuditLogQueryRequest.DEFAULT_LIMIT + 1));
+        assertThat(appliedFluentQuery().limit).isEqualTo(AuditLogQueryRequest.DEFAULT_LIMIT + 1);
     }
 
     @Test
     void getGroupLogs_always_reportsTheTotalBesideThePage() {
         groupExists();
-        whenReadReturns(List.of(entryWithKey(1L)));
-        when(auditLogVisibility.countInGroup(eq(10L), any())).thenReturn(57L);
+        whenFeedHolds(List.of(entryWithKey(1L)));
+        when(auditLogRepository.count(any(Specification.class))).thenReturn(57L);
 
         assertThat(auditLogService.getGroupLogs(GROUP_UID, caller(), query(20)).getTotal()).isEqualTo(57L);
+    }
+
+    @Test
+    void getGroupLogs_cursorOnTheRequest_isNotCountedIntoTheTotal() {
+        // The total is the size of the feed, not of what is left after the cursor - a total that
+        // shrank as the reader paged would be worse than none at all.
+        groupExists();
+        Specification<AuditLog> feed = Specification.unrestricted();
+        when(auditLogFilter.narrow(any(), any())).thenReturn(feed);
+        when(auditLogCursor.decode("page-2")).thenReturn(new AuditLogCursor.Position(NOW, 9L));
+        whenFeedHolds(List.of());
+
+        AuditLogQueryRequest request = query(20);
+        request.setCursor("page-2");
+        auditLogService.getGroupLogs(GROUP_UID, caller(), request);
+
+        verify(auditLogRepository).count(feed);
     }
 
     @Test
@@ -307,21 +344,15 @@ class AuditLogServiceTest {
         // The trimmed row must not reach the ref lookup either - it is a probe, not a result.
         groupExists();
         List<AuditLog> read = List.of(entryWithKey(2L), entryWithKey(1L));
-        whenReadReturns(read);
+        whenFeedHolds(read);
 
         auditLogService.getGroupLogs(GROUP_UID, caller(), query(1));
 
         verify(auditEntityRefs).resolve(read.subList(0, 1));
     }
 
-    private AuthPrincipal caller() {
-        return new AuthPrincipal(1L, "usr-1", "user@example.com", UserRole.USER);
-    }
-
-    private static final LocalDateTime NOW = LocalDateTime.now(ZoneOffset.UTC);
-
     private AuditLogQueryRequest query(int limit) {
-        return new AuditLogQueryRequest(null, limit);
+        return new AuditLogQueryRequest(null, null, null, limit);
     }
 
     private AuditLog entryWithKey(Long id) {
@@ -329,8 +360,40 @@ class AuditLogServiceTest {
                 .entityType(AuditEntityType.TASK).entityId(id).build();
     }
 
-    private void whenReadReturns(List<AuditLog> entries) {
-        when(auditLogVisibility.inGroup(eq(10L), any(), any(), anyInt())).thenReturn(entries);
+    // The repository is a mock, so the function the service hands it never runs; returning the rows
+    // directly leaves the page assembly under test. appliedFluentQuery checks the function itself.
+    @SuppressWarnings("unchecked")
+    private void whenFeedHolds(List<AuditLog> entries) {
+        when(auditLogRepository.findBy(any(Specification.class), any(Function.class))).thenReturn(entries);
+    }
+
+    @SuppressWarnings("unchecked")
+    private RecordedQuery appliedFluentQuery() {
+        ArgumentCaptor<Function<Object, Object>> captor = ArgumentCaptor.forClass(Function.class);
+        verify(auditLogRepository).findBy(any(Specification.class), captor.capture());
+
+        RecordedQuery recorded = new RecordedQuery();
+        JpaSpecificationExecutor.SpecificationFluentQuery<AuditLog> fluent =
+                mock(JpaSpecificationExecutor.SpecificationFluentQuery.class);
+        when(fluent.sortBy(any())).thenAnswer(call -> {
+            recorded.sort = call.getArgument(0);
+            return fluent;
+        });
+        when(fluent.limit(anyInt())).thenAnswer(call -> {
+            recorded.limit = call.getArgument(0);
+            return fluent;
+        });
+        captor.getValue().apply(fluent);
+        return recorded;
+    }
+
+    private static final class RecordedQuery {
+        private Sort sort;
+        private int limit;
+    }
+
+    private AuthPrincipal caller() {
+        return new AuthPrincipal(1L, "usr-1", "user@example.com", UserRole.USER);
     }
 
     private void groupExists() {

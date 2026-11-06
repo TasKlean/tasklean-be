@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -111,6 +112,36 @@ class AuditEntityRefsTest {
         Map<AuditEntityRefs.EntityKey, String> refs = auditEntityRefs.resolve(List.of(entry(AuditEntityType.TASK, 99L)));
 
         assertThat(refs).isEmpty();
+    }
+
+    // --- the inbound direction: a caller's filter names an entity the way the API addresses it ---
+
+    @Test
+    void resolveId_uidAddressedType_findsTheStoredId() {
+        when(taskRepository.findByUid("tsk-9")).thenReturn(Optional.of(Task.builder().idTask(42L).build()));
+
+        assertThat(auditEntityRefs.resolveId(AuditEntityType.TASK, "tsk-9")).contains(42L);
+    }
+
+    @Test
+    void resolveId_idAddressedType_parsesTheReferenceItself() {
+        // Category, Tag and TaskCompletion have no uid, so their id is already the reference.
+        assertThat(auditEntityRefs.resolveId(AuditEntityType.CATEGORY, "4")).contains(4L);
+
+        verify(taskRepository, never()).findByUid(any());
+    }
+
+    @Test
+    void resolveId_idAddressedTypeGivenAUid_isEmptyRatherThanThrowing() {
+        // A caller can send anything; an unparseable reference is a feed with nothing in it.
+        assertThat(auditEntityRefs.resolveId(AuditEntityType.TAG, "not-a-number")).isEmpty();
+    }
+
+    @Test
+    void resolveId_referenceNamingNothing_isEmpty() {
+        when(groupRepository.findByUid("grp-gone")).thenReturn(Optional.empty());
+
+        assertThat(auditEntityRefs.resolveId(AuditEntityType.GROUP, "grp-gone")).isEmpty();
     }
 
     @Test

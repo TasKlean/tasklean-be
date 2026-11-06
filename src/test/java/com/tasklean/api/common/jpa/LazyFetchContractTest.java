@@ -1,14 +1,10 @@
 package com.tasklean.api.common.jpa;
 
-import com.tasklean.api.domain.auditlog.AuditLogRepository;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.EntityGraph;
 
 import java.lang.reflect.Method;
-
-import java.time.LocalDateTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -37,17 +33,6 @@ class LazyFetchContractTest {
     void singleMemberFinder_fetchesTheUserBehindEveryAttribution() throws Exception {
         assertThat(pathsOf(GroupMemberRepository.class, "findDetailedByUid", String.class))
                 .contains("user", "addedBy.user", "removedBy.user");
-    }
-
-    @Test
-    void auditFinders_fetchTheActor() throws Exception {
-        // AuditLogResponse renders the actor's name, so every audit read needs them loaded.
-        assertThat(pathsOf(AuditLogRepository.class, "findInGroup",
-                Long.class, LocalDateTime.class, Long.class, Limit.class)).contains("actorUser");
-        assertThat(pathsOf(AuditLogRepository.class, "findForEntity",
-                String.class, Long.class, LocalDateTime.class, Long.class, Limit.class)).contains("actorUser");
-        assertThat(pathsOf(AuditLogRepository.class, "findInGroupVisibleToMember", Long.class, Long.class,
-                String.class, LocalDateTime.class, Long.class, Limit.class)).contains("actorUser");
     }
 
     @Test

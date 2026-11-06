@@ -529,6 +529,26 @@
         "description" : "Lists the caller's own account history, newest first - sign-ins, credential changes,\n two-factor and device events.",
         "operationId" : "getAccountLogs",
         "parameters" : [ {
+          "description" : "Keeps only entries about this kind of entity, e.g. <code>TASK</code>.",
+          "in" : "query",
+          "name" : "entityType",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "Keeps only entries about this one entity, identified the way the API addresses it. Needs\n <code>entityType</code> alongside it: the same identifier means different rows per type.",
+          "in" : "query",
+          "name" : "entityRef",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
           "description" : "The previous page's <code>nextCursor</code>. Omitted, the feed starts at the newest entry.",
           "in" : "query",
           "name" : "cursor",
@@ -592,6 +612,26 @@
           "required" : true,
           "schema" : {
             "type" : "string"
+          }
+        }, {
+          "description" : "Keeps only entries about this kind of entity, e.g. <code>TASK</code>.",
+          "in" : "query",
+          "name" : "entityType",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "Keeps only entries about this one entity, identified the way the API addresses it. Needs\n <code>entityType</code> alongside it: the same identifier means different rows per type.",
+          "in" : "query",
+          "name" : "entityRef",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
           }
         }, {
           "description" : "The previous page's <code>nextCursor</code>. Omitted, the feed starts at the newest entry.",
