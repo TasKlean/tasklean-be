@@ -1,7 +1,11 @@
 package com.tasklean.api.domain.auditlog;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
+import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.dto.AuditLogResponse;
 import com.tasklean.api.domain.group.Group;
+import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -12,8 +16,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The audit trail. Records domain-mutation events and exposes group-, entity-, and
- * member-scoped queries over the persisted records (newest first).
+ * The audit trail. Records domain-mutation events and exposes the two read scopes over them
+ * (newest first): one group's trail, and the caller's own account history.
  */
 @Service
 @RequiredArgsConstructor
@@ -22,6 +26,8 @@ public class AuditLogService {
     private final AuditLogRepository auditLogRepository;
     private final AuditContext auditContext;
     private final AuditEntityRefs auditEntityRefs;
+    private final AuditLogVisibility auditLogVisibility;
+    private final GroupRepository groupRepository;
 
     /**
      * Records an audit entry for a domain or account event. Runs in the caller's transaction,
@@ -81,34 +87,32 @@ public class AuditLogService {
     }
 
     /**
-     * Returns all audit-log entries for a group, newest first.
+     * Returns one group's trail, newest first, narrowed to what the caller may see.
      *
-     * @param groupId the group id
-     * @return the group's audit-log entries
+     * @param groupUid the group's public UID
+     * @param caller   the authenticated caller
+     * @return the visible audit-log entries
+     * @throws ResourceNotFoundException if no active group has that UID
      */
-    public List<AuditLogResponse> getLogsByGroup(Long groupId) {
-        return toResponses(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(groupId));
+    public List<AuditLogResponse> getGroupLogs(String groupUid, AuthPrincipal caller) {
+        Group group = groupRepository.findByUidAndIsActiveTrue(groupUid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+
+        return toResponses(auditLogVisibility.inGroup(group.getIdGroup(), caller));
     }
 
     /**
-     * Returns audit-log entries for a specific entity, newest first.
+     * Returns the caller's own account history, newest first - the group-less events recorded
+     * about their account: sign-ins, credential changes, two-factor and device events.
      *
-     * @param entityType the entity type (e.g. "task", "group")
-     * @param entityId   the entity id
-     * @return the matching audit-log entries
+     * @param userId the caller's user id
+     * @return the account-scoped audit-log entries
      */
-    public List<AuditLogResponse> getLogsByEntity(String entityType, Long entityId) {
-        return toResponses(auditLogRepository.findByEntityTypeAndEntityIdOrderByDateCreatedDesc(entityType, entityId));
-    }
-
-    /**
-     * Returns audit-log entries recorded for a specific group member, newest first.
-     *
-     * @param groupMemberId the group member id
-     * @return the member's audit-log entries
-     */
-    public List<AuditLogResponse> getLogsByMember(Long groupMemberId) {
-        return toResponses(auditLogRepository.findByGroupMemberIdGroupMemberOrderByDateCreatedDesc(groupMemberId));
+    public List<AuditLogResponse> getAccountLogs(Long userId) {
+        // Keyed on the entity, not the actor: an event another person caused on this account
+        // (a role grant, say) is still this account's history.
+        return toResponses(auditLogRepository
+                .findByEntityTypeAndEntityIdOrderByDateCreatedDesc(AuditEntityType.USER, userId));
     }
 
     // One ref lookup for the whole page, then a plain mapping - a per-row resolve would be a query

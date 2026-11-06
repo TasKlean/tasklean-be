@@ -524,20 +524,10 @@
         "tags" : [ "Account" ]
       }
     },
-    "/api/audit-logs" : {
+    "/api/audit-logs/account" : {
       "get" : {
-        "description" : "Lists a group's audit-log entries, newest first.",
-        "operationId" : "getLogsByGroup",
-        "parameters" : [ {
-          "description" : "the group id",
-          "in" : "query",
-          "name" : "groupId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
+        "description" : "Lists the caller's own account history, newest first - sign-ins, credential changes,\n two-factor and device events.",
+        "operationId" : "getAccountLogs",
         "responses" : {
           "200" : {
             "content" : {
@@ -547,10 +537,7 @@
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the entries"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
+            "description" : "<code>200 OK</code> with the caller's account entries"
           },
           "401" : {
             "$ref" : "#/components/responses/Unauthorized"
@@ -565,31 +552,22 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists a group's audit-log entries, newest first.",
+        "summary" : "Lists the caller's own account history, newest first - sign-ins, credential changes,\n two-factor and device events.",
         "tags" : [ "Audit logs" ]
       }
     },
-    "/api/audit-logs/entity" : {
+    "/api/audit-logs/groups/{groupUid}" : {
       "get" : {
-        "description" : "Lists audit-log entries for a specific entity, newest first.",
-        "operationId" : "getLogsByEntity",
+        "description" : "Lists what the caller may see of a group's audit trail, newest first. Any member of the\n group may read it; an admin sees all of it, a plain member their own actions plus the\n history of what they created.",
+        "operationId" : "getGroupLogs",
         "parameters" : [ {
-          "description" : "the entity type (e.g. \"task\", \"group\")",
-          "in" : "query",
-          "name" : "entityType",
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "groupUid",
           "required" : true,
           "schema" : {
             "type" : "string"
           }
-        }, {
-          "description" : "the entity id",
-          "in" : "query",
-          "name" : "entityId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
         } ],
         "responses" : {
           "200" : {
@@ -600,7 +578,7 @@
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the entries"
+            "description" : "<code>200 OK</code> with the visible entries"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -618,52 +596,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists audit-log entries for a specific entity, newest first.",
-        "tags" : [ "Audit logs" ]
-      }
-    },
-    "/api/audit-logs/member/{groupMemberId}" : {
-      "get" : {
-        "description" : "Lists audit-log entries recorded for a specific group member, newest first.",
-        "operationId" : "getLogsByMember",
-        "parameters" : [ {
-          "description" : "the group member id",
-          "in" : "path",
-          "name" : "groupMemberId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListAuditLogResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the entries"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Lists audit-log entries recorded for a specific group member, newest first.",
+        "summary" : "Lists what the caller may see of a group's audit trail, newest first.",
         "tags" : [ "Audit logs" ]
       }
     },

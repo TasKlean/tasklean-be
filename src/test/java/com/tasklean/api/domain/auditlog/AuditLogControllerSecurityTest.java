@@ -24,16 +24,18 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import java.util.List;
 import java.util.Optional;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Verifies the @PreAuthorize wiring on {@link AuditLogController}. The trail is other people's
- * history, so every endpoint had to stop answering an arbitrary signed-in caller: the group feed
- * is for that group's admins, and the two id-addressed reads for platform ADMIN only.
- * GroupSecurity is real; its repositories are mocked to place the caller inside the target group.
+ * Verifies the @PreAuthorize wiring on {@link AuditLogController}. Membership of the group is the
+ * gate on the group scope - a plain member is let in and narrowed per row rather than refused -
+ * while the account scope is self-scoped and names nobody. GroupSecurity is real; its repositories
+ * are mocked to place the caller inside the target group.
  */
 @WebMvcTest(AuditLogController.class)
 @Import({MethodSecuritySliceConfig.class, GroupSecurity.class})
@@ -74,83 +76,85 @@ class AuditLogControllerSecurityTest {
                         .build()));
     }
 
-    // --- group feed: that group's admins, or a platform ADMIN reading across households ---
+    // --- group scope: any member of that group, or a platform ADMIN reading across households ---
 
     @Test
-    void getLogsByGroup_unauthenticated_denied() throws Exception {
-        mockMvc.perform(get("/api/audit-logs?groupId=" + GROUP_ID))
+    void getGroupLogs_unauthenticated_denied() throws Exception {
+        mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID))
                 .andExpect(status().is4xxClientError());
     }
 
     @Test
-    void getLogsByGroup_callerNotInTheGroup_denied() throws Exception {
-        // The bug this closes: any signed-in user could read any household's trail.
+    void getGroupLogs_callerNotInTheGroup_denied() throws Exception {
+        // The bug this closed: any signed-in user could read any household's trail.
+        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.of(Group.builder().idGroup(GROUP_ID).build()));
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID)).thenReturn(Optional.empty());
 
-        mockMvc.perform(get("/api/audit-logs?groupId=" + GROUP_ID).with(as(UserRole.USER)))
+        mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void getLogsByGroup_plainMemberOfTheGroup_denied() throws Exception {
-        // Strict for now on purpose: a member's own slice needs row-level narrowing, which the
-        // scoped endpoints bring. Until then the whole feed is admin-only rather than over-shared.
+    void getGroupLogs_unknownGroupUid_denied() throws Exception {
+        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.empty());
+
+        mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getGroupLogs_plainMemberOfTheGroup_ok() throws Exception {
+        // Let in and narrowed inside the query, which is the point of this scope.
         callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        when(auditLogService.getGroupLogs(eq(GROUP_UID), any())).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/audit-logs?groupId=" + GROUP_ID).with(as(UserRole.USER)))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void getLogsByGroup_groupAdmin_ok() throws Exception {
-        callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
-        when(auditLogService.getLogsByGroup(GROUP_ID)).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/audit-logs?groupId=" + GROUP_ID).with(as(UserRole.USER)))
+        mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isOk());
     }
 
     @Test
-    void getLogsByGroup_platformAdminNotInTheGroup_ok() throws Exception {
+    void getGroupLogs_groupAdmin_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
+        when(auditLogService.getGroupLogs(eq(GROUP_UID), any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getGroupLogs_memberWhoLeftTheGroup_denied() throws Exception {
+        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.of(Group.builder().idGroup(GROUP_ID).build()));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID))
+                .thenReturn(Optional.of(GroupMember.builder().role(GroupRole.GROUP_ADMIN).isActive(false).build()));
+
+        mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getGroupLogs_platformAdminNotInTheGroup_ok() throws Exception {
+        when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.of(Group.builder().idGroup(GROUP_ID).build()));
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID)).thenReturn(Optional.empty());
-        when(auditLogService.getLogsByGroup(GROUP_ID)).thenReturn(List.of());
+        when(auditLogService.getGroupLogs(eq(GROUP_UID), any())).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/audit-logs?groupId=" + GROUP_ID).with(as(UserRole.ADMIN)))
+        mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());
     }
 
-    // --- entity and member reads: platform ADMIN only ---
+    // --- account scope: self, so being signed in is the whole check ---
 
     @Test
-    void getLogsByEntity_plainUser_denied() throws Exception {
-        // This one answered entityType=USER for anybody, i.e. another person's sign-in history.
-        mockMvc.perform(get("/api/audit-logs/entity?entityType=USER&entityId=5").with(as(UserRole.USER)))
-                .andExpect(status().isForbidden());
+    void getAccountLogs_unauthenticated_denied() throws Exception {
+        mockMvc.perform(get("/api/audit-logs/account"))
+                .andExpect(status().is4xxClientError());
     }
 
     @Test
-    void getLogsByEntity_platformAdmin_ok() throws Exception {
-        when(auditLogService.getLogsByEntity("USER", 5L)).thenReturn(List.of());
+    void getAccountLogs_anySignedInUser_ok() throws Exception {
+        // Nothing to authorize: the subject is read off the token, not out of the request.
+        when(auditLogService.getAccountLogs(USER_ID)).thenReturn(List.of());
 
-        mockMvc.perform(get("/api/audit-logs/entity?entityType=USER&entityId=5").with(as(UserRole.ADMIN)))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void getLogsByMember_groupAdminOfThatMembersGroup_denied() throws Exception {
-        // Even a household admin: the path carries an internal membership id, so there is no uid
-        // for @groupSecurity to resolve the owning group from.
-        callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
-
-        mockMvc.perform(get("/api/audit-logs/member/7").with(as(UserRole.USER)))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void getLogsByMember_platformAdmin_ok() throws Exception {
-        when(auditLogService.getLogsByMember(7L)).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/audit-logs/member/7").with(as(UserRole.ADMIN)))
+        mockMvc.perform(get("/api/audit-logs/account").with(as(UserRole.USER)))
                 .andExpect(status().isOk());
     }
 }

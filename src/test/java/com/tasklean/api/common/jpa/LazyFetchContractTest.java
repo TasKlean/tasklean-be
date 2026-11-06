@@ -43,8 +43,8 @@ class LazyFetchContractTest {
                 .contains("actorUser");
         assertThat(pathsOf(AuditLogRepository.class, "findByEntityTypeAndEntityIdOrderByDateCreatedDesc",
                 String.class, Long.class)).contains("actorUser");
-        assertThat(pathsOf(AuditLogRepository.class, "findByGroupMemberIdGroupMemberOrderByDateCreatedDesc",
-                Long.class)).contains("actorUser");
+        assertThat(pathsOf(AuditLogRepository.class, "findInGroupVisibleToMember",
+                Long.class, Long.class, String.class)).contains("actorUser");
     }
 
     @Test

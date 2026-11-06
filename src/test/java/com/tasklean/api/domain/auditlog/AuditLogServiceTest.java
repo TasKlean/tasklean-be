@@ -1,9 +1,13 @@
 package com.tasklean.api.domain.auditlog;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
+import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.dto.AuditLogResponse;
 import com.tasklean.api.domain.group.Group;
+import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.user.UserRole;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -13,15 +17,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AuditLogServiceTest {
+
+    private static final String GROUP_UID = "grp-1";
 
     @Mock
     private AuditLogRepository auditLogRepository;
@@ -31,6 +40,12 @@ class AuditLogServiceTest {
 
     @Mock
     private AuditEntityRefs auditEntityRefs;
+
+    @Mock
+    private AuditLogVisibility auditLogVisibility;
+
+    @Mock
+    private GroupRepository groupRepository;
 
     @InjectMocks
     private AuditLogService auditLogService;
@@ -120,7 +135,7 @@ class AuditLogServiceTest {
     // --- reads ---
 
     @Test
-    void getLogsByGroup_entry_carriesTheEntityRefAndActorSummary() {
+    void getGroupLogs_entry_carriesTheEntityRefAndActorSummary() {
         AuditLog entry = AuditLog.builder()
                 .uid("aud-1")
                 .entityType(AuditEntityType.TASK)
@@ -129,11 +144,12 @@ class AuditLogServiceTest {
                 .actionMessage("Task \"Dishes\" updated")
                 .actorUser(User.builder().idUser(1L).uid("usr-1").name("Alice").lastName("Smith").build())
                 .build();
-        when(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(10L)).thenReturn(List.of(entry));
+        groupExists();
+        when(auditLogVisibility.inGroup(eq(10L), any())).thenReturn(List.of(entry));
         when(auditEntityRefs.resolve(List.of(entry)))
                 .thenReturn(Map.of(new AuditEntityRefs.EntityKey(AuditEntityType.TASK, 42L), "tsk-9"));
 
-        AuditLogResponse response = auditLogService.getLogsByGroup(10L).getFirst();
+        AuditLogResponse response = auditLogService.getGroupLogs(GROUP_UID, caller()).getFirst();
 
         // The response names the entity and the person; neither is an internal id any more.
         assertThat(response.getUid()).isEqualTo("aud-1");
@@ -144,15 +160,16 @@ class AuditLogServiceTest {
     }
 
     @Test
-    void getLogsByGroup_entryWithoutAnActor_mapsActorAsNull() {
+    void getGroupLogs_entryWithoutAnActor_mapsActorAsNull() {
         // Written by a public auth endpoint, where the security context has no caller.
         AuditLog entry = AuditLog.builder()
                 .uid("aud-2").entityType(AuditEntityType.USER).entityId(1L)
                 .action(AuditAction.LOGIN.name()).actionMessage("User logged in").build();
-        when(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(10L)).thenReturn(List.of(entry));
+        groupExists();
+        when(auditLogVisibility.inGroup(eq(10L), any())).thenReturn(List.of(entry));
         when(auditEntityRefs.resolve(List.of(entry))).thenReturn(Map.of());
 
-        AuditLogResponse response = auditLogService.getLogsByGroup(10L).getFirst();
+        AuditLogResponse response = auditLogService.getGroupLogs(GROUP_UID, caller()).getFirst();
 
         assertThat(response.getActor()).isNull();
         // Its target resolved to nothing, which must render as no reference rather than fail.
@@ -160,18 +177,61 @@ class AuditLogServiceTest {
     }
 
     @Test
-    void getLogsByGroup_wholePage_resolvesRefsOnce() {
+    void getGroupLogs_wholePage_resolvesRefsOnce() {
         List<AuditLog> entries = List.of(
                 AuditLog.builder().uid("a").entityType(AuditEntityType.TASK).entityId(1L).build(),
                 AuditLog.builder().uid("b").entityType(AuditEntityType.TASK).entityId(2L).build(),
                 AuditLog.builder().uid("c").entityType(AuditEntityType.GROUP).entityId(3L).build());
-        when(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(10L)).thenReturn(entries);
+        groupExists();
+        when(auditLogVisibility.inGroup(eq(10L), any())).thenReturn(entries);
         when(auditEntityRefs.resolve(entries)).thenReturn(Map.of());
 
-        auditLogService.getLogsByGroup(10L);
+        auditLogService.getGroupLogs(GROUP_UID, caller());
 
         // A resolve per row would be a query per entry; the feed is read far more than written.
         verify(auditEntityRefs).resolve(entries);
+    }
+
+    @Test
+    void getGroupLogs_narrowing_isLeftToTheVisibilityComponent() {
+        // The service must not reach past it to the unnarrowed finder - that is the whole trail.
+        groupExists();
+        when(auditLogVisibility.inGroup(eq(10L), any())).thenReturn(List.of());
+
+        auditLogService.getGroupLogs(GROUP_UID, caller());
+
+        verify(auditLogRepository, never()).findByGroupIdGroupOrderByDateCreatedDesc(any());
+    }
+
+    @Test
+    void getGroupLogs_unknownOrDeletedGroup_throwsNotFound() {
+        // The filtered finder, so a soft-deleted group is gone here as it is everywhere else.
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> auditLogService.getGroupLogs(GROUP_UID, caller()))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getAccountLogs_always_readsTheEntriesAboutThatAccount() {
+        // Keyed on the entity, not the actor: an event somebody else caused on this account is
+        // still this account's history.
+        when(auditLogRepository.findByEntityTypeAndEntityIdOrderByDateCreatedDesc(AuditEntityType.USER, 7L))
+                .thenReturn(List.of());
+        when(auditEntityRefs.resolve(List.of())).thenReturn(Map.of());
+
+        assertThat(auditLogService.getAccountLogs(7L)).isEmpty();
+
+        verify(auditLogRepository).findByEntityTypeAndEntityIdOrderByDateCreatedDesc(AuditEntityType.USER, 7L);
+    }
+
+    private AuthPrincipal caller() {
+        return new AuthPrincipal(1L, "usr-1", "user@example.com", UserRole.USER);
+    }
+
+    private void groupExists() {
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID))
+                .thenReturn(Optional.of(Group.builder().idGroup(10L).uid(GROUP_UID).build()));
     }
 
     private AuditLog captureSaved() {
