@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-public class AuditLogVisibility {
+class AuditLogVisibility {
 
     private final GroupSecurity groupSecurity;
 

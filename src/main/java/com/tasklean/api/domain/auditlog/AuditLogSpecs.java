@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
  * predicate at all, where a query string would have to carry a typed {@code is null} test for every
  * parameter nobody sent.
  */
-public final class AuditLogSpecs {
+final class AuditLogSpecs {
 
     private AuditLogSpecs() {
     }

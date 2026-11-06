@@ -14,7 +14,7 @@ import java.util.Base64;
  * instead of counting rows, which is what keeps paging stable while the trail grows at the top.
  */
 @Component
-public class AuditLogCursor {
+class AuditLogCursor {
 
     private static final String SEPARATOR = "|";
 

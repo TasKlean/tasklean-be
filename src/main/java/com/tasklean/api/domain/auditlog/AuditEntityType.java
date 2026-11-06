@@ -24,6 +24,6 @@ public final class AuditEntityType {
      * Every type the trail can carry. The column is a free-form string, but a caller filtering by
      * one is checked against this set, so a typo is a 400 rather than a feed that is quietly empty.
      */
-    public static final Set<String> ALL =
+    static final Set<String> ALL =
             Set.of(USER, TASK, GROUP, GROUP_MEMBER, CATEGORY, TAG, TASK_COMPLETION);
 }

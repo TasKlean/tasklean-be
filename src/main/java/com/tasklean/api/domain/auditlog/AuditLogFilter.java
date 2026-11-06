@@ -15,7 +15,7 @@ import java.util.Optional;
  */
 @Component
 @RequiredArgsConstructor
-public class AuditLogFilter {
+class AuditLogFilter {
 
     private final AuditEntityRefs auditEntityRefs;
 

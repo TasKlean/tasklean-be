@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
  */
 @Component
 @RequiredArgsConstructor
-public class AuditEntityRefs {
+class AuditEntityRefs {
 
     private final TaskRepository taskRepository;
     private final GroupRepository groupRepository;
