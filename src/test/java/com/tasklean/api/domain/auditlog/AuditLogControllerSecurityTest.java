@@ -7,6 +7,7 @@ import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
+import com.tasklean.api.domain.auditlog.dto.AuditLogPage;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
 import com.tasklean.api.security.GroupSecurity;
@@ -60,6 +61,10 @@ class AuditLogControllerSecurityTest {
     @MockitoBean
     private GroupMemberRepository groupMemberRepository;
 
+    private AuditLogPage emptyPage() {
+        return AuditLogPage.builder().items(List.of()).total(0).build();
+    }
+
     private RequestPostProcessor as(UserRole platformRole) {
         AuthPrincipal principal = new AuthPrincipal(USER_ID, "usr-1", "user@example.com", platformRole);
         return authentication(new UsernamePasswordAuthenticationToken(
@@ -106,7 +111,7 @@ class AuditLogControllerSecurityTest {
     void getGroupLogs_plainMemberOfTheGroup_ok() throws Exception {
         // Let in and narrowed inside the query, which is the point of this scope.
         callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
-        when(auditLogService.getGroupLogs(eq(GROUP_UID), any())).thenReturn(List.of());
+        when(auditLogService.getGroupLogs(eq(GROUP_UID), any(), any())).thenReturn(emptyPage());
 
         mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isOk());
@@ -115,7 +120,7 @@ class AuditLogControllerSecurityTest {
     @Test
     void getGroupLogs_groupAdmin_ok() throws Exception {
         callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
-        when(auditLogService.getGroupLogs(eq(GROUP_UID), any())).thenReturn(List.of());
+        when(auditLogService.getGroupLogs(eq(GROUP_UID), any(), any())).thenReturn(emptyPage());
 
         mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isOk());
@@ -135,7 +140,7 @@ class AuditLogControllerSecurityTest {
     void getGroupLogs_platformAdminNotInTheGroup_ok() throws Exception {
         when(groupRepository.findByUid(GROUP_UID)).thenReturn(Optional.of(Group.builder().idGroup(GROUP_ID).build()));
         when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(USER_ID, GROUP_ID)).thenReturn(Optional.empty());
-        when(auditLogService.getGroupLogs(eq(GROUP_UID), any())).thenReturn(List.of());
+        when(auditLogService.getGroupLogs(eq(GROUP_UID), any(), any())).thenReturn(emptyPage());
 
         mockMvc.perform(get("/api/audit-logs/groups/" + GROUP_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());
@@ -152,7 +157,7 @@ class AuditLogControllerSecurityTest {
     @Test
     void getAccountLogs_anySignedInUser_ok() throws Exception {
         // Nothing to authorize: the subject is read off the token, not out of the request.
-        when(auditLogService.getAccountLogs(USER_ID)).thenReturn(List.of());
+        when(auditLogService.getAccountLogs(eq(USER_ID), any())).thenReturn(emptyPage());
 
         mockMvc.perform(get("/api/audit-logs/account").with(as(UserRole.USER)))
                 .andExpect(status().isOk());

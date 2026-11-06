@@ -2,15 +2,16 @@ package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
-import com.tasklean.api.domain.auditlog.dto.AuditLogResponse;
+import com.tasklean.api.domain.auditlog.dto.AuditLogPage;
+import com.tasklean.api.domain.auditlog.dto.AuditLogQueryRequest;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 /**
  * Read-only REST endpoints for the audit trail, in its two scopes: one group's history, and the
@@ -30,31 +31,36 @@ public class AuditLogController {
      * history of what they created.
      *
      * @param groupUid  the group's public UID
+     * @param query     the page asked for
      * @param principal the authenticated caller
-     * @return {@code 200 OK} with the visible entries
+     * @return {@code 200 OK} with the page of visible entries
      */
     // Membership is the gate; which rows come back is decided per row in the query, since a
     // member and an admin of the same group are both allowed here but see different trails.
     @PreAuthorize("hasRole('ADMIN') or @groupSecurity.isMember(#groupUid)")
     @GetMapping("/groups/{groupUid}")
-    public ResponseEntity<ApiResponse<List<AuditLogResponse>>> getGroupLogs(
-            @PathVariable String groupUid, @AuthenticationPrincipal AuthPrincipal principal) {
-        return ResponseEntity.ok(ApiResponse.success(auditLogService.getGroupLogs(groupUid, principal)));
+    public ResponseEntity<ApiResponse<AuditLogPage>> getGroupLogs(
+            @PathVariable String groupUid,
+            @Valid @ParameterObject AuditLogQueryRequest query,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(auditLogService.getGroupLogs(groupUid, principal, query)));
     }
 
     /**
      * Lists the caller's own account history, newest first - sign-ins, credential changes,
      * two-factor and device events.
      *
+     * @param query     the page asked for
      * @param principal the authenticated caller
-     * @return {@code 200 OK} with the caller's account entries
+     * @return {@code 200 OK} with the page of the caller's account entries
      */
     // Self-scoped, so there is no identifier in the path and nothing to authorize beyond being
     // signed in - the caller cannot name anybody else's account here.
     @PreAuthorize("isAuthenticated()")
     @GetMapping("/account")
-    public ResponseEntity<ApiResponse<List<AuditLogResponse>>> getAccountLogs(
+    public ResponseEntity<ApiResponse<AuditLogPage>> getAccountLogs(
+            @Valid @ParameterObject AuditLogQueryRequest query,
             @AuthenticationPrincipal AuthPrincipal principal) {
-        return ResponseEntity.ok(ApiResponse.success(auditLogService.getAccountLogs(principal.userId())));
+        return ResponseEntity.ok(ApiResponse.success(auditLogService.getAccountLogs(principal.userId(), query)));
     }
 }

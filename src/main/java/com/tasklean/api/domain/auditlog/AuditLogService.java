@@ -2,15 +2,20 @@ package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.dto.AuditLogPage;
+import com.tasklean.api.domain.auditlog.dto.AuditLogQueryRequest;
 import com.tasklean.api.domain.auditlog.dto.AuditLogResponse;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,6 +32,7 @@ public class AuditLogService {
     private final AuditContext auditContext;
     private final AuditEntityRefs auditEntityRefs;
     private final AuditLogVisibility auditLogVisibility;
+    private final AuditLogCursor auditLogCursor;
     private final GroupRepository groupRepository;
 
     /**
@@ -87,32 +93,64 @@ public class AuditLogService {
     }
 
     /**
-     * Returns one group's trail, newest first, narrowed to what the caller may see.
+     * Returns one page of a group's trail, newest first, narrowed to what the caller may see.
      *
      * @param groupUid the group's public UID
      * @param caller   the authenticated caller
-     * @return the visible audit-log entries
+     * @param query    the page asked for
+     * @return the page of visible audit-log entries
      * @throws ResourceNotFoundException if no active group has that UID
+     * @throws InvalidRequestException   if the cursor is not one we handed out
      */
-    public List<AuditLogResponse> getGroupLogs(String groupUid, AuthPrincipal caller) {
+    public AuditLogPage getGroupLogs(String groupUid, AuthPrincipal caller, AuditLogQueryRequest query) {
         Group group = groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
-        return toResponses(auditLogVisibility.inGroup(group.getIdGroup(), caller));
+        int limit = pageSize(query);
+        List<AuditLog> read = auditLogVisibility.inGroup(
+                group.getIdGroup(), caller, auditLogCursor.decode(query.getCursor()), limit + 1);
+
+        return page(read, limit, auditLogVisibility.countInGroup(group.getIdGroup(), caller));
     }
 
     /**
-     * Returns the caller's own account history, newest first - the group-less events recorded
-     * about their account: sign-ins, credential changes, two-factor and device events.
+     * Returns one page of the caller's own account history, newest first - the group-less events
+     * recorded about their account: sign-ins, credential changes, two-factor and device events.
      *
      * @param userId the caller's user id
-     * @return the account-scoped audit-log entries
+     * @param query  the page asked for
+     * @return the page of account-scoped audit-log entries
+     * @throws InvalidRequestException if the cursor is not one we handed out
      */
-    public List<AuditLogResponse> getAccountLogs(Long userId) {
+    public AuditLogPage getAccountLogs(Long userId, AuditLogQueryRequest query) {
+        int limit = pageSize(query);
+        AuditLogCursor.Position after = auditLogCursor.decode(query.getCursor());
+
         // Keyed on the entity, not the actor: an event another person caused on this account
         // (a role grant, say) is still this account's history.
-        return toResponses(auditLogRepository
-                .findByEntityTypeAndEntityIdOrderByDateCreatedDesc(AuditEntityType.USER, userId));
+        List<AuditLog> read = auditLogRepository.findForEntity(
+                AuditEntityType.USER, userId, timestamp(after), id(after), Limit.of(limit + 1));
+
+        return page(read, limit, auditLogRepository.countForEntity(AuditEntityType.USER, userId));
+    }
+
+    // The query asks for one row more than the page holds, so a next cursor is handed out only
+    // when a further entry really exists rather than whenever the page came back full.
+    private AuditLogPage page(List<AuditLog> read, int limit, long total) {
+        List<AuditLog> entries = read.size() > limit ? read.subList(0, limit) : read;
+        boolean more = read.size() > limit;
+
+        return AuditLogPage.builder()
+                .items(toResponses(entries))
+                .nextCursor(more ? auditLogCursor.encode(entries.getLast()) : null)
+                .total(total)
+                .build();
+    }
+
+    // "limit=" with nothing after it binds to null, so the default lives here as well as on the
+    // request - the field's initializer only covers the parameter being absent altogether.
+    private int pageSize(AuditLogQueryRequest query) {
+        return query.getLimit() == null ? AuditLogQueryRequest.DEFAULT_LIMIT : query.getLimit();
     }
 
     // One ref lookup for the whole page, then a plain mapping - a per-row resolve would be a query
@@ -123,5 +161,13 @@ public class AuditLogService {
                 .map(entry -> AuditLogResponse.from(entry,
                         refs.get(new AuditEntityRefs.EntityKey(entry.getEntityType(), entry.getEntityId()))))
                 .toList();
+    }
+
+    private LocalDateTime timestamp(AuditLogCursor.Position after) {
+        return after == null ? null : after.dateCreated();
+    }
+
+    private Long id(AuditLogCursor.Position after) {
+        return after == null ? null : after.id();
     }
 }
