@@ -22,14 +22,32 @@ public class AuditLogResponse {
     private LocalDateTime dateCreated;
 
     /**
-     * Maps one entry, naming the entity and the actor rather than their internal ids.
+     * Maps one entry, naming the entity and the actor rather than their internal ids, and leaving
+     * the IP address out. This is the safe default: an IP belongs to the person who acted, so a
+     * reader who is not that person must not be handed it.
      *
      * @param auditLog  the entry
      * @param entityRef the entity's external identifier, resolved for the whole page by
      *                  {@code AuditEntityRefs}; {@code null} if its target is gone
-     * @return the response for this entry
+     * @return the response for this entry, with no IP address
      */
     public static AuditLogResponse from(AuditLog auditLog, String entityRef) {
+        return base(auditLog, entityRef).build();
+    }
+
+    /**
+     * Maps one entry including its IP address. Only for an entry whose actor is the reader
+     * themselves - see {@code from} for why.
+     *
+     * @param auditLog  the entry
+     * @param entityRef the entity's external identifier; {@code null} if its target is gone
+     * @return the response for this entry, carrying the IP address it was recorded with
+     */
+    public static AuditLogResponse withIpAddress(AuditLog auditLog, String entityRef) {
+        return base(auditLog, entityRef).ipAddress(auditLog.getIpAddress()).build();
+    }
+
+    private static AuditLogResponseBuilder base(AuditLog auditLog, String entityRef) {
         return AuditLogResponse.builder()
                 .uid(auditLog.getUid())
                 .action(auditLog.getAction())
@@ -42,8 +60,6 @@ public class AuditLogResponse {
                 // the security context - there the subject is the entity, not the actor.
                 .actor(auditLog.getActorUser() != null
                         ? UserSummaryResponse.from(auditLog.getActorUser()) : null)
-                .ipAddress(auditLog.getIpAddress())
-                .dateCreated(auditLog.getDateCreated())
-                .build();
+                .dateCreated(auditLog.getDateCreated());
     }
 }
