@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * The audit trail. Records domain-mutation events and exposes group-, entity-, and
@@ -19,6 +21,7 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
     private final AuditContext auditContext;
+    private final AuditEntityRefs auditEntityRefs;
 
     /**
      * Records an audit entry for a domain or account event. Runs in the caller's transaction,
@@ -38,6 +41,7 @@ public class AuditLogService {
         GroupMember actor = group != null ? auditContext.currentActor(group.getIdGroup()) : null;
 
         AuditLog entry = AuditLog.builder()
+                .uid(UUID.randomUUID().toString())
                 .entityType(entityType)
                 .entityId(entityId)
                 .action(action.name())
@@ -64,6 +68,7 @@ public class AuditLogService {
     @Transactional
     public void recordAccountEvent(Long userId, AuditAction action, String message) {
         AuditLog entry = AuditLog.builder()
+                .uid(UUID.randomUUID().toString())
                 .entityType(AuditEntityType.USER)
                 .entityId(userId)
                 .action(action.name())
@@ -82,9 +87,7 @@ public class AuditLogService {
      * @return the group's audit-log entries
      */
     public List<AuditLogResponse> getLogsByGroup(Long groupId) {
-        return auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(groupId).stream()
-                .map(AuditLogResponse::from)
-                .toList();
+        return toResponses(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(groupId));
     }
 
     /**
@@ -95,9 +98,7 @@ public class AuditLogService {
      * @return the matching audit-log entries
      */
     public List<AuditLogResponse> getLogsByEntity(String entityType, Long entityId) {
-        return auditLogRepository.findByEntityTypeAndEntityIdOrderByDateCreatedDesc(entityType, entityId).stream()
-                .map(AuditLogResponse::from)
-                .toList();
+        return toResponses(auditLogRepository.findByEntityTypeAndEntityIdOrderByDateCreatedDesc(entityType, entityId));
     }
 
     /**
@@ -107,8 +108,16 @@ public class AuditLogService {
      * @return the member's audit-log entries
      */
     public List<AuditLogResponse> getLogsByMember(Long groupMemberId) {
-        return auditLogRepository.findByGroupMemberIdGroupMemberOrderByDateCreatedDesc(groupMemberId).stream()
-                .map(AuditLogResponse::from)
+        return toResponses(auditLogRepository.findByGroupMemberIdGroupMemberOrderByDateCreatedDesc(groupMemberId));
+    }
+
+    // One ref lookup for the whole page, then a plain mapping - a per-row resolve would be a query
+    // per entry, and an audit feed is read far more often than it is written.
+    private List<AuditLogResponse> toResponses(List<AuditLog> entries) {
+        Map<AuditEntityRefs.EntityKey, String> refs = auditEntityRefs.resolve(entries);
+        return entries.stream()
+                .map(entry -> AuditLogResponse.from(entry,
+                        refs.get(new AuditEntityRefs.EntityKey(entry.getEntityType(), entry.getEntityId()))))
                 .toList();
     }
 }

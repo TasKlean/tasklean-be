@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.auditlog;
 
+import com.tasklean.api.domain.auditlog.dto.AuditLogResponse;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.user.User;
@@ -9,6 +10,9 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,6 +28,9 @@ class AuditLogServiceTest {
 
     @Mock
     private AuditContext auditContext;
+
+    @Mock
+    private AuditEntityRefs auditEntityRefs;
 
     @InjectMocks
     private AuditLogService auditLogService;
@@ -92,6 +99,79 @@ class AuditLogServiceTest {
         assertThat(saved.getGroup()).isNull();
         assertThat(saved.getGroupMember()).isNull();
         verify(auditContext, never()).currentActor(any());
+    }
+
+    @Test
+    void recordEvent_always_generatesAUid() {
+        // The API addresses an entry by uid like every other row; an entry without one could not
+        // be returned at all, so it is generated on the write path rather than defaulted in SQL.
+        auditLogService.recordEvent(AuditEntityType.TASK, 42L, AuditAction.CREATE, "Task created", null);
+
+        assertThat(captureSaved().getUid()).isNotBlank();
+    }
+
+    @Test
+    void recordAccountEvent_always_generatesAUid() {
+        auditLogService.recordAccountEvent(1L, AuditAction.LOGIN, "User logged in");
+
+        assertThat(captureSaved().getUid()).isNotBlank();
+    }
+
+    // --- reads ---
+
+    @Test
+    void getLogsByGroup_entry_carriesTheEntityRefAndActorSummary() {
+        AuditLog entry = AuditLog.builder()
+                .uid("aud-1")
+                .entityType(AuditEntityType.TASK)
+                .entityId(42L)
+                .action(AuditAction.UPDATE.name())
+                .actionMessage("Task \"Dishes\" updated")
+                .actorUser(User.builder().idUser(1L).uid("usr-1").name("Alice").lastName("Smith").build())
+                .build();
+        when(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(10L)).thenReturn(List.of(entry));
+        when(auditEntityRefs.resolve(List.of(entry)))
+                .thenReturn(Map.of(new AuditEntityRefs.EntityKey(AuditEntityType.TASK, 42L), "tsk-9"));
+
+        AuditLogResponse response = auditLogService.getLogsByGroup(10L).getFirst();
+
+        // The response names the entity and the person; neither is an internal id any more.
+        assertThat(response.getUid()).isEqualTo("aud-1");
+        assertThat(response.getEntity().getType()).isEqualTo(AuditEntityType.TASK);
+        assertThat(response.getEntity().getRef()).isEqualTo("tsk-9");
+        assertThat(response.getActor().getUid()).isEqualTo("usr-1");
+        assertThat(response.getActor().getName()).isEqualTo("Alice");
+    }
+
+    @Test
+    void getLogsByGroup_entryWithoutAnActor_mapsActorAsNull() {
+        // Written by a public auth endpoint, where the security context has no caller.
+        AuditLog entry = AuditLog.builder()
+                .uid("aud-2").entityType(AuditEntityType.USER).entityId(1L)
+                .action(AuditAction.LOGIN.name()).actionMessage("User logged in").build();
+        when(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(10L)).thenReturn(List.of(entry));
+        when(auditEntityRefs.resolve(List.of(entry))).thenReturn(Map.of());
+
+        AuditLogResponse response = auditLogService.getLogsByGroup(10L).getFirst();
+
+        assertThat(response.getActor()).isNull();
+        // Its target resolved to nothing, which must render as no reference rather than fail.
+        assertThat(response.getEntity().getRef()).isNull();
+    }
+
+    @Test
+    void getLogsByGroup_wholePage_resolvesRefsOnce() {
+        List<AuditLog> entries = List.of(
+                AuditLog.builder().uid("a").entityType(AuditEntityType.TASK).entityId(1L).build(),
+                AuditLog.builder().uid("b").entityType(AuditEntityType.TASK).entityId(2L).build(),
+                AuditLog.builder().uid("c").entityType(AuditEntityType.GROUP).entityId(3L).build());
+        when(auditLogRepository.findByGroupIdGroupOrderByDateCreatedDesc(10L)).thenReturn(entries);
+        when(auditEntityRefs.resolve(entries)).thenReturn(Map.of());
+
+        auditLogService.getLogsByGroup(10L);
+
+        // A resolve per row would be a query per entry; the feed is read far more than written.
+        verify(auditEntityRefs).resolve(entries);
     }
 
     private AuditLog captureSaved() {

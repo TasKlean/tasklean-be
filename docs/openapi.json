@@ -4286,6 +4286,18 @@
           }
         }
       },
+      "AuditEntityResponse" : {
+        "type" : "object",
+        "description" : "What an audit entry is about: the entity's type, and the identifier the API addresses it by.",
+        "properties" : {
+          "ref" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        }
+      },
       "AuditLogResponse" : {
         "type" : "object",
         "properties" : {
@@ -4295,34 +4307,20 @@
           "actionMessage" : {
             "type" : "string"
           },
-          "actorUserId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "actor" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
           },
           "dateCreated" : {
             "type" : "string",
             "format" : "date-time"
           },
-          "entityId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "entityType" : {
-            "type" : "string"
-          },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "groupMemberId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
+          "entity" : {
+            "$ref" : "#/components/schemas/AuditEntityResponse"
           },
           "ipAddress" : {
+            "type" : "string"
+          },
+          "uid" : {
             "type" : "string"
           }
         }
