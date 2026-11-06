@@ -112,7 +112,9 @@ public class AuditLogService {
         Group group = groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
-        return page(auditLogFilter.narrow(auditLogVisibility.inGroup(group.getIdGroup(), caller), query), query);
+        // No IP addresses on a group trail: an entry is read by every member, and a member's
+        // address is theirs, not the household's.
+        return page(auditLogFilter.narrow(auditLogVisibility.inGroup(group.getIdGroup(), caller), query), query, null);
     }
 
     /**
@@ -129,12 +131,12 @@ public class AuditLogService {
         // (a role grant, say) is still this account's history.
         Specification<AuditLog> scope = AuditLogSpecs.aboutEntity(AuditEntityType.USER, userId);
 
-        return page(auditLogFilter.narrow(scope, query), query);
+        return page(auditLogFilter.narrow(scope, query), query, userId);
     }
 
     // One row more than the page holds, so a next cursor means a further entry really exists; the
     // total skips the cursor predicate, being the size of the feed rather than of what is left.
-    private AuditLogPage page(Specification<AuditLog> feed, AuditLogQueryRequest query) {
+    private AuditLogPage page(Specification<AuditLog> feed, AuditLogQueryRequest query, Long ipVisibleTo) {
         int limit = pageSize(query);
         AuditLogCursor.Position after = auditLogCursor.decode(query.getCursor());
         Specification<AuditLog> onePage = after == null
@@ -145,7 +147,7 @@ public class AuditLogService {
         List<AuditLog> entries = read.size() > limit ? read.subList(0, limit) : read;
 
         return AuditLogPage.builder()
-                .items(toResponses(entries))
+                .items(toResponses(entries, ipVisibleTo))
                 .nextCursor(read.size() > limit ? auditLogCursor.encode(entries.getLast()) : null)
                 .total(auditLogRepository.count(feed))
                 .build();
@@ -159,12 +161,22 @@ public class AuditLogService {
 
     // One ref lookup for the whole page, then a plain mapping - a per-row resolve would be a query
     // per entry, and an audit feed is read far more often than it is written.
-    private List<AuditLogResponse> toResponses(List<AuditLog> entries) {
+    private List<AuditLogResponse> toResponses(List<AuditLog> entries, Long ipVisibleTo) {
         Map<AuditEntityRefs.EntityKey, String> refs = auditEntityRefs.resolve(entries);
         return entries.stream()
-                .map(entry -> AuditLogResponse.from(entry,
-                        refs.get(new AuditEntityRefs.EntityKey(entry.getEntityType(), entry.getEntityId()))))
+                .map(entry -> {
+                    String ref = refs.get(new AuditEntityRefs.EntityKey(entry.getEntityType(), entry.getEntityId()));
+                    return showsIpTo(entry, ipVisibleTo)
+                            ? AuditLogResponse.withIpAddress(entry, ref) : AuditLogResponse.from(entry, ref);
+                })
                 .toList();
+    }
+
+    // Per entry, not per feed: an account history also holds what an admin did to the account, and
+    // that entry carries the admin's address rather than the reader's.
+    private boolean showsIpTo(AuditLog entry, Long ipVisibleTo) {
+        return ipVisibleTo != null && entry.getActorUser() != null
+                && ipVisibleTo.equals(entry.getActorUser().getIdUser());
     }
 
 }

@@ -252,6 +252,54 @@ class AuditLogServiceTest {
         verify(auditLogFilter).narrow(any(), any());
     }
 
+    // --- ip address visibility ---
+
+    @Test
+    void getGroupLogs_evenTheCallersOwnEntry_omitsTheIpAddress() {
+        // Never on a group trail, not even for the person it belongs to: the feed is read by every
+        // member, so an address on it would be one member's address shown to the household.
+        groupExists();
+        whenFeedHolds(List.of(entryActedBy(1L)));
+
+        AuditLogResponse response = auditLogService.getGroupLogs(GROUP_UID, caller(), query(20))
+                .getItems().getFirst();
+
+        assertThat(response.getIpAddress()).isNull();
+    }
+
+    @Test
+    void getAccountLogs_theCallersOwnAction_carriesTheIpAddress() {
+        // Their own address back to them is what makes a strange sign-in recognisable.
+        whenFeedHolds(List.of(entryActedBy(7L)));
+
+        AuditLogResponse response = auditLogService.getAccountLogs(7L, query(20)).getItems().getFirst();
+
+        assertThat(response.getIpAddress()).isEqualTo("203.0.113.7");
+    }
+
+    @Test
+    void getAccountLogs_anActionSomebodyElseTook_omitsTheIpAddress() {
+        // A super-admin changing this account's role writes an entry here carrying the admin's
+        // address, which belongs to the admin and not to the account reading it.
+        whenFeedHolds(List.of(entryActedBy(2L)));
+
+        AuditLogResponse response = auditLogService.getAccountLogs(7L, query(20)).getItems().getFirst();
+
+        assertThat(response.getIpAddress()).isNull();
+        assertThat(response.getActor().getUid()).isEqualTo("usr-2");
+    }
+
+    @Test
+    void getAccountLogs_anEntryWithNoActor_omitsTheIpAddress() {
+        // Written by a public auth endpoint, so there is nobody to match the reader against.
+        whenFeedHolds(List.of(AuditLog.builder().uid("aud-9").entityType(AuditEntityType.USER)
+                .entityId(7L).action(AuditAction.LOGIN.name()).ipAddress("203.0.113.7").build()));
+
+        AuditLogResponse response = auditLogService.getAccountLogs(7L, query(20)).getItems().getFirst();
+
+        assertThat(response.getIpAddress()).isNull();
+    }
+
     // --- paging ---
 
     @Test
@@ -353,6 +401,13 @@ class AuditLogServiceTest {
 
     private AuditLogQueryRequest query(int limit) {
         return new AuditLogQueryRequest(null, null, null, limit);
+    }
+
+    private AuditLog entryActedBy(Long actorId) {
+        return AuditLog.builder().uid("aud-" + actorId).entityType(AuditEntityType.USER).entityId(7L)
+                .action(AuditAction.UPDATE.name()).ipAddress("203.0.113.7")
+                .actorUser(User.builder().idUser(actorId).uid("usr-" + actorId).name("Alice").build())
+                .build();
     }
 
     private AuditLog entryWithKey(Long id) {
