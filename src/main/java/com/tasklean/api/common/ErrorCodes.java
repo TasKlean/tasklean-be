@@ -29,6 +29,9 @@ public final class ErrorCodes {
     /** The account is deactivated, so no retry of any kind will succeed. */
     public static final String ACCOUNT_DEACTIVATED = "ACCOUNT_DEACTIVATED";
 
+    /** The page cursor was not one we handed out; ask for the list again without one. */
+    public static final String PAGE_CURSOR_INVALID = "PAGE_CURSOR_INVALID";
+
     private ErrorCodes() {
     }
 }

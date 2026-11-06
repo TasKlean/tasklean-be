@@ -1,16 +1,21 @@
 package com.tasklean.api.domain.auditlog;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
-import com.tasklean.api.domain.auditlog.dto.AuditLogResponse;
+import com.tasklean.api.domain.auditlog.dto.AuditLogPage;
+import com.tasklean.api.domain.auditlog.dto.AuditLogQueryRequest;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 /**
- * Read-only REST endpoints for the audit trail — query by group, entity, or member.
+ * Read-only REST endpoints for the audit trail, in its two scopes: one group's history, and the
+ * caller's own account history.
  */
 @Tag(name = "Audit logs", description = "Append-only record of who changed what within a household.")
 @RestController
@@ -21,37 +26,41 @@ public class AuditLogController {
     private final AuditLogService auditLogService;
 
     /**
-     * Lists a group's audit-log entries, newest first.
+     * Lists what the caller may see of a group's audit trail, newest first. Any member of the
+     * group may read it; an admin sees all of it, a plain member their own actions plus the
+     * history of what they created.
      *
-     * @param groupId the group id
-     * @return {@code 200 OK} with the entries
+     * @param groupUid  the group's public UID
+     * @param query     the page asked for
+     * @param principal the authenticated caller
+     * @return {@code 200 OK} with the page of visible entries
      */
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<AuditLogResponse>>> getLogsByGroup(@RequestParam Long groupId) {
-        return ResponseEntity.ok(ApiResponse.success(auditLogService.getLogsByGroup(groupId)));
+    // Membership is the gate; which rows come back is decided per row in the query, since a
+    // member and an admin of the same group are both allowed here but see different trails.
+    @PreAuthorize("hasRole('ADMIN') or @groupSecurity.isMember(#groupUid)")
+    @GetMapping("/groups/{groupUid}")
+    public ResponseEntity<ApiResponse<AuditLogPage>> getGroupLogs(
+            @PathVariable String groupUid,
+            @Valid @ParameterObject AuditLogQueryRequest query,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(auditLogService.getGroupLogs(groupUid, principal, query)));
     }
 
     /**
-     * Lists audit-log entries for a specific entity, newest first.
+     * Lists the caller's own account history, newest first - sign-ins, credential changes,
+     * two-factor and device events.
      *
-     * @param entityType the entity type (e.g. "task", "group")
-     * @param entityId   the entity id
-     * @return {@code 200 OK} with the entries
+     * @param query     the page asked for
+     * @param principal the authenticated caller
+     * @return {@code 200 OK} with the page of the caller's account entries
      */
-    @GetMapping("/entity")
-    public ResponseEntity<ApiResponse<List<AuditLogResponse>>> getLogsByEntity(
-            @RequestParam String entityType, @RequestParam Long entityId) {
-        return ResponseEntity.ok(ApiResponse.success(auditLogService.getLogsByEntity(entityType, entityId)));
-    }
-
-    /**
-     * Lists audit-log entries recorded for a specific group member, newest first.
-     *
-     * @param groupMemberId the group member id
-     * @return {@code 200 OK} with the entries
-     */
-    @GetMapping("/member/{groupMemberId}")
-    public ResponseEntity<ApiResponse<List<AuditLogResponse>>> getLogsByMember(@PathVariable Long groupMemberId) {
-        return ResponseEntity.ok(ApiResponse.success(auditLogService.getLogsByMember(groupMemberId)));
+    // Self-scoped, so there is no identifier in the path and nothing to authorize beyond being
+    // signed in - the caller cannot name anybody else's account here.
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("/account")
+    public ResponseEntity<ApiResponse<AuditLogPage>> getAccountLogs(
+            @Valid @ParameterObject AuditLogQueryRequest query,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(auditLogService.getAccountLogs(principal.userId(), query)));
     }
 }

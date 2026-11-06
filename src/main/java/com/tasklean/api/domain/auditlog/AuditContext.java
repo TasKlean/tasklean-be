@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
-public class AuditContext {
+class AuditContext {
 
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;

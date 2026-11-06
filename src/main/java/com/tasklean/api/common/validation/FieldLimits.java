@@ -66,6 +66,19 @@ public final class FieldLimits {
     /** The per-login nonce secret the frontend generates and we only hash. */
     public static final int NONCE = 256;
 
+    /**
+     * An opaque page cursor - our own Base64 of a timestamp and a row id, handed out by the
+     * previous page. Nothing is stored, so the bound only refuses a paste: a longer value cannot
+     * be one of ours and is rejected before it is decoded.
+     */
+    public static final int CURSOR = 128;
+
+    /**
+     * The largest page a cursor-paged list endpoint will return. One cap for every such endpoint:
+     * a @Max on the request makes an absurd page a 400 rather than a query that reads a table.
+     */
+    public static final int PAGE_SIZE = 100;
+
     private FieldLimits() {
     }
 }

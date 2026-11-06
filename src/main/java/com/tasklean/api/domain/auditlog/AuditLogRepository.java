@@ -1,17 +1,14 @@
 package com.tasklean.api.domain.auditlog;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-
-/** Data access for the audit trail — read-only queries by group, entity, or member. */
+/**
+ * Data access for the audit trail. Reads go through specifications rather than declared finders:
+ * a feed is a scope, a visibility rule, an optional filter and a cursor composed per request, and
+ * spelling every combination out as its own query is what the specification seam avoids.
+ */
 @Repository
-public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
-
-    List<AuditLog> findByGroupIdGroupOrderByDateCreatedDesc(Long groupId);
-
-    List<AuditLog> findByEntityTypeAndEntityIdOrderByDateCreatedDesc(String entityType, Long entityId);
-
-    List<AuditLog> findByGroupMemberIdGroupMemberOrderByDateCreatedDesc(Long groupMemberId);
+public interface AuditLogRepository extends JpaRepository<AuditLog, Long>, JpaSpecificationExecutor<AuditLog> {
 }

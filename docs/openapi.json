@@ -524,18 +524,50 @@
         "tags" : [ "Account" ]
       }
     },
-    "/api/audit-logs" : {
+    "/api/audit-logs/account" : {
       "get" : {
-        "description" : "Lists a group's audit-log entries, newest first.",
-        "operationId" : "getLogsByGroup",
+        "description" : "Lists the caller's own account history, newest first - sign-ins, credential changes,\n two-factor and device events.",
+        "operationId" : "getAccountLogs",
         "parameters" : [ {
-          "description" : "the group id",
+          "description" : "Keeps only entries about this kind of entity, e.g. <code>TASK</code>.",
           "in" : "query",
-          "name" : "groupId",
-          "required" : true,
+          "name" : "entityType",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "Keeps only entries about this one entity, identified the way the API addresses it. Needs\n <code>entityType</code> alongside it: the same identifier means different rows per type.",
+          "in" : "query",
+          "name" : "entityRef",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "The previous page's <code>nextCursor</code>. Omitted, the feed starts at the newest entry.",
+          "in" : "query",
+          "name" : "cursor",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "How many entries to return. Omitted, a page holds {@value com.tasklean.api.domain.auditlog.dto.AuditLogQueryRequest#DEFAULT_LIMIT}.",
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
           "schema" : {
             "type" : "integer",
-            "format" : "int64"
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1
           }
         } ],
         "responses" : {
@@ -543,11 +575,11 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListAuditLogResponse"
+                  "$ref" : "#/components/schemas/ApiResponseAuditLogPage"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the entries"
+            "description" : "<code>200 OK</code> with the page of the caller's account entries"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -565,30 +597,62 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists a group's audit-log entries, newest first.",
+        "summary" : "Lists the caller's own account history, newest first - sign-ins, credential changes,\n two-factor and device events.",
         "tags" : [ "Audit logs" ]
       }
     },
-    "/api/audit-logs/entity" : {
+    "/api/audit-logs/groups/{groupUid}" : {
       "get" : {
-        "description" : "Lists audit-log entries for a specific entity, newest first.",
-        "operationId" : "getLogsByEntity",
+        "description" : "Lists what the caller may see of a group's audit trail, newest first. Any member of the\n group may read it; an admin sees all of it, a plain member their own actions plus the\n history of what they created.",
+        "operationId" : "getGroupLogs",
         "parameters" : [ {
-          "description" : "the entity type (e.g. \"task\", \"group\")",
-          "in" : "query",
-          "name" : "entityType",
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "groupUid",
           "required" : true,
           "schema" : {
             "type" : "string"
           }
         }, {
-          "description" : "the entity id",
+          "description" : "Keeps only entries about this kind of entity, e.g. <code>TASK</code>.",
           "in" : "query",
-          "name" : "entityId",
-          "required" : true,
+          "name" : "entityType",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "Keeps only entries about this one entity, identified the way the API addresses it. Needs\n <code>entityType</code> alongside it: the same identifier means different rows per type.",
+          "in" : "query",
+          "name" : "entityRef",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "The previous page's <code>nextCursor</code>. Omitted, the feed starts at the newest entry.",
+          "in" : "query",
+          "name" : "cursor",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "How many entries to return. Omitted, a page holds {@value com.tasklean.api.domain.auditlog.dto.AuditLogQueryRequest#DEFAULT_LIMIT}.",
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
           "schema" : {
             "type" : "integer",
-            "format" : "int64"
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1
           }
         } ],
         "responses" : {
@@ -596,11 +660,11 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListAuditLogResponse"
+                  "$ref" : "#/components/schemas/ApiResponseAuditLogPage"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the entries"
+            "description" : "<code>200 OK</code> with the page of visible entries"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -618,52 +682,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists audit-log entries for a specific entity, newest first.",
-        "tags" : [ "Audit logs" ]
-      }
-    },
-    "/api/audit-logs/member/{groupMemberId}" : {
-      "get" : {
-        "description" : "Lists audit-log entries recorded for a specific group member, newest first.",
-        "operationId" : "getLogsByMember",
-        "parameters" : [ {
-          "description" : "the group member id",
-          "in" : "path",
-          "name" : "groupMemberId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListAuditLogResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the entries"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Lists audit-log entries recorded for a specific group member, newest first.",
+        "summary" : "Lists what the caller may see of a group's audit trail, newest first.",
         "tags" : [ "Audit logs" ]
       }
     },
@@ -3621,6 +3640,24 @@
       }
     },
     "schemas" : {
+      "ApiResponseAuditLogPage" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/AuditLogPage"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseAuthResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -3720,27 +3757,6 @@
           },
           "data" : {
             "$ref" : "#/components/schemas/GroupResponse"
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "success" : {
-            "type" : "boolean"
-          }
-        }
-      },
-      "ApiResponseListAuditLogResponse" : {
-        "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "data" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/AuditLogResponse"
-            }
           },
           "message" : {
             "type" : "string"
@@ -4286,6 +4302,40 @@
           }
         }
       },
+      "AuditEntityResponse" : {
+        "type" : "object",
+        "description" : "What an audit entry is about: the entity's type, and the identifier the API addresses it by.",
+        "properties" : {
+          "ref" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        }
+      },
+      "AuditLogPage" : {
+        "type" : "object",
+        "description" : "One page of an audit feed. Its own shape rather than Spring's <code>Page</code>: that one is built for\n offset paging and serializes a dozen fields a cursor-paged client cannot use.",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "description" : "The entries, newest first.",
+            "items" : {
+              "$ref" : "#/components/schemas/AuditLogResponse"
+            }
+          },
+          "nextCursor" : {
+            "type" : "string",
+            "description" : "Pass as <code>cursor</code> to get the next page. <code>null</code> means this page is the last."
+          },
+          "total" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "How many entries the caller can reach in this feed in total, pages included."
+          }
+        }
+      },
       "AuditLogResponse" : {
         "type" : "object",
         "properties" : {
@@ -4295,34 +4345,20 @@
           "actionMessage" : {
             "type" : "string"
           },
-          "actorUserId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "actor" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
           },
           "dateCreated" : {
             "type" : "string",
             "format" : "date-time"
           },
-          "entityId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "entityType" : {
-            "type" : "string"
-          },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "groupMemberId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
+          "entity" : {
+            "$ref" : "#/components/schemas/AuditEntityResponse"
           },
           "ipAddress" : {
+            "type" : "string"
+          },
+          "uid" : {
             "type" : "string"
           }
         }
