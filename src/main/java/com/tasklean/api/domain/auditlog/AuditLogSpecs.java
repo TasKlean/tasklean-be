@@ -14,6 +14,18 @@ import java.time.LocalDateTime;
  */
 final class AuditLogSpecs {
 
+    // The entity model addressed as strings, so a rename is caught here rather than at runtime:
+    // a mistyped path compiles and then fails on the first query that walks it.
+    private static final String ACTION = "action";
+    private static final String ACTOR_USER = "actorUser";
+    private static final String DATE_CREATED = "dateCreated";
+    private static final String ENTITY_ID = "entityId";
+    private static final String ENTITY_TYPE = "entityType";
+    private static final String GROUP = "group";
+    private static final String ID_AUDIT_LOG = "idAuditLog";
+    private static final String ID_GROUP = "idGroup";
+    private static final String ID_USER = "idUser";
+
     private AuditLogSpecs() {
     }
 
@@ -24,7 +36,7 @@ final class AuditLogSpecs {
      * @return the specification
      */
     public static Specification<AuditLog> inGroup(Long groupId) {
-        return (root, query, cb) -> cb.equal(root.get("group").get("idGroup"), groupId);
+        return (root, query, cb) -> cb.equal(root.get(GROUP).get(ID_GROUP), groupId);
     }
 
     /**
@@ -36,8 +48,8 @@ final class AuditLogSpecs {
      */
     public static Specification<AuditLog> aboutEntity(String entityType, Long entityId) {
         return (root, query, cb) -> cb.and(
-                cb.equal(root.get("entityType"), entityType),
-                cb.equal(root.get("entityId"), entityId));
+                cb.equal(root.get(ENTITY_TYPE), entityType),
+                cb.equal(root.get(ENTITY_ID), entityId));
     }
 
     /**
@@ -47,7 +59,7 @@ final class AuditLogSpecs {
      * @return the specification
      */
     public static Specification<AuditLog> ofEntityType(String entityType) {
-        return (root, query, cb) -> cb.equal(root.get("entityType"), entityType);
+        return (root, query, cb) -> cb.equal(root.get(ENTITY_TYPE), entityType);
     }
 
     /**
@@ -65,13 +77,13 @@ final class AuditLogSpecs {
             // Correlated on the outer row's entity, so the subquery asks "did this caller create
             // the thing this entry is about" - the trail is the only record of who created what.
             created.select(cb.literal(1L)).where(
-                    cb.equal(creation.get("group").get("idGroup"), groupId),
-                    cb.equal(creation.get("action"), AuditAction.CREATE.name()),
-                    cb.equal(creation.get("actorUser").get("idUser"), userId),
-                    cb.equal(creation.get("entityType"), root.get("entityType")),
-                    cb.equal(creation.get("entityId"), root.get("entityId")));
+                    cb.equal(creation.get(GROUP).get(ID_GROUP), groupId),
+                    cb.equal(creation.get(ACTION), AuditAction.CREATE.name()),
+                    cb.equal(creation.get(ACTOR_USER).get(ID_USER), userId),
+                    cb.equal(creation.get(ENTITY_TYPE), root.get(ENTITY_TYPE)),
+                    cb.equal(creation.get(ENTITY_ID), root.get(ENTITY_ID)));
 
-            return cb.or(cb.equal(root.get("actorUser").get("idUser"), userId), cb.exists(created));
+            return cb.or(cb.equal(root.get(ACTOR_USER).get(ID_USER), userId), cb.exists(created));
         };
     }
 
@@ -84,9 +96,9 @@ final class AuditLogSpecs {
      */
     public static Specification<AuditLog> after(LocalDateTime dateCreated, Long id) {
         return (root, query, cb) -> cb.or(
-                cb.lessThan(root.get("dateCreated"), dateCreated),
-                cb.and(cb.equal(root.get("dateCreated"), dateCreated),
-                        cb.lessThan(root.get("idAuditLog"), id)));
+                cb.lessThan(root.get(DATE_CREATED), dateCreated),
+                cb.and(cb.equal(root.get(DATE_CREATED), dateCreated),
+                        cb.lessThan(root.get(ID_AUDIT_LOG), id)));
     }
 
     /**
@@ -99,7 +111,7 @@ final class AuditLogSpecs {
             // Not on the count query: a fetch join there leaves the fetched association with no
             // owner in the selection and Hibernate rejects the statement.
             if (!Long.class.equals(query.getResultType())) {
-                root.fetch("actorUser", JoinType.LEFT);
+                root.fetch(ACTOR_USER, JoinType.LEFT);
             }
             return null;
         };
