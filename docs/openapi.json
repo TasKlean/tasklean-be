@@ -4348,6 +4348,12 @@
           "actor" : {
             "$ref" : "#/components/schemas/UserSummaryResponse"
           },
+          "changedFields" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string"
+            }
+          },
           "dateCreated" : {
             "type" : "string",
             "format" : "date-time"

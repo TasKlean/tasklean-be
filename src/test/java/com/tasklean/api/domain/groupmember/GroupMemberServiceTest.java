@@ -4,6 +4,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
@@ -13,8 +14,8 @@ import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -394,6 +395,10 @@ class GroupMemberServiceTest {
         groupMemberService.updateMemberRole(MEMBER_UID, GroupRole.GROUP_ADMIN);
 
         assertThat(member.getRole()).isEqualTo(GroupRole.GROUP_ADMIN);
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.GROUP_MEMBER), any(),
+                eq(AuditAction.ROLE_CHANGED), any(), any(), changes.capture());
+        assertThat(changes.getValue().fields()).containsExactly("role");
     }
 
     // --- removeMember: the same state change, two different events ---

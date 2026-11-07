@@ -2,6 +2,7 @@ package com.tasklean.api.domain.task;
 
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.category.Category;
@@ -13,11 +14,15 @@ import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.task.dto.TaskRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -149,7 +154,45 @@ class TaskServiceTest {
 
         assertThat(existing.getAssignedTo()).isNull();
         assertThat(existing.getCategory()).isNull();
-        verify(auditLogService).recordEvent(eq(AuditEntityType.TASK), eq(1L), eq(AuditAction.UPDATE), any(), any());
+        // The request matches the fixture field for field, so nothing is reported as changed.
+        assertThat(capturedChanges().fields()).isEmpty();
+    }
+
+    @Test
+    void updateTask_everyTrackedField_namesThemAll() {
+        TaskRequest r = request();
+        r.setName("Scrub");
+        r.setDescription("the floor");
+        r.setTaskPhotoUrl("https://example.test/photo.jpg");
+        r.setPriority("HIGH");
+        r.setRecurrenceType("WEEKLY");
+        r.setRecurrencePattern(Map.of("day", "MON"));
+        r.setNextDueDate(LocalDateTime.now(ZoneOffset.UTC));
+        r.setRequiresPhotoProof(true);
+        r.setEstimatedTimeMinutes(20);
+        r.setStatus("IN_PROGRESS");
+        r.setAssignedToId(6L);
+        r.setCategoryId(3L);
+        when(taskRepository.findByUid("tsk-1")).thenReturn(Optional.of(task()));
+        when(groupMemberRepository.findById(6L)).thenReturn(Optional.of(member(6L)));
+        when(categoryRepository.findById(3L))
+                .thenReturn(Optional.of(Category.builder().idCategory(3L).group(group()).build()));
+        when(taskRepository.save(any(Task.class))).thenAnswer(i -> i.getArgument(0));
+
+        taskService.updateTask("tsk-1", r);
+
+        // Every field this endpoint can change, in the order it applies them. groupId and
+        // createdById are deliberately absent - updateTask ignores both.
+        assertThat(capturedChanges().fields()).containsExactly("name", "description", "taskPhotoUrl",
+                "priority", "recurrenceType", "recurrencePattern", "nextDueDate", "requiresPhotoProof",
+                "estimatedTimeMinutes", "status", "assignedToId", "categoryId");
+    }
+
+    private AuditChanges capturedChanges() {
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.TASK), eq(1L), eq(AuditAction.UPDATE),
+                any(), any(), changes.capture());
+        return changes.getValue();
     }
 
     @Test

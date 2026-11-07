@@ -56,6 +56,28 @@ public class AuditLogService {
      */
     @Transactional
     public void recordEvent(String entityType, Long entityId, AuditAction action, String message, Group group) {
+        recordEvent(entityType, entityId, action, message, group, null);
+    }
+
+    /**
+     * Records an audit entry for an update, naming the fields it changed. Behaves as
+     * {@link #recordEvent(String, Long, AuditAction, String, Group)} otherwise.
+     *
+     * @param entityType the audited entity type (use {@link AuditEntityType} constants)
+     * @param entityId   the id of the affected entity
+     * @param action     the action performed
+     * @param message    a human-readable description of what happened
+     * @param group      the group the entity belongs to, or {@code null} for group-less events
+     * @param changes    the fields the update changed. An empty set writes no entry at all -
+     *                   a save that altered nothing is not an event. Pass {@code null} for an
+     *                   event that is not a tracked update, which always writes.
+     */
+    @Transactional
+    public void recordEvent(String entityType, Long entityId, AuditAction action, String message,
+                            Group group, AuditChanges changes) {
+        if (changes != null && changes.isEmpty()) {
+            return;
+        }
         GroupMember actor = group != null ? auditContext.currentActor(group.getIdGroup()) : null;
 
         AuditLog entry = AuditLog.builder()
@@ -68,6 +90,7 @@ public class AuditLogService {
                 .actorUser(auditContext.currentUser())
                 .groupMember(actor)
                 .group(group)
+                .changedFields(changes != null ? changes.fields() : null)
                 .build();
 
         auditLogRepository.save(entry);

@@ -4,6 +4,7 @@ import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.category.dto.CategoryRequest;
@@ -98,12 +99,13 @@ public class CategoryService {
     public CategoryResponse updateCategory(Long id, CategoryRequest request) {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
-        category.setName(request.getName());
-        category.setColor(request.getColor());
-        category.setIcon(request.getIcon());
+        AuditChanges changes = AuditChanges.create()
+                .set("name", category::getName, category::setName, request.getName())
+                .set("color", category::getColor, category::setColor, request.getColor())
+                .set("icon", category::getIcon, category::setIcon, request.getIcon());
         Category saved = categoryRepository.save(category);
         auditLogService.recordEvent(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.UPDATE,
-                auditMessage(saved.getName(), "updated"), saved.getGroup());
+                auditMessage(saved.getName(), "updated"), saved.getGroup(), changes);
         return CategoryResponse.from(saved);
     }
 

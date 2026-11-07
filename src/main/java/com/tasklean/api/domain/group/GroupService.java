@@ -5,6 +5,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
@@ -218,12 +219,15 @@ public class GroupService {
     @Transactional
     public GroupResponse updateGroup(String uid, GroupRequest request, Long callerUserId) {
         Group group = requireActiveGroup(uid);
-        group.setName(request.getName());
-        group.setDescription(request.getDescription());
-        group.setPhotoUid(uploadService.attachGroupPhoto(request.getPhotoUid(), group, callerUserId));
+        // Resolved before the tracked sets so the old uid is still readable as the previous value.
+        String photoUid = uploadService.attachGroupPhoto(request.getPhotoUid(), group, callerUserId);
+        AuditChanges changes = AuditChanges.create()
+                .set("name", group::getName, group::setName, request.getName())
+                .set("description", group::getDescription, group::setDescription, request.getDescription())
+                .set("photoUid", group::getPhotoUid, group::setPhotoUid, photoUid);
         Group saved = groupRepository.save(group);
         auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
-                auditMessage(saved.getName(), "updated"), saved);
+                auditMessage(saved.getName(), "updated"), saved, changes);
         // Only a group admin (or SUPER_ADMIN) can reach this endpoint, so the code is safe to return.
         return GroupResponse.forAdmin(saved, memberCount(saved));
     }
@@ -241,12 +245,13 @@ public class GroupService {
         Group group = requireActiveGroup(uid);
         // The old code is still persisted, so the uniqueness check in generateInviteCode also
         // guarantees the new code differs from it.
-        group.setInviteCode(generateInviteCode());
+        AuditChanges changes = AuditChanges.create()
+                .set("inviteCode", group::getInviteCode, group::setInviteCode, generateInviteCode());
         Group saved = groupRepository.save(group);
         // Never log the code itself — it is a join secret.
         log.info("Group invite code rotated: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.GROUP, saved.getIdGroup(), AuditAction.UPDATE,
-                auditMessage(saved.getName(), "invite code rotated"), saved);
+                auditMessage(saved.getName(), "invite code rotated"), saved, changes);
         // Only a group admin (or SUPER_ADMIN) can reach this, so returning the code is safe.
         return GroupResponse.forAdmin(saved, memberCount(saved));
     }

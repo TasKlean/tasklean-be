@@ -3,6 +3,7 @@ package com.tasklean.api.domain.tag;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
@@ -11,6 +12,7 @@ import com.tasklean.api.domain.tag.dto.TagRequest;
 import com.tasklean.api.domain.tag.dto.TagResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -111,7 +113,11 @@ class TagServiceTest {
         tagService.updateTag(1L, request());
 
         assertThat(existing.getName()).isEqualTo("quick");
-        verify(auditLogService).recordEvent(eq(AuditEntityType.TAG), eq(1L), eq(AuditAction.UPDATE), any(), any());
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.TAG), eq(1L), eq(AuditAction.UPDATE),
+                any(), any(), changes.capture());
+        // The fixture's name already matches the request, so only the colour moved.
+        assertThat(changes.getValue().fields()).containsExactly("color");
     }
 
     @Test

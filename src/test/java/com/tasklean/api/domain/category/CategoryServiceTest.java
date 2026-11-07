@@ -3,6 +3,7 @@ package com.tasklean.api.domain.category;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.category.dto.CategoryRequest;
@@ -11,6 +12,7 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -112,7 +114,30 @@ class CategoryServiceTest {
         categoryService.updateCategory(1L, request());
 
         assertThat(existing.getName()).isEqualTo("Kitchen");
-        verify(auditLogService).recordEvent(eq(AuditEntityType.CATEGORY), eq(1L), eq(AuditAction.UPDATE), any(), any());
+        // The fixture's name already matches the request, so only the other two moved.
+        assertThat(capturedChanges().fields()).containsExactly("color", "icon");
+    }
+
+    @Test
+    void updateCategory_nothingDifferent_reportsNoChangedFields() {
+        Category existing = category();
+        CategoryRequest unchanged = request();
+        unchanged.setColor(existing.getColor());
+        unchanged.setIcon(existing.getIcon());
+        when(categoryRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        categoryService.updateCategory(1L, unchanged);
+
+        // Empty rather than absent - AuditLogServiceTest covers it writing no entry.
+        assertThat(capturedChanges().fields()).isEmpty();
+    }
+
+    private AuditChanges capturedChanges() {
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.CATEGORY), eq(1L), eq(AuditAction.UPDATE),
+                any(), any(), changes.capture());
+        return changes.getValue();
     }
 
     @Test

@@ -5,6 +5,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
@@ -119,12 +120,13 @@ public class GroupMemberService {
             throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
 
-        member.setRole(role);
+        AuditChanges changes = AuditChanges.create()
+                .set("role", member::getRole, member::setRole, role);
         // Authorization-relevant state change → INFO.
         log.info("Group member role changed: memberUid={} role={}", memberUid, role);
         GroupMember saved = groupMemberRepository.save(member);
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.ROLE_CHANGED,
-                "Role changed to " + role, saved.getGroup());
+                "Role changed to " + role, saved.getGroup(), changes);
         return GroupMemberResponse.from(saved);
     }
 

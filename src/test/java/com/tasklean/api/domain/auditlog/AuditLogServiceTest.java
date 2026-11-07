@@ -159,6 +159,43 @@ class AuditLogServiceTest {
         assertThat(captureSaved().getUid()).isNotBlank();
     }
 
+    // --- changed fields ---
+
+    @Test
+    void recordEvent_withChanges_namesTheFieldsThatMoved() {
+        Group subject = Group.builder().idGroup(10L).name("Home").description("Same").build();
+        AuditChanges changes = AuditChanges.create()
+                .set("name", subject::getName, subject::setName, "Away")
+                .set("description", subject::getDescription, subject::setDescription, "Same");
+
+        auditLogService.recordEvent(AuditEntityType.GROUP, 10L, AuditAction.UPDATE, "Group updated",
+                null, changes);
+
+        assertThat(captureSaved().getChangedFields()).containsExactly("name");
+    }
+
+    @Test
+    void recordEvent_changesThatMovedNothing_writesNoEntry() {
+        Group subject = Group.builder().idGroup(10L).name("Home").build();
+        AuditChanges changes = AuditChanges.create()
+                .set("name", subject::getName, subject::setName, "Home");
+
+        auditLogService.recordEvent(AuditEntityType.GROUP, 10L, AuditAction.UPDATE, "Group updated",
+                null, changes);
+
+        // A save that altered nothing is not an event - this is what stops a form resubmission
+        // from filling the trail with identical rows.
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    void recordEvent_noChangesTracked_leavesChangedFieldsUnset() {
+        auditLogService.recordEvent(AuditEntityType.USER, 1L, AuditAction.LOGIN, "User logged in", null);
+
+        // Null, not empty: this event has no notion of fields rather than having changed none.
+        assertThat(captureSaved().getChangedFields()).isNull();
+    }
+
     // --- reads ---
 
     @Test

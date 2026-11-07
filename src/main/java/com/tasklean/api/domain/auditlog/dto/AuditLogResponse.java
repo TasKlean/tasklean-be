@@ -5,6 +5,7 @@ import com.tasklean.api.domain.user.dto.UserSummaryResponse;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Getter
 @Setter
@@ -19,6 +20,7 @@ public class AuditLogResponse {
     private AuditEntityResponse entity;
     private UserSummaryResponse actor;
     private String ipAddress;
+    private List<String> changedFields;
     private LocalDateTime dateCreated;
 
     /**
@@ -60,6 +62,8 @@ public class AuditLogResponse {
                 // the security context - there the subject is the entity, not the actor.
                 .actor(auditLog.getActorUser() != null
                         ? UserSummaryResponse.from(auditLog.getActorUser()) : null)
+                // Null on anything but a tracked update, so absent rather than an empty list.
+                .changedFields(auditLog.getChangedFields())
                 .dateCreated(auditLog.getDateCreated());
     }
 }
