@@ -245,6 +245,8 @@ public class GroupService {
         Group group = requireActiveGroup(uid);
         // The old code is still persisted, so the uniqueness check in generateInviteCode also
         // guarantees the new code differs from it.
+        // Tracked by name only, and never with setVisible: the value is a join secret, and the
+        // group trail it would land on is readable by every member.
         AuditChanges changes = AuditChanges.create()
                 .set("inviteCode", group::getInviteCode, group::setInviteCode, generateInviteCode());
         Group saved = groupRepository.save(group);

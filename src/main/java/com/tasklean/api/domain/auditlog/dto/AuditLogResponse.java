@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.auditlog.dto;
 
+import com.tasklean.api.domain.auditlog.AuditFieldChange;
 import com.tasklean.api.domain.auditlog.AuditLog;
 import com.tasklean.api.domain.user.dto.UserSummaryResponse;
 import lombok.*;
@@ -20,7 +21,7 @@ public class AuditLogResponse {
     private AuditEntityResponse entity;
     private UserSummaryResponse actor;
     private String ipAddress;
-    private List<String> changedFields;
+    private List<AuditFieldChange> changedFields;
     private LocalDateTime dateCreated;
 
     /**
@@ -62,7 +63,8 @@ public class AuditLogResponse {
                 // the security context - there the subject is the entity, not the actor.
                 .actor(auditLog.getActorUser() != null
                         ? UserSummaryResponse.from(auditLog.getActorUser()) : null)
-                // Null on anything but a tracked update, so absent rather than an empty list.
+                // Null on anything but a tracked update, so absent rather than an empty list. A
+                // field's from/to are absent too unless the update disclosed them.
                 .changedFields(auditLog.getChangedFields())
                 .dateCreated(auditLog.getDateCreated());
     }

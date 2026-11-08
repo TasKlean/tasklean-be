@@ -4,6 +4,7 @@ import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditFieldChange;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.category.Category;
 import com.tasklean.api.domain.category.CategoryRepository;
@@ -186,6 +187,30 @@ class TaskServiceTest {
         assertThat(capturedChanges().fields()).containsExactly("name", "description", "taskPhotoUrl",
                 "priority", "recurrenceType", "recurrencePattern", "nextDueDate", "requiresPhotoProof",
                 "estimatedTimeMinutes", "status", "assignedToId", "categoryId");
+    }
+
+    @Test
+    void updateTask_everyTrackedField_disclosesOnlyTheSafeValues() {
+        TaskRequest r = request();
+        r.setDescription("the floor");
+        r.setPriority("HIGH");
+        r.setStatus("IN_PROGRESS");
+        r.setEstimatedTimeMinutes(20);
+        r.setAssignedToId(6L);
+        when(taskRepository.findByUid("tsk-1")).thenReturn(Optional.of(task()));
+        when(groupMemberRepository.findById(6L)).thenReturn(Optional.of(member(6L)));
+        when(taskRepository.save(any(Task.class))).thenAnswer(i -> i.getArgument(0));
+
+        taskService.updateTask("tsk-1", r);
+
+        // The tokens and the number carry their values; the text a person typed and the
+        // association's internal id do not.
+        assertThat(capturedChanges().entries()).containsExactly(
+                AuditFieldChange.withheld("description"),
+                new AuditFieldChange("priority", null, "HIGH"),
+                new AuditFieldChange("estimatedTimeMinutes", null, "20"),
+                new AuditFieldChange("status", null, "IN_PROGRESS"),
+                AuditFieldChange.withheld("assignedToId"));
     }
 
     private AuditChanges capturedChanges() {

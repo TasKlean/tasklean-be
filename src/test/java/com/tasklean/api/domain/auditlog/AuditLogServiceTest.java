@@ -171,7 +171,21 @@ class AuditLogServiceTest {
         auditLogService.recordEvent(AuditEntityType.GROUP, 10L, AuditAction.UPDATE, "Group updated",
                 null, changes);
 
-        assertThat(captureSaved().getChangedFields()).containsExactly("name");
+        assertThat(captureSaved().getChangedFields())
+                .containsExactly(AuditFieldChange.withheld("name"));
+    }
+
+    @Test
+    void recordEvent_aDisclosedField_persistsBothValues() {
+        Group subject = Group.builder().idGroup(10L).name("Home").build();
+        AuditChanges changes = AuditChanges.create()
+                .setVisible("name", subject::getName, subject::setName, "Away");
+
+        auditLogService.recordEvent(AuditEntityType.GROUP, 10L, AuditAction.UPDATE, "Group updated",
+                null, changes);
+
+        assertThat(captureSaved().getChangedFields())
+                .containsExactly(new AuditFieldChange("name", "Home", "Away"));
     }
 
     @Test

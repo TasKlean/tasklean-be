@@ -90,7 +90,7 @@ public class AuditLogService {
                 .actorUser(auditContext.currentUser())
                 .groupMember(actor)
                 .group(group)
-                .changedFields(changes != null ? changes.fields() : null)
+                .changedFields(changes != null ? changes.entries() : null)
                 .build();
 
         auditLogRepository.save(entry);

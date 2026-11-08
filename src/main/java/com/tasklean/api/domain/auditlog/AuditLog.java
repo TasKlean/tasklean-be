@@ -44,10 +44,11 @@ public class AuditLog {
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
 
-    // Which fields an update touched, by DTO name. Null on anything that is not a tracked update.
+    // Which fields an update touched, by DTO name, each with its values where they are safe to
+    // keep. Null on anything that is not a tracked update.
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "changed_fields")
-    private List<String> changedFields;
+    private List<AuditFieldChange> changedFields;
 
     @CreationTimestamp
     @Column(name = "date_created", nullable = false, updatable = false)

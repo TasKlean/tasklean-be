@@ -4314,6 +4314,24 @@
           }
         }
       },
+      "AuditFieldChange" : {
+        "type" : "object",
+        "description" : "One field an update touched. <code>from</code> and <code>to</code> are present only for a field whose value\n is safe to keep - most carry the name alone. The same shape is stored in <code>changed_fields</code>\n and returned to the client, so one Jackson annotation keeps both compact.",
+        "properties" : {
+          "field" : {
+            "type" : "string",
+            "description" : "the field's name as the request DTO spells it"
+          },
+          "from" : {
+            "type" : "string",
+            "description" : "its value before the update, or null when withheld or previously empty"
+          },
+          "to" : {
+            "type" : "string",
+            "description" : "its value after the update, or null when withheld or now empty"
+          }
+        }
+      },
       "AuditLogPage" : {
         "type" : "object",
         "description" : "One page of an audit feed. Its own shape rather than Spring's <code>Page</code>: that one is built for\n offset paging and serializes a dozen fields a cursor-paged client cannot use.",
@@ -4351,7 +4369,7 @@
           "changedFields" : {
             "type" : "array",
             "items" : {
-              "type" : "string"
+              "$ref" : "#/components/schemas/AuditFieldChange"
             }
           },
           "dateCreated" : {

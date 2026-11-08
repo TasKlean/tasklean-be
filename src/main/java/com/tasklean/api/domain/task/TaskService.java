@@ -127,16 +127,20 @@ public class TaskService {
                 .set("name", task::getName, task::setName, request.getName())
                 .set("description", task::getDescription, task::setDescription, request.getDescription())
                 .set("taskPhotoUrl", task::getTaskPhotoUrl, task::setTaskPhotoUrl, request.getTaskPhotoUrl())
-                .set("priority", task::getPriority, task::setPriority, request.getPriority())
-                .set("recurrenceType", task::getRecurrenceType, task::setRecurrenceType, request.getRecurrenceType())
+                // Values kept from here down: each is a fixed token, a flag, a number or a date, so
+                // keeping it discloses nothing a reader cannot already see on the task itself.
+                .setVisible("priority", task::getPriority, task::setPriority, request.getPriority())
+                .setVisible("recurrenceType", task::getRecurrenceType, task::setRecurrenceType,
+                        request.getRecurrenceType())
+                // The pattern is free-form JSON rather than a token, so it stays withheld.
                 .set("recurrencePattern", task::getRecurrencePattern, task::setRecurrencePattern,
                         request.getRecurrencePattern())
-                .set("nextDueDate", task::getNextDueDate, task::setNextDueDate, request.getNextDueDate())
-                .set("requiresPhotoProof", task::getRequiresPhotoProof, task::setRequiresPhotoProof,
+                .setVisible("nextDueDate", task::getNextDueDate, task::setNextDueDate, request.getNextDueDate())
+                .setVisible("requiresPhotoProof", task::getRequiresPhotoProof, task::setRequiresPhotoProof,
                         request.getRequiresPhotoProof() != null && request.getRequiresPhotoProof())
-                .set("estimatedTimeMinutes", task::getEstimatedTimeMinutes, task::setEstimatedTimeMinutes,
+                .setVisible("estimatedTimeMinutes", task::getEstimatedTimeMinutes, task::setEstimatedTimeMinutes,
                         request.getEstimatedTimeMinutes())
-                .set("status", task::getStatus, task::setStatus, request.getStatus())
+                .setVisible("status", task::getStatus, task::setStatus, request.getStatus())
                 // Compared by id, and read before the sets below: two loads of one row are not the
                 // same object, so comparing the entities would call every reassignment a change.
                 .track("assignedToId", idOf(task.getAssignedTo()), request.getAssignedToId())

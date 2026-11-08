@@ -121,7 +121,7 @@ public class GroupMemberService {
         }
 
         AuditChanges changes = AuditChanges.create()
-                .set("role", member::getRole, member::setRole, role);
+                .setVisible("role", member::getRole, member::setRole, role);
         // Authorization-relevant state change → INFO.
         log.info("Group member role changed: memberUid={} role={}", memberUid, role);
         GroupMember saved = groupMemberRepository.save(member);

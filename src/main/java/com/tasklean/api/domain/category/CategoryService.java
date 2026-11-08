@@ -101,8 +101,9 @@ public class CategoryService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
         AuditChanges changes = AuditChanges.create()
                 .set("name", category::getName, category::setName, request.getName())
-                .set("color", category::getColor, category::setColor, request.getColor())
-                .set("icon", category::getIcon, category::setIcon, request.getIcon());
+                // Presentational tokens, not anything a person wrote, so their values are kept.
+                .setVisible("color", category::getColor, category::setColor, request.getColor())
+                .setVisible("icon", category::getIcon, category::setIcon, request.getIcon());
         Category saved = categoryRepository.save(category);
         auditLogService.recordEvent(AuditEntityType.CATEGORY, saved.getIdCategory(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), saved.getGroup(), changes);

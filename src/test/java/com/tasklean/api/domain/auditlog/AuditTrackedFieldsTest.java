@@ -17,20 +17,31 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Guards the audit trail against a request field nobody classified. Adding a field to one of these
- * DTOs fails here until it is either tracked by the update or named as deliberately untracked -
- * without that, a new field changes silently and the trail says only that something was edited.
- * The service tests prove the tracked names are the ones actually reported; this proves the list
- * is complete. Role changes take an enum rather than a DTO, so they are not covered here.
+ * The register of what the audit trail keeps, and the guard against a request field nobody
+ * classified. Every field of an update's DTO belongs in exactly one of three buckets, and adding
+ * one fails here until somebody puts it in a bucket - a new field wired into an update without a
+ * tracking call audits as nothing at all, which no behavioural test sees.
+ *
+ * <p>The buckets carry a privacy decision, so this file is the one place to read for "which values
+ * does the trail persist": <b>values shown</b> keeps the field's before and after, which live
+ * forever in an append-only table and are visible to every reader of the entry; <b>names only</b>
+ * records that the field moved and nothing more; <b>untracked</b> means the update ignores it.
+ * The service tests prove the reported names and values match these lists. Two tracked fields are
+ * absent because they have no DTO: the group and platform {@code role} changes take an enum, and
+ * {@code inviteCode} is rotated by an endpoint with no body.
  */
 class AuditTrackedFieldsTest {
 
     @Test
     void taskRequest_everyField_isClassified() {
         assertEveryFieldClassified(TaskRequest.class,
-                Set.of("name", "description", "taskPhotoUrl", "priority", "recurrenceType",
-                        "recurrencePattern", "nextDueDate", "requiresPhotoProof",
-                        "estimatedTimeMinutes", "status", "assignedToId", "categoryId"),
+                // Fixed tokens, a flag, a number and a date - nothing a person wrote.
+                Set.of("priority", "recurrenceType", "nextDueDate", "requiresPhotoProof",
+                        "estimatedTimeMinutes", "status"),
+                // Free text, an image key, free-form JSON, and two associations compared by
+                // internal id - an id must never reach a response.
+                Set.of("name", "description", "taskPhotoUrl", "recurrencePattern",
+                        "assignedToId", "categoryId"),
                 // A task cannot move group or change author, so updateTask ignores both.
                 Set.of("groupId", "createdById"));
     }
@@ -38,6 +49,7 @@ class AuditTrackedFieldsTest {
     @Test
     void groupRequest_everyField_isClassified() {
         assertEveryFieldClassified(GroupRequest.class,
+                Set.of(),
                 Set.of("name", "description", "photoUid"),
                 Set.of());
     }
@@ -45,6 +57,8 @@ class AuditTrackedFieldsTest {
     @Test
     void userRequest_everyField_isClassified() {
         assertEveryFieldClassified(UserRequest.class,
+                Set.of(),
+                // A person's own names and picture, on a trail their household can read.
                 Set.of("name", "middleName", "lastName", "photoUrl"),
                 // Changing the sign-in address is not a profile edit; updateUser ignores it.
                 Set.of("email"));
@@ -53,24 +67,30 @@ class AuditTrackedFieldsTest {
     @Test
     void categoryRequest_everyField_isClassified() {
         assertEveryFieldClassified(CategoryRequest.class,
-                Set.of("name", "color", "icon"),
+                Set.of("color", "icon"),
+                Set.of("name"),
                 Set.of("groupId"));
     }
 
     @Test
     void tagRequest_everyField_isClassified() {
         assertEveryFieldClassified(TagRequest.class,
-                Set.of("name", "color"),
+                Set.of("color"),
+                Set.of("name"),
                 Set.of("groupId"));
     }
 
-    private static void assertEveryFieldClassified(Class<?> request, Set<String> tracked, Set<String> untracked) {
-        Set<String> classified = Stream.concat(tracked.stream(), untracked.stream()).collect(Collectors.toSet());
+    private static void assertEveryFieldClassified(Class<?> request, Set<String> valuesShown,
+                                                   Set<String> namesOnly, Set<String> untracked) {
+        assertThat(Stream.of(valuesShown, namesOnly, untracked).flatMap(Set::stream).toList())
+                .as("a %s field must sit in exactly one bucket", request.getSimpleName())
+                .doesNotHaveDuplicates();
 
         assertThat(declaredFields(request))
-                .as("every %s field must be tracked by the update or named as deliberately untracked",
+                .as("every %s field must be classified: values shown, names only, or untracked",
                         request.getSimpleName())
-                .containsExactlyInAnyOrderElementsOf(classified);
+                .containsExactlyInAnyOrderElementsOf(
+                        Stream.of(valuesShown, namesOnly, untracked).flatMap(Set::stream).collect(Collectors.toSet()));
     }
 
     private static Set<String> declaredFields(Class<?> request) {

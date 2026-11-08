@@ -100,7 +100,8 @@ public class TagService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
         AuditChanges changes = AuditChanges.create()
                 .set("name", tag::getName, tag::setName, request.getName())
-                .set("color", tag::getColor, tag::setColor, request.getColor());
+                // A presentational token, not anything a person wrote, so its value is kept.
+                .setVisible("color", tag::getColor, tag::setColor, request.getColor());
         Tag saved = tagRepository.save(tag);
         auditLogService.recordEvent(AuditEntityType.TAG, saved.getIdTag(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), saved.getGroup(), changes);

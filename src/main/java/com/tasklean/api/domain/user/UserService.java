@@ -88,7 +88,7 @@ public class UserService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
 
         AuditChanges changes = AuditChanges.create()
-                .set("role", user::getRole, user::setRole, role);
+                .setVisible("role", user::getRole, user::setRole, role);
         User saved = userRepository.save(user);
 
         // Authorization-relevant state change → INFO.

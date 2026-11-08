@@ -10,10 +10,14 @@ import java.util.function.Supplier;
  * Collects which fields an update actually changed, so an audit entry can name them. Built as the
  * update applies its values - the old value has to be read before the setter overwrites it, which
  * is why {@code set} does both.
+ *
+ * <p>A field's value is withheld unless the call site asks for it with {@code setVisible}. The
+ * default is the safe one: the trail is append-only and a group's is read by every member, so a
+ * value kept here is kept forever and shown to everybody who can see the entry.
  */
 public final class AuditChanges {
 
-    private final List<String> fields = new ArrayList<>();
+    private final List<AuditFieldChange> entries = new ArrayList<>();
 
     private AuditChanges() {
     }
@@ -29,8 +33,8 @@ public final class AuditChanges {
 
     /**
      * Records the field as changed if the new value differs from the current one, then applies it.
-     * Setting happens either way, so a value that is not a meaningful change (blank over absent) is
-     * still stored exactly as before this existed.
+     * The value itself is withheld. Setting happens either way, so a value that is not a meaningful
+     * change (blank over absent) is still stored exactly as before this existed.
      *
      * @param field    the field's name as the request DTO spells it
      * @param getter   reads the current value
@@ -40,17 +44,29 @@ public final class AuditChanges {
      * @return this collector, for chaining
      */
     public <T> AuditChanges set(String field, Supplier<T> getter, Consumer<T> setter, T newValue) {
-        if (differs(getter.get(), newValue)) {
-            fields.add(field);
-        }
-        setter.accept(newValue);
-        return this;
+        return record(field, getter, setter, newValue, false);
     }
 
     /**
-     * Records the field as changed if the two values differ, without applying anything. For a field
-     * whose compared value is not what gets stored - an association is set as an entity but compared
-     * by id, since two loads of one row are not the same object.
+     * As {@link #set}, but keeps what the field moved between. Only for a value that is safe in an
+     * append-only trail every reader of the entry can see: an enum, a flag, a number, a date, or a
+     * presentational token. Never text a person wrote, never a secret, never an internal id.
+     *
+     * @param field    the field's name as the request DTO spells it
+     * @param getter   reads the current value
+     * @param setter   applies the new value
+     * @param newValue the value to apply
+     * @param <T>      the field's type
+     * @return this collector, for chaining
+     */
+    public <T> AuditChanges setVisible(String field, Supplier<T> getter, Consumer<T> setter, T newValue) {
+        return record(field, getter, setter, newValue, true);
+    }
+
+    /**
+     * Records the field as changed if the two values differ, without applying anything and without
+     * keeping either. For a field whose compared value is not what gets stored - an association is
+     * set as an entity but compared by id, since two loads of one row are not the same object.
      *
      * @param field    the field's name as the request DTO spells it
      * @param oldValue the value before the update
@@ -59,7 +75,7 @@ public final class AuditChanges {
      */
     public AuditChanges track(String field, Object oldValue, Object newValue) {
         if (differs(oldValue, newValue)) {
-            fields.add(field);
+            entries.add(AuditFieldChange.withheld(field));
         }
         return this;
     }
@@ -70,7 +86,7 @@ public final class AuditChanges {
      * @return true if no field changed
      */
     boolean isEmpty() {
-        return fields.isEmpty();
+        return entries.isEmpty();
     }
 
     /**
@@ -79,7 +95,28 @@ public final class AuditChanges {
      * @return an immutable copy
      */
     public List<String> fields() {
-        return List.copyOf(fields);
+        return entries.stream().map(AuditFieldChange::field).toList();
+    }
+
+    /**
+     * The changes themselves, in the order the update applied them, each with its values or without
+     * them as the call site decided.
+     *
+     * @return an immutable copy
+     */
+    public List<AuditFieldChange> entries() {
+        return List.copyOf(entries);
+    }
+
+    private <T> AuditChanges record(String field, Supplier<T> getter, Consumer<T> setter, T newValue,
+                                    boolean keepValues) {
+        T oldValue = getter.get();
+        if (differs(oldValue, newValue)) {
+            entries.add(keepValues
+                    ? AuditFieldChange.shown(field, oldValue, newValue) : AuditFieldChange.withheld(field));
+        }
+        setter.accept(newValue);
+        return this;
     }
 
     private static boolean differs(Object oldValue, Object newValue) {
