@@ -27,6 +27,25 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
     List<GroupMember> findByGroupUidAndIsActiveTrue(String groupUid);
 
     /**
+     * Everybody who was ever in the group, loaded as {@link #findByGroupUidAndIsActiveTrue}. A
+     * membership is deactivated rather than deleted, so this is the whole history of the household.
+     *
+     * @param groupUid the group's public UID
+     * @return every membership of the group, active or not
+     */
+    @EntityGraph(attributePaths = {"user", "addedBy.user", "removedBy.user"})
+    List<GroupMember> findByGroupUid(String groupUid);
+
+    /**
+     * The people who have left the group, loaded as {@link #findByGroupUidAndIsActiveTrue}.
+     *
+     * @param groupUid the group's public UID
+     * @return the group's inactive memberships
+     */
+    @EntityGraph(attributePaths = {"user", "addedBy.user", "removedBy.user"})
+    List<GroupMember> findByGroupUidAndIsActiveFalse(String groupUid);
+
+    /**
      * One membership with the same associations loaded as {@link #findByGroupUidAndIsActiveTrue}.
      * Separate from {@link #findByUid} because that one also serves the authorization checks, which
      * read only ids and would pay for joins they never look at.

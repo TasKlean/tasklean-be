@@ -135,9 +135,11 @@ public class AuditLogService {
         Group group = groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
+        AuditLogVisibility.GroupTrail trail = auditLogVisibility.inGroup(group.getIdGroup(), caller);
+
         // No IP addresses on a group trail: an entry is read by every member, and a member's
         // address is theirs, not the household's.
-        return page(auditLogFilter.narrow(auditLogVisibility.inGroup(group.getIdGroup(), caller), query), query, null);
+        return page(auditLogFilter.narrow(trail.scope(), query, trail.rights()), query, null);
     }
 
     /**
@@ -154,7 +156,9 @@ public class AuditLogService {
         // (a role grant, say) is still this account's history.
         Specification<AuditLog> scope = AuditLogSpecs.aboutEntity(AuditEntityType.USER, userId);
 
-        return page(auditLogFilter.narrow(scope, query), query, userId);
+        // Any actor may be named here: every row is already this account's, and each one names its
+        // actor in the response, so the filter discloses nothing the page does not.
+        return page(auditLogFilter.narrow(scope, query, AuditFilterRights.anyActor()), query, userId);
     }
 
     // One row more than the page holds, so a next cursor means a further entry really exists; the

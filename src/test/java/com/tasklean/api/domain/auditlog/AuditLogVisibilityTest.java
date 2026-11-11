@@ -12,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
@@ -50,7 +51,7 @@ class AuditLogVisibilityTest {
     }
 
     private void applyAs(UserRole role) {
-        auditLogVisibility.inGroup(GROUP_ID, caller(role)).toPredicate(root, query, cb);
+        auditLogVisibility.inGroup(GROUP_ID, caller(role)).scope().toPredicate(root, query, cb);
     }
 
     @Test
@@ -90,6 +91,35 @@ class AuditLogVisibilityTest {
 
         verify(query, never()).subquery(any(Class.class));
         verifyNoInteractions(groupSecurity);
+    }
+
+    @Test
+    void inGroup_groupAdmin_mayFilterByAnyActor() {
+        when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(true);
+
+        AuditFilterRights rights = auditLogVisibility.inGroup(GROUP_ID, caller(UserRole.USER)).rights();
+
+        assertThat(rights.mayFilterByActor("usr-someone-else")).isTrue();
+    }
+
+    @Test
+    void inGroup_plainMember_mayFilterOnlyByThemselves() {
+        when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(false);
+
+        AuditFilterRights rights = auditLogVisibility.inGroup(GROUP_ID, caller(UserRole.USER)).rights();
+
+        assertThat(rights.mayFilterByActor("usr-1")).isTrue();
+        assertThat(rights.mayFilterByActor("usr-someone-else")).isFalse();
+    }
+
+    @Test
+    void inGroup_always_decidesRowsAndRightsFromOneGroupLookup() {
+        // Both answers ride on the same membership, so asking for them must not cost two queries.
+        when(groupSecurity.isAdminOfGroup(GROUP_ID)).thenReturn(false);
+
+        auditLogVisibility.inGroup(GROUP_ID, caller(UserRole.USER));
+
+        verify(groupSecurity).isAdminOfGroup(GROUP_ID);
     }
 
     @Test

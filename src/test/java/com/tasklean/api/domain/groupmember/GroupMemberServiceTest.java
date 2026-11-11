@@ -294,8 +294,47 @@ class GroupMemberServiceTest {
     void getMembers_unknownGroup_throwsNotFound() {
         when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> groupMemberService.getMembers(GROUP_UID))
+        assertThatThrownBy(() -> groupMemberService.getMembers(GROUP_UID, MembershipStatus.ACTIVE))
                 .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).findByGroupUidAndIsActiveTrue(any());
+    }
+
+    @Test
+    void getMembers_unknownGroupAskedForEveryone_throwsBeforeListing() {
+        // Deleting a group deactivates every membership, so a roster read that reached past the
+        // group lookup would hand back the whole former household of a deleted group.
+        when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> groupMemberService.getMembers(GROUP_UID, MembershipStatus.ALL))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).findByGroupUid(any());
+        verify(groupMemberRepository, never()).findByGroupUidAndIsActiveFalse(any());
+    }
+
+    @Test
+    void getMembers_everyone_readsTheWholeHistoryOfTheGroup() {
+        // The uid of somebody who has left is what a client needs to offer them as an actor
+        // filter on the trail, and a membership is deactivated rather than deleted.
+        stubGroup();
+        when(groupMemberRepository.findByGroupUid(GROUP_UID))
+                .thenReturn(List.of(member(GroupRole.GROUP_ADMIN, true), member(GroupRole.GROUP_MEMBER, false)));
+
+        var members = groupMemberService.getMembers(GROUP_UID, MembershipStatus.ALL);
+
+        assertThat(members).hasSize(2);
+        assertThat(members).extracting(m -> m.getIsActive()).containsExactly(true, false);
+        verify(groupMemberRepository, never()).findByGroupUidAndIsActiveTrue(any());
+    }
+
+    @Test
+    void getMembers_formerOnly_leavesTheCurrentMembersOut() {
+        stubGroup();
+        when(groupMemberRepository.findByGroupUidAndIsActiveFalse(GROUP_UID))
+                .thenReturn(List.of(member(GroupRole.GROUP_MEMBER, false)));
+
+        var members = groupMemberService.getMembers(GROUP_UID, MembershipStatus.FORMER);
+
+        assertThat(members).singleElement().satisfies(m -> assertThat(m.getIsActive()).isFalse());
         verify(groupMemberRepository, never()).findByGroupUidAndIsActiveTrue(any());
     }
 
@@ -305,7 +344,7 @@ class GroupMemberServiceTest {
         when(groupMemberRepository.findByGroupUidAndIsActiveTrue(GROUP_UID))
                 .thenReturn(List.of(member(GroupRole.GROUP_ADMIN, true)));
 
-        var members = groupMemberService.getMembers(GROUP_UID);
+        var members = groupMemberService.getMembers(GROUP_UID, MembershipStatus.ACTIVE);
 
         // A roster has to be renderable from this one response; before, it held only numeric ids.
         assertThat(members).singleElement().satisfies(m -> {
