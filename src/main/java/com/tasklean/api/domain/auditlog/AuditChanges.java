@@ -44,7 +44,7 @@ public final class AuditChanges {
      * @return this collector, for chaining
      */
     public <T> AuditChanges set(String field, Supplier<T> getter, Consumer<T> setter, T newValue) {
-        return record(field, getter, setter, newValue, false);
+        return applyAndRecord(field, getter, setter, newValue, false);
     }
 
     /**
@@ -60,7 +60,7 @@ public final class AuditChanges {
      * @return this collector, for chaining
      */
     public <T> AuditChanges setVisible(String field, Supplier<T> getter, Consumer<T> setter, T newValue) {
-        return record(field, getter, setter, newValue, true);
+        return applyAndRecord(field, getter, setter, newValue, true);
     }
 
     /**
@@ -108,8 +108,8 @@ public final class AuditChanges {
         return List.copyOf(entries);
     }
 
-    private <T> AuditChanges record(String field, Supplier<T> getter, Consumer<T> setter, T newValue,
-                                    boolean keepValues) {
+    private <T> AuditChanges applyAndRecord(String field, Supplier<T> getter, Consumer<T> setter,
+                                            T newValue, boolean keepValues) {
         T oldValue = getter.get();
         if (differs(oldValue, newValue)) {
             entries.add(keepValues

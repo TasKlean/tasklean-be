@@ -56,7 +56,7 @@ public class AuditLogService {
      */
     @Transactional
     public void recordEvent(String entityType, Long entityId, AuditAction action, String message, Group group) {
-        recordEvent(entityType, entityId, action, message, group, null);
+        write(entityType, entityId, action, message, group, null);
     }
 
     /**
@@ -75,6 +75,13 @@ public class AuditLogService {
     @Transactional
     public void recordEvent(String entityType, Long entityId, AuditAction action, String message,
                             Group group, AuditChanges changes) {
+        write(entityType, entityId, action, message, group, changes);
+    }
+
+    // The one writer both overloads reach. Neither delegates to the other: a self-call does not go
+    // through the proxy, so the transaction would be the caller's rather than the one declared here.
+    private void write(String entityType, Long entityId, AuditAction action, String message,
+                       Group group, AuditChanges changes) {
         if (changes != null && changes.isEmpty()) {
             return;
         }
