@@ -6,8 +6,11 @@ import com.tasklean.api.domain.user.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Entity
 @Table(name = "audit_log")
@@ -40,6 +43,12 @@ public class AuditLog {
 
     @Column(name = "ip_address", length = 45)
     private String ipAddress;
+
+    // Which fields an update touched, by DTO name, each with its values where they are safe to
+    // keep. Null on anything that is not a tracked update.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "changed_fields")
+    private List<AuditFieldChange> changedFields;
 
     @CreationTimestamp
     @Column(name = "date_created", nullable = false, updatable = false)

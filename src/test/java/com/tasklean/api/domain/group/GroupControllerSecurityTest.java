@@ -162,7 +162,7 @@ class GroupControllerSecurityTest {
     @Test
     void getMembers_plainMember_ok() throws Exception {
         callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
-        when(groupMemberService.getMembers(GROUP_UID)).thenReturn(List.of());
+        when(groupMemberService.getMembers(eq(GROUP_UID), any())).thenReturn(List.of());
 
         mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isOk());
@@ -170,10 +170,30 @@ class GroupControllerSecurityTest {
 
     @Test
     void getMembers_platformAdmin_ok() throws Exception {
-        when(groupMemberService.getMembers(GROUP_UID)).thenReturn(List.of());
+        when(groupMemberService.getMembers(eq(GROUP_UID), any())).thenReturn(List.of());
 
         mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void getMembers_nonMemberAskingForEveryone_forbidden() throws Exception {
+        // Asking for the people who have left must not be a way past the gate - a former member
+        // would otherwise read the roster of a group they are no longer in.
+        mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID)
+                        .param("status", "ALL")
+                        .with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getMembers_unknownStatus_isABadRequest() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+
+        mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID)
+                        .param("status", "EVERYBODY")
+                        .with(as(UserRole.USER)))
+                .andExpect(status().isBadRequest());
     }
 
     // --- rotateInviteCode: group admin or platform SUPER_ADMIN ---

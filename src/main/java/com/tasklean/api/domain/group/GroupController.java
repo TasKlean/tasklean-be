@@ -8,6 +8,7 @@ import com.tasklean.api.domain.group.dto.JoinGroupRequest;
 import com.tasklean.api.domain.group.dto.MyGroupFilterRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMemberService;
+import com.tasklean.api.domain.groupmember.dto.GroupMemberQueryRequest;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -142,15 +143,22 @@ public class GroupController {
     }
 
     /**
-     * Lists a group's active members, each with the user behind the membership.
+     * Lists a group's members, each with the user behind the membership. By default the people
+     * currently in the group; {@code status} also reaches the ones who have left, since a
+     * membership is deactivated rather than deleted.
      *
-     * @param uid the group's public UID
-     * @return {@code 200 OK} with the group's active members
+     * @param uid   the group's public UID
+     * @param query which memberships to return
+     * @return {@code 200 OK} with the group's members
      */
+    // The gate is membership of the group, whichever memberships are asked for - and it resolves
+    // the caller's *active* membership, so leaving a group does not leave its roster readable.
     @PreAuthorize("hasRole('ADMIN') or @groupSecurity.isMember(#uid)")
     @GetMapping("/{uid}/members")
-    public ResponseEntity<ApiResponse<List<GroupMemberResponse>>> getMembers(@PathVariable String uid) {
-        return ResponseEntity.ok(ApiResponse.success(groupMemberService.getMembers(uid)));
+    public ResponseEntity<ApiResponse<List<GroupMemberResponse>>> getMembers(
+            @PathVariable String uid,
+            @Valid @ParameterObject GroupMemberQueryRequest query) {
+        return ResponseEntity.ok(ApiResponse.success(groupMemberService.getMembers(uid, query.getStatus())));
     }
 
     /**

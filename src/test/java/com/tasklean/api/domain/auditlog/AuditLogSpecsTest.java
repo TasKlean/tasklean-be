@@ -67,6 +67,32 @@ class AuditLogSpecsTest {
     }
 
     @Test
+    void byActor_always_matchesOnTheActingUser() {
+        AuditLogSpecs.byActor(9L).toPredicate(root, query, cb);
+
+        verify(cb).equal(root.get("actorUser").get("idUser"), 9L);
+    }
+
+    @Test
+    void recordedFrom_always_includesTheBoundItself() {
+        LocalDateTime from = LocalDateTime.now(ZoneOffset.UTC);
+
+        AuditLogSpecs.recordedFrom(from).toPredicate(root, query, cb);
+
+        verify(cb).greaterThanOrEqualTo(root.<LocalDateTime>get("dateCreated"), from);
+    }
+
+    @Test
+    void recordedBefore_always_stopsShortOfTheBound() {
+        // Exclusive, so a bound never has to name a fraction of a second to cover a whole one.
+        LocalDateTime to = LocalDateTime.now(ZoneOffset.UTC);
+
+        AuditLogSpecs.recordedBefore(to).toPredicate(root, query, cb);
+
+        verify(cb).lessThan(root.<LocalDateTime>get("dateCreated"), to);
+    }
+
+    @Test
     void withActorFetched_aRowQuery_fetchesTheActorWithTheRow() {
         // The response renders the actor's name, and no JPA session outlives the service call.
         when(query.getResultType()).thenReturn(Object.class);

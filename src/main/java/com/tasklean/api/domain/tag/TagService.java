@@ -4,6 +4,7 @@ import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
@@ -97,11 +98,13 @@ public class TagService {
     public TagResponse updateTag(Long id, TagRequest request) {
         Tag tag = tagRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TAG_NOT_FOUND));
-        tag.setName(request.getName());
-        tag.setColor(request.getColor());
+        AuditChanges changes = AuditChanges.create()
+                .set("name", tag::getName, tag::setName, request.getName())
+                // A presentational token, not anything a person wrote, so its value is kept.
+                .setVisible("color", tag::getColor, tag::setColor, request.getColor());
         Tag saved = tagRepository.save(tag);
         auditLogService.recordEvent(AuditEntityType.TAG, saved.getIdTag(), AuditAction.UPDATE,
-                auditMessage(saved.getName(), "updated"), saved.getGroup());
+                auditMessage(saved.getName(), "updated"), saved.getGroup(), changes);
         return TagResponse.from(saved);
     }
 

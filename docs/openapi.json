@@ -549,6 +549,34 @@
             "minLength" : 0
           }
         }, {
+          "description" : "Keeps only entries this user acted on, named by their user uid - the same <code>uid</code> the\n entries' own <code>actor</code> carries. A plain member may name only themselves; filtering a\n group's trail by anybody else needs group admin.",
+          "in" : "query",
+          "name" : "actorRef",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "Keeps only entries recorded at or after this instant, inclusive. Must carry a zone offset\n (<code>2026-11-01T00:00:00+01:00</code>): the trail is stored in UTC, so a bare local time would\n shift the range by the caller's own offset without failing.",
+          "in" : "query",
+          "name" : "dateFrom",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }, {
+          "description" : "Keeps only entries recorded before this instant, exclusive - to cover a whole day, name the\n start of the next one. Same format as <code>dateFrom</code>.",
+          "in" : "query",
+          "name" : "dateTo",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }, {
           "description" : "The previous page's <code>nextCursor</code>. Omitted, the feed starts at the newest entry.",
           "in" : "query",
           "name" : "cursor",
@@ -632,6 +660,34 @@
             "type" : "string",
             "maxLength" : 100,
             "minLength" : 0
+          }
+        }, {
+          "description" : "Keeps only entries this user acted on, named by their user uid - the same <code>uid</code> the\n entries' own <code>actor</code> carries. A plain member may name only themselves; filtering a\n group's trail by anybody else needs group admin.",
+          "in" : "query",
+          "name" : "actorRef",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "Keeps only entries recorded at or after this instant, inclusive. Must carry a zone offset\n (<code>2026-11-01T00:00:00+01:00</code>): the trail is stored in UTC, so a bare local time would\n shift the range by the caller's own offset without failing.",
+          "in" : "query",
+          "name" : "dateFrom",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }, {
+          "description" : "Keeps only entries recorded before this instant, exclusive - to cover a whole day, name the\n start of the next one. Same format as <code>dateFrom</code>.",
+          "in" : "query",
+          "name" : "dateTo",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "date-time"
           }
         }, {
           "description" : "The previous page's <code>nextCursor</code>. Omitted, the feed starts at the newest entry.",
@@ -2212,7 +2268,7 @@
     },
     "/api/groups/{uid}/members" : {
       "get" : {
-        "description" : "Lists a group's active members, each with the user behind the membership.",
+        "description" : "Lists a group's members, each with the user behind the membership. By default the people\n currently in the group; <code>status</code> also reaches the ones who have left, since a\n membership is deactivated rather than deleted.",
         "operationId" : "getMembers",
         "parameters" : [ {
           "description" : "the group's public UID",
@@ -2221,6 +2277,15 @@
           "required" : true,
           "schema" : {
             "type" : "string"
+          }
+        }, {
+          "description" : "Which memberships to return. Omitted, the roster is the people currently in the group -\n <code>ALL</code> also returns everybody who has left, which is how a client offers them as a\n filter on the group's audit trail.",
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "ACTIVE", "FORMER", "ALL" ]
           }
         } ],
         "responses" : {
@@ -2232,7 +2297,7 @@
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the group's active members"
+            "description" : "<code>200 OK</code> with the group's members"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -2250,7 +2315,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists a group's active members, each with the user behind the membership.",
+        "summary" : "Lists a group's members, each with the user behind the membership.",
         "tags" : [ "Groups" ]
       }
     },
@@ -4314,6 +4379,24 @@
           }
         }
       },
+      "AuditFieldChange" : {
+        "type" : "object",
+        "description" : "One field an update touched. <code>from</code> and <code>to</code> are present only for a field whose value\n is safe to keep - most carry the name alone. The same shape is stored in <code>changed_fields</code>\n and returned to the client, so one Jackson annotation keeps both compact.",
+        "properties" : {
+          "field" : {
+            "type" : "string",
+            "description" : "the field's name as the request DTO spells it"
+          },
+          "from" : {
+            "type" : "string",
+            "description" : "its value before the update, or null when withheld or previously empty"
+          },
+          "to" : {
+            "type" : "string",
+            "description" : "its value after the update, or null when withheld or now empty"
+          }
+        }
+      },
       "AuditLogPage" : {
         "type" : "object",
         "description" : "One page of an audit feed. Its own shape rather than Spring's <code>Page</code>: that one is built for\n offset paging and serializes a dozen fields a cursor-paged client cannot use.",
@@ -4347,6 +4430,12 @@
           },
           "actor" : {
             "$ref" : "#/components/schemas/UserSummaryResponse"
+          },
+          "changedFields" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/AuditFieldChange"
+            }
           },
           "dateCreated" : {
             "type" : "string",

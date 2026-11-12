@@ -3,6 +3,7 @@ package com.tasklean.api.domain.user;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.dto.UserRequest;
@@ -62,12 +63,14 @@ public class UserService {
     public UserResponse updateUser(String uid, UserRequest request) {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
-        user.setName(request.getName());
-        user.setMiddleName(request.getMiddleName());
-        user.setLastName(request.getLastName());
-        user.setPhotoUrl(request.getPhotoUrl());
+        AuditChanges changes = AuditChanges.create()
+                .set("name", user::getName, user::setName, request.getName())
+                .set("middleName", user::getMiddleName, user::setMiddleName, request.getMiddleName())
+                .set("lastName", user::getLastName, user::setLastName, request.getLastName())
+                .set("photoUrl", user::getPhotoUrl, user::setPhotoUrl, request.getPhotoUrl());
         User saved = userRepository.save(user);
-        auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.UPDATE, "Profile updated", null);
+        auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.UPDATE, "Profile updated",
+                null, changes);
         return UserResponse.from(saved);
     }
 
@@ -84,13 +87,14 @@ public class UserService {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
 
-        user.setRole(role);
+        AuditChanges changes = AuditChanges.create()
+                .setVisible("role", user::getRole, user::setRole, role);
         User saved = userRepository.save(user);
 
         // Authorization-relevant state change → INFO.
         log.info("User platform role changed: uid={} role={}", uid, role);
         auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.ROLE_CHANGED,
-                "Platform role changed to " + role, null);
+                "Platform role changed to " + role, null, changes);
 
         return UserResponse.from(saved);
     }

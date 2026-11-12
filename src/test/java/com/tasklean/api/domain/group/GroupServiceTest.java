@@ -3,6 +3,7 @@ package com.tasklean.api.domain.group;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
@@ -120,6 +121,12 @@ class GroupServiceTest {
         r.setName("Renamed");
         r.setDescription("desc");
         return r;
+    }
+
+    private AuditChanges capturedChanges() {
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(any(), any(), any(), any(), any(), changes.capture());
+        return changes.getValue();
     }
 
     private GroupMember membership(Group group, GroupRole role) {
@@ -339,7 +346,24 @@ class GroupServiceTest {
         groupService.updateGroup("grp-1", updateRequest(), 1L);
 
         assertThat(existing.getName()).isEqualTo("Renamed");
-        verify(auditLogService).recordEvent(any(), any(), any(), any(), any());
+        // The photo is unchanged (the mocked attach answers null, as the fixture holds), so it
+        // must not be named - that is the whole point of tracking per field.
+        assertThat(capturedChanges().fields()).containsExactly("name", "description");
+    }
+
+    @Test
+    void updateGroup_resendingTheSameValues_reportsNoChangedFields() {
+        Group existing = group();
+        GroupRequest unchanged = updateRequest();
+        unchanged.setName(existing.getName());
+        unchanged.setDescription(existing.getDescription());
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(existing));
+        when(groupRepository.save(any(Group.class))).thenAnswer(i -> i.getArgument(0));
+
+        groupService.updateGroup("grp-1", unchanged, 1L);
+
+        // Empty rather than absent - AuditLogServiceTest covers it writing no entry.
+        assertThat(capturedChanges().fields()).isEmpty();
     }
 
     @Test
@@ -361,7 +385,9 @@ class GroupServiceTest {
         assertThat(rotated.getInviteCode())
                 .isNotNull()
                 .isNotEqualTo("JOIN1234");
-        verify(auditLogService).recordEvent(any(), any(), any(), any(), any());
+        // Names the field, never the code - this is what tells a rotation from a rename, which
+        // both record UPDATE on GROUP.
+        assertThat(capturedChanges().fields()).containsExactly("inviteCode");
     }
 
     @Test

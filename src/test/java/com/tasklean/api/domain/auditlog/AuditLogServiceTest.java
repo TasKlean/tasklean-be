@@ -73,8 +73,9 @@ class AuditLogServiceTest {
     void collaboratorsPassTheirScopeThrough() {
         // Lenient because the write tests touch neither; a read test that cares about the
         // composition stubs these again, and the later stub is the one that answers.
-        lenient().when(auditLogVisibility.inGroup(any(), any())).thenReturn(Specification.unrestricted());
-        lenient().when(auditLogFilter.narrow(any(), any())).thenAnswer(call -> call.getArgument(0));
+        lenient().when(auditLogVisibility.inGroup(any(), any())).thenReturn(
+                new AuditLogVisibility.GroupTrail(Specification.unrestricted(), AuditFilterRights.anyActor()));
+        lenient().when(auditLogFilter.narrow(any(), any(), any())).thenAnswer(call -> call.getArgument(0));
     }
 
     // --- record ---
@@ -159,6 +160,57 @@ class AuditLogServiceTest {
         assertThat(captureSaved().getUid()).isNotBlank();
     }
 
+    // --- changed fields ---
+
+    @Test
+    void recordEvent_withChanges_namesTheFieldsThatMoved() {
+        Group subject = Group.builder().idGroup(10L).name("Home").description("Same").build();
+        AuditChanges changes = AuditChanges.create()
+                .set("name", subject::getName, subject::setName, "Away")
+                .set("description", subject::getDescription, subject::setDescription, "Same");
+
+        auditLogService.recordEvent(AuditEntityType.GROUP, 10L, AuditAction.UPDATE, "Group updated",
+                null, changes);
+
+        assertThat(captureSaved().getChangedFields())
+                .containsExactly(AuditFieldChange.withheld("name"));
+    }
+
+    @Test
+    void recordEvent_aDisclosedField_persistsBothValues() {
+        Group subject = Group.builder().idGroup(10L).name("Home").build();
+        AuditChanges changes = AuditChanges.create()
+                .setVisible("name", subject::getName, subject::setName, "Away");
+
+        auditLogService.recordEvent(AuditEntityType.GROUP, 10L, AuditAction.UPDATE, "Group updated",
+                null, changes);
+
+        assertThat(captureSaved().getChangedFields())
+                .containsExactly(new AuditFieldChange("name", "Home", "Away"));
+    }
+
+    @Test
+    void recordEvent_changesThatMovedNothing_writesNoEntry() {
+        Group subject = Group.builder().idGroup(10L).name("Home").build();
+        AuditChanges changes = AuditChanges.create()
+                .set("name", subject::getName, subject::setName, "Home");
+
+        auditLogService.recordEvent(AuditEntityType.GROUP, 10L, AuditAction.UPDATE, "Group updated",
+                null, changes);
+
+        // A save that altered nothing is not an event - this is what stops a form resubmission
+        // from filling the trail with identical rows.
+        verify(auditLogRepository, never()).save(any());
+    }
+
+    @Test
+    void recordEvent_noChangesTracked_leavesChangedFieldsUnset() {
+        auditLogService.recordEvent(AuditEntityType.USER, 1L, AuditAction.LOGIN, "User logged in", null);
+
+        // Null, not empty: this event has no notion of fields rather than having changed none.
+        assertThat(captureSaved().getChangedFields()).isNull();
+    }
+
     // --- reads ---
 
     @Test
@@ -223,8 +275,9 @@ class AuditLogServiceTest {
         groupExists();
         Specification<AuditLog> visible = Specification.unrestricted();
         Specification<AuditLog> narrowed = Specification.unrestricted();
-        when(auditLogVisibility.inGroup(eq(10L), any())).thenReturn(visible);
-        when(auditLogFilter.narrow(eq(visible), any())).thenReturn(narrowed);
+        when(auditLogVisibility.inGroup(eq(10L), any()))
+                .thenReturn(new AuditLogVisibility.GroupTrail(visible, AuditFilterRights.anyActor()));
+        when(auditLogFilter.narrow(eq(visible), any(), any())).thenReturn(narrowed);
         whenFeedHolds(List.of());
 
         auditLogService.getGroupLogs(GROUP_UID, caller(), query(20));
@@ -249,7 +302,7 @@ class AuditLogServiceTest {
 
         assertThat(auditLogService.getAccountLogs(7L, query(20)).getItems()).isEmpty();
 
-        verify(auditLogFilter).narrow(any(), any());
+        verify(auditLogFilter).narrow(any(), any(), any());
     }
 
     // --- ip address visibility ---
@@ -356,7 +409,7 @@ class AuditLogServiceTest {
         groupExists();
         whenFeedHolds(List.of());
 
-        auditLogService.getGroupLogs(GROUP_UID, caller(), new AuditLogQueryRequest(null, null, null, null));
+        auditLogService.getGroupLogs(GROUP_UID, caller(), new AuditLogQueryRequest(null, null, null, null, null, null, null));
 
         assertThat(appliedFluentQuery().limit).isEqualTo(AuditLogQueryRequest.DEFAULT_LIMIT + 1);
     }
@@ -376,7 +429,7 @@ class AuditLogServiceTest {
         // shrank as the reader paged would be worse than none at all.
         groupExists();
         Specification<AuditLog> feed = Specification.unrestricted();
-        when(auditLogFilter.narrow(any(), any())).thenReturn(feed);
+        when(auditLogFilter.narrow(any(), any(), any())).thenReturn(feed);
         when(auditLogCursor.decode("page-2")).thenReturn(new AuditLogCursor.Position(NOW, 9L));
         whenFeedHolds(List.of());
 
@@ -400,7 +453,7 @@ class AuditLogServiceTest {
     }
 
     private AuditLogQueryRequest query(int limit) {
-        return new AuditLogQueryRequest(null, null, null, limit);
+        return new AuditLogQueryRequest(null, null, null, null, null, null, limit);
     }
 
     private AuditLog entryActedBy(Long actorId) {

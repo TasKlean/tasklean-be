@@ -3,6 +3,7 @@ package com.tasklean.api.domain.task;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.category.Category;
@@ -84,7 +85,7 @@ public class TaskService {
                 .recurrenceType(request.getRecurrenceType())
                 .recurrencePattern(request.getRecurrencePattern())
                 .nextDueDate(request.getNextDueDate())
-                .requiresPhotoProof(request.getRequiresPhotoProof() != null ? request.getRequiresPhotoProof() : false)
+                .requiresPhotoProof(request.getRequiresPhotoProof() != null && request.getRequiresPhotoProof())
                 .estimatedTimeMinutes(request.getEstimatedTimeMinutes())
                 .status(request.getStatus())
                 .isActive(true)
@@ -122,16 +123,28 @@ public class TaskService {
         Task task = taskRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
 
-        task.setName(request.getName());
-        task.setDescription(request.getDescription());
-        task.setTaskPhotoUrl(request.getTaskPhotoUrl());
-        task.setPriority(request.getPriority());
-        task.setRecurrenceType(request.getRecurrenceType());
-        task.setRecurrencePattern(request.getRecurrencePattern());
-        task.setNextDueDate(request.getNextDueDate());
-        task.setRequiresPhotoProof(request.getRequiresPhotoProof() != null ? request.getRequiresPhotoProof() : false);
-        task.setEstimatedTimeMinutes(request.getEstimatedTimeMinutes());
-        task.setStatus(request.getStatus());
+        AuditChanges changes = AuditChanges.create()
+                .set("name", task::getName, task::setName, request.getName())
+                .set("description", task::getDescription, task::setDescription, request.getDescription())
+                .set("taskPhotoUrl", task::getTaskPhotoUrl, task::setTaskPhotoUrl, request.getTaskPhotoUrl())
+                // Values kept from here down: each is a fixed token, a flag, a number or a date, so
+                // keeping it discloses nothing a reader cannot already see on the task itself.
+                .setVisible("priority", task::getPriority, task::setPriority, request.getPriority())
+                .setVisible("recurrenceType", task::getRecurrenceType, task::setRecurrenceType,
+                        request.getRecurrenceType())
+                // The pattern is free-form JSON rather than a token, so it stays withheld.
+                .set("recurrencePattern", task::getRecurrencePattern, task::setRecurrencePattern,
+                        request.getRecurrencePattern())
+                .setVisible("nextDueDate", task::getNextDueDate, task::setNextDueDate, request.getNextDueDate())
+                .setVisible("requiresPhotoProof", task::getRequiresPhotoProof, task::setRequiresPhotoProof,
+                        request.getRequiresPhotoProof() != null && request.getRequiresPhotoProof())
+                .setVisible("estimatedTimeMinutes", task::getEstimatedTimeMinutes, task::setEstimatedTimeMinutes,
+                        request.getEstimatedTimeMinutes())
+                .setVisible("status", task::getStatus, task::setStatus, request.getStatus())
+                // Compared by id, and read before the sets below: two loads of one row are not the
+                // same object, so comparing the entities would call every reassignment a change.
+                .track("assignedToId", idOf(task.getAssignedTo()), request.getAssignedToId())
+                .track("categoryId", idOf(task.getCategory()), request.getCategoryId());
 
         if (request.getAssignedToId() != null) {
             task.setAssignedTo(groupMemberRepository.findById(request.getAssignedToId())
@@ -149,7 +162,7 @@ public class TaskService {
 
         Task saved = taskRepository.save(task);
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
-                auditMessage(saved.getName(), "updated"), saved.getGroup());
+                auditMessage(saved.getName(), "updated"), saved.getGroup(), changes);
         return TaskResponse.from(saved);
     }
 
@@ -172,5 +185,14 @@ public class TaskService {
 
     private static String auditMessage(String name, String verb) {
         return "Task \"" + name + "\" " + verb;
+    }
+
+    // An id off a lazy association is served by the proxy, so neither of these loads the row.
+    private static Long idOf(GroupMember member) {
+        return member != null ? member.getIdGroupMember() : null;
+    }
+
+    private static Long idOf(Category category) {
+        return category != null ? category.getIdCategory() : null;
     }
 }

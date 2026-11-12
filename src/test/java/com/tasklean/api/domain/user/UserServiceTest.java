@@ -2,12 +2,15 @@ package com.tasklean.api.domain.user;
 
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
+import com.tasklean.api.domain.auditlog.AuditFieldChange;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -46,8 +49,11 @@ class UserServiceTest {
 
         assertThat(user.getRole()).isEqualTo(UserRole.ADMIN);
         assertThat(response.getRole()).isEqualTo(UserRole.ADMIN);
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
         verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L),
-                eq(AuditAction.ROLE_CHANGED), anyString(), isNull());
+                eq(AuditAction.ROLE_CHANGED), anyString(), isNull(), changes.capture());
+        assertThat(changes.getValue().entries())
+                .containsExactly(new AuditFieldChange("role", "USER", "ADMIN"));
     }
 
     @Test
@@ -88,7 +94,14 @@ class UserServiceTest {
         userService.updateUser("usr-x", request);
 
         assertThat(user.getName()).isEqualTo("New");
-        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L), eq(AuditAction.UPDATE), anyString(), isNull());
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L), eq(AuditAction.UPDATE),
+                anyString(), isNull(), changes.capture());
+        // middleName and photoUrl were absent in both, so only the two the request carried moved.
+        assertThat(changes.getValue().fields()).containsExactly("name", "lastName");
+        // A person's own names are never kept, however harmless they look.
+        assertThat(changes.getValue().entries())
+                .containsExactly(AuditFieldChange.withheld("name"), AuditFieldChange.withheld("lastName"));
     }
 
     @Test

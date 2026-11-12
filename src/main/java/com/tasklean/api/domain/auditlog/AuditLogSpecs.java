@@ -63,6 +63,38 @@ final class AuditLogSpecs {
     }
 
     /**
+     * Entries one user is the actor of.
+     *
+     * @param userId the acting user's id
+     * @return the specification
+     */
+    public static Specification<AuditLog> byActor(Long userId) {
+        return (root, query, cb) -> cb.equal(root.get(ACTOR_USER).get(ID_USER), userId);
+    }
+
+    /**
+     * Entries recorded at or after an instant - the inclusive end of a date range.
+     *
+     * @param from the earliest instant to include, already in UTC
+     * @return the specification
+     */
+    public static Specification<AuditLog> recordedFrom(LocalDateTime from) {
+        return (root, query, cb) -> cb.greaterThanOrEqualTo(root.get(DATE_CREATED), from);
+    }
+
+    /**
+     * Entries recorded before an instant - the exclusive end of a date range. Exclusive so that
+     * adjacent ranges cannot both claim an entry, and so a bound never has to name a fraction of
+     * a second to cover the whole of one.
+     *
+     * @param to the instant to stop short of, already in UTC
+     * @return the specification
+     */
+    public static Specification<AuditLog> recordedBefore(LocalDateTime to) {
+        return (root, query, cb) -> cb.lessThan(root.get(DATE_CREATED), to);
+    }
+
+    /**
      * The entries a plain member of the group may read: the ones they are the actor of, plus every
      * entry about an entity whose {@code CREATE} entry names them.
      *

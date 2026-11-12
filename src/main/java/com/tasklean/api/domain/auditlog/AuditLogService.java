@@ -56,6 +56,35 @@ public class AuditLogService {
      */
     @Transactional
     public void recordEvent(String entityType, Long entityId, AuditAction action, String message, Group group) {
+        write(entityType, entityId, action, message, group, null);
+    }
+
+    /**
+     * Records an audit entry for an update, naming the fields it changed. Behaves as
+     * {@link #recordEvent(String, Long, AuditAction, String, Group)} otherwise.
+     *
+     * @param entityType the audited entity type (use {@link AuditEntityType} constants)
+     * @param entityId   the id of the affected entity
+     * @param action     the action performed
+     * @param message    a human-readable description of what happened
+     * @param group      the group the entity belongs to, or {@code null} for group-less events
+     * @param changes    the fields the update changed. An empty set writes no entry at all -
+     *                   a save that altered nothing is not an event. Pass {@code null} for an
+     *                   event that is not a tracked update, which always writes.
+     */
+    @Transactional
+    public void recordEvent(String entityType, Long entityId, AuditAction action, String message,
+                            Group group, AuditChanges changes) {
+        write(entityType, entityId, action, message, group, changes);
+    }
+
+    // The one writer both overloads reach. Neither delegates to the other: a self-call does not go
+    // through the proxy, so the transaction would be the caller's rather than the one declared here.
+    private void write(String entityType, Long entityId, AuditAction action, String message,
+                       Group group, AuditChanges changes) {
+        if (changes != null && changes.isEmpty()) {
+            return;
+        }
         GroupMember actor = group != null ? auditContext.currentActor(group.getIdGroup()) : null;
 
         AuditLog entry = AuditLog.builder()
@@ -68,6 +97,7 @@ public class AuditLogService {
                 .actorUser(auditContext.currentUser())
                 .groupMember(actor)
                 .group(group)
+                .changedFields(changes != null ? changes.entries() : null)
                 .build();
 
         auditLogRepository.save(entry);
@@ -112,9 +142,11 @@ public class AuditLogService {
         Group group = groupRepository.findByUidAndIsActiveTrue(groupUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
 
+        AuditLogVisibility.GroupTrail trail = auditLogVisibility.inGroup(group.getIdGroup(), caller);
+
         // No IP addresses on a group trail: an entry is read by every member, and a member's
         // address is theirs, not the household's.
-        return page(auditLogFilter.narrow(auditLogVisibility.inGroup(group.getIdGroup(), caller), query), query, null);
+        return page(auditLogFilter.narrow(trail.scope(), query, trail.rights()), query, null);
     }
 
     /**
@@ -131,7 +163,9 @@ public class AuditLogService {
         // (a role grant, say) is still this account's history.
         Specification<AuditLog> scope = AuditLogSpecs.aboutEntity(AuditEntityType.USER, userId);
 
-        return page(auditLogFilter.narrow(scope, query), query, userId);
+        // Any actor may be named here: every row is already this account's, and each one names its
+        // actor in the response, so the filter discloses nothing the page does not.
+        return page(auditLogFilter.narrow(scope, query, AuditFilterRights.anyActor()), query, userId);
     }
 
     // One row more than the page holds, so a next cursor means a further entry really exists; the

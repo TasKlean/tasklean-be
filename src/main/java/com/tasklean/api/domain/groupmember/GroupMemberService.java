@@ -5,6 +5,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
+import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
@@ -41,15 +42,18 @@ public class GroupMemberService {
     private final Clock clock;
 
     /**
-     * Returns a group's active members.
+     * Returns a group's roster, by default the people currently in it.
      *
      * @param groupUid the group's public UID
-     * @return the group's active members
+     * @param status   which memberships to return
+     * @return the group's members, each carrying {@code isActive} and {@code dateLeft}
      * @throws ResourceNotFoundException if no active group has that UID
      */
-    public List<GroupMemberResponse> getMembers(String groupUid) {
+    public List<GroupMemberResponse> getMembers(String groupUid, MembershipStatus status) {
+        // Before the listing, and on the active-group finder: deleting a group deactivates every
+        // membership, so a FORMER read of one would otherwise answer its whole former household.
         requireGroup(groupUid);
-        return groupMemberRepository.findByGroupUidAndIsActiveTrue(groupUid).stream()
+        return membershipsOf(groupUid, status).stream()
                 .map(GroupMemberResponse::from)
                 .toList();
     }
@@ -119,12 +123,13 @@ public class GroupMemberService {
             throw new BusinessRuleException(ErrorMessages.GROUP_NEEDS_AN_ADMIN);
         }
 
-        member.setRole(role);
+        AuditChanges changes = AuditChanges.create()
+                .setVisible("role", member::getRole, member::setRole, role);
         // Authorization-relevant state change → INFO.
         log.info("Group member role changed: memberUid={} role={}", memberUid, role);
         GroupMember saved = groupMemberRepository.save(member);
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.ROLE_CHANGED,
-                "Role changed to " + role, saved.getGroup());
+                "Role changed to " + role, saved.getGroup(), changes);
         return GroupMemberResponse.from(saved);
     }
 
@@ -199,6 +204,16 @@ public class GroupMemberService {
         return groupMemberRepository.findByUserIdUserAndGroupIdGroup(callerUserId, groupId)
                 .filter(m -> Boolean.TRUE.equals(m.getIsActive()))
                 .orElse(null);
+    }
+
+    // A finder per status rather than one unfiltered read narrowed in memory, which would load
+    // rows only to discard them.
+    private List<GroupMember> membershipsOf(String groupUid, MembershipStatus status) {
+        return switch (status) {
+            case FORMER -> groupMemberRepository.findByGroupUidAndIsActiveFalse(groupUid);
+            case ALL -> groupMemberRepository.findByGroupUid(groupUid);
+            case ACTIVE -> groupMemberRepository.findByGroupUidAndIsActiveTrue(groupUid);
+        };
     }
 
     private Group requireGroup(String groupUid) {
