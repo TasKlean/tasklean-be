@@ -218,6 +218,31 @@ class UserServiceTest {
         assertThat(user.getPhotoUid()).isNull();
     }
 
+    @Test
+    void getUserByUid_accountWithAnUpload_publishesTheUidAndNotGooglesUrl() {
+        User user = User.builder().idUser(1L).uid("usr-x")
+                .photoUid("up-1").photoUrl("https://lh3.googleusercontent.com/a/abc").build();
+        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+
+        UserResponse response = userService.getUserByUid("usr-x");
+
+        // Exactly one source is published, and ours is the one that wins.
+        assertThat(response.getPhotoUid()).isEqualTo("up-1");
+        assertThat(response.getPhotoUrl()).isNull();
+    }
+
+    @Test
+    void getUserByUid_accountWithOnlyGooglesPicture_publishesThatUrl() {
+        User user = User.builder().idUser(1L).uid("usr-x")
+                .photoUrl("https://lh3.googleusercontent.com/a/abc").build();
+        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+
+        UserResponse response = userService.getUserByUid("usr-x");
+
+        assertThat(response.getPhotoUrl()).isEqualTo("https://lh3.googleusercontent.com/a/abc");
+        assertThat(response.getPhotoUid()).isNull();
+    }
+
     private UserRequest namedRequest() {
         UserRequest request = new UserRequest();
         request.setName("New");

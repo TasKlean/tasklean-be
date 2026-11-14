@@ -355,6 +355,26 @@ class GroupMemberServiceTest {
         });
     }
 
+    @Test
+    void getMembers_memberWithAnUploadedAvatar_carriesTheUidNotAUrl() {
+        stubGroup();
+        User withAvatar = user();
+        withAvatar.setPhotoUid("up-1");
+        withAvatar.setPhotoUrl("https://lh3.googleusercontent.com/a/abc");
+        GroupMember member = member(GroupRole.GROUP_ADMIN, true);
+        member.setUser(withAvatar);
+        when(groupMemberRepository.findByGroupUidAndIsActiveTrue(GROUP_UID)).thenReturn(List.of(member));
+
+        var members = groupMemberService.getMembers(GROUP_UID, MembershipStatus.ACTIVE);
+
+        // Ours wins, and it travels as a uid: the bucket is private, and a signed URL in every
+        // response would make the client re-fetch the image each time the signature changed.
+        assertThat(members).singleElement().satisfies(m -> {
+            assertThat(m.getUser().getPhotoUid()).isEqualTo("up-1");
+            assertThat(m.getUser().getPhotoUrl()).isNull();
+        });
+    }
+
     // --- addMember ---
 
     @Test

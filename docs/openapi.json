@@ -5587,6 +5587,7 @@
       },
       "UserResponse" : {
         "type" : "object",
+        "description" : "A user's own profile, or one read by platform staff. Exactly one of <code>photoUid</code> and\n <code>photoUrl</code> is ever set - see <code>ProfilePhoto</code>.",
         "properties" : {
           "dateCreated" : {
             "type" : "string",
@@ -5612,6 +5613,9 @@
             "type" : "string"
           },
           "name" : {
+            "type" : "string"
+          },
+          "photoUid" : {
             "type" : "string"
           },
           "photoUrl" : {
@@ -5669,12 +5673,15 @@
       },
       "UserSummaryResponse" : {
         "type" : "object",
-        "description" : "The slice of a user that other people are allowed to see — enough to render them in a list.\n Deliberately omits email and account state; those belong to the account's owner and to staff.",
+        "description" : "The slice of a user that other people are allowed to see — enough to render them in a list.\n Deliberately omits email and account state; those belong to the account's owner and to staff.\n\n <p>Exactly one of <code>photoUid</code> and <code>photoUrl</code> is ever set - see <code>ProfilePhoto</code>.",
         "properties" : {
           "lastName" : {
             "type" : "string"
           },
           "name" : {
+            "type" : "string"
+          },
+          "photoUid" : {
             "type" : "string"
           },
           "photoUrl" : {
