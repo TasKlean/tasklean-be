@@ -18,6 +18,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -106,6 +108,59 @@ class UserControllerSecurityTest {
     void getUser_otherUserAsPlainUser_forbidden() throws Exception {
         mockMvc.perform(get("/api/users/usr-2").with(as(UserRole.USER, "usr-1")))
                 .andExpect(status().isForbidden());
+    }
+
+    // --- update profile: the subject themselves, or SUPER_ADMIN ---
+
+    @Test
+    void updateUser_self_ok() throws Exception {
+        when(userService.updateUser(eq("usr-1"), any())).thenReturn(UserResponse.builder().uid("usr-1").build());
+
+        mockMvc.perform(put("/api/users/usr-1")
+                        .with(as(UserRole.USER, "usr-1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"New\",\"lastName\":\"Name\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateUser_otherUserAsPlainUser_forbidden() throws Exception {
+        mockMvc.perform(put("/api/users/usr-2")
+                        .with(as(UserRole.USER, "usr-1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"New\",\"lastName\":\"Name\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateUser_asAdmin_forbidden() throws Exception {
+        mockMvc.perform(put("/api/users/usr-2")
+                        .with(as(UserRole.ADMIN, "usr-1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"New\",\"lastName\":\"Name\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void updateUser_asSuperAdmin_ok() throws Exception {
+        when(userService.updateUser(eq("usr-2"), any())).thenReturn(UserResponse.builder().uid("usr-2").build());
+
+        mockMvc.perform(put("/api/users/usr-2")
+                        .with(as(UserRole.SUPER_ADMIN, "usr-1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"New\",\"lastName\":\"Name\"}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateUser_overLongName_isABadRequest() throws Exception {
+        // The only place the name bounds are provable end to end: without them an over-long value
+        // reaches Postgres and comes back as a generic 400 instead of naming the field.
+        mockMvc.perform(put("/api/users/usr-1")
+                        .with(as(UserRole.USER, "usr-1"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"" + "x".repeat(101) + "\",\"lastName\":\"Name\"}"))
+                .andExpect(status().isBadRequest());
     }
 
     // --- change role: SUPER_ADMIN only (ADMIN does NOT imply SUPER_ADMIN) ---

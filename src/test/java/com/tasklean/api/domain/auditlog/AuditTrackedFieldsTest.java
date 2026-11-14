@@ -58,10 +58,9 @@ class AuditTrackedFieldsTest {
     void userRequest_everyField_isClassified() {
         assertEveryFieldClassified(UserRequest.class,
                 Set.of(),
-                // A person's own names and picture, on a trail their household can read.
-                Set.of("name", "middleName", "lastName", "photoUrl"),
-                // Changing the sign-in address is not a profile edit; updateUser ignores it.
-                Set.of("email"));
+                // A person's own names, on a trail their household can read.
+                Set.of("name", "middleName", "lastName"),
+                Set.of());
     }
 
     @Test

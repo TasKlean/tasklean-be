@@ -5559,27 +5559,25 @@
       },
       "UserRequest" : {
         "type" : "object",
+        "description" : "A profile edit: the name parts, and deliberately nothing else. A photo URL is not accepted - an\n image of ours is attached by upload uid, never pasted as a link, which is the change V25 already\n made for group photos. The sign-in address is not a profile field either.",
         "properties" : {
-          "email" : {
-            "type" : "string",
-            "minLength" : 1
-          },
           "lastName" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
           },
           "middleName" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
           },
           "name" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
-          },
-          "photoUrl" : {
-            "type" : "string"
           }
         },
-        "required" : [ "email", "lastName", "name" ]
+        "required" : [ "lastName", "name" ]
       },
       "UserResponse" : {
         "type" : "object",

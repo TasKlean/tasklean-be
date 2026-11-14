@@ -97,11 +97,32 @@ class UserServiceTest {
         ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
         verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L), eq(AuditAction.UPDATE),
                 anyString(), isNull(), changes.capture());
-        // middleName and photoUrl were absent in both, so only the two the request carried moved.
+        // middleName was absent in both, so only the two the request carried moved.
         assertThat(changes.getValue().fields()).containsExactly("name", "lastName");
         // A person's own names are never kept, however harmless they look.
         assertThat(changes.getValue().entries())
                 .containsExactly(AuditFieldChange.withheld("name"), AuditFieldChange.withheld("lastName"));
+    }
+
+    @Test
+    void updateUser_accountWithAPhoto_leavesItAlone() {
+        User user = User.builder().idUser(1L).uid("usr-x")
+                .photoUrl("https://lh3.googleusercontent.com/a/abc").build();
+        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
+        UserRequest request = new UserRequest();
+        request.setName("New");
+        request.setLastName("Name");
+
+        userService.updateUser("usr-x", request);
+
+        // A profile edit cannot reach the photo: the request has no field for it, so a caller
+        // cannot point their picture at a host of their choosing.
+        assertThat(user.getPhotoUrl()).isEqualTo("https://lh3.googleusercontent.com/a/abc");
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L), eq(AuditAction.UPDATE),
+                anyString(), isNull(), changes.capture());
+        assertThat(changes.getValue().fields()).doesNotContain("photoUrl");
     }
 
     @Test

@@ -52,10 +52,11 @@ public class UserService {
     }
 
     /**
-     * Updates a user's profile fields (name parts and photo).
+     * Updates a user's name parts. The photo is not editable here - it is either one of our
+     * uploads or the picture Google provisioned the account with, never a URL a caller sends.
      *
      * @param uid     the user's public UID
-     * @param request the new profile details
+     * @param request the new name parts
      * @return the updated user
      * @throws ResourceNotFoundException if no user has that UID
      */
@@ -66,8 +67,7 @@ public class UserService {
         AuditChanges changes = AuditChanges.create()
                 .set("name", user::getName, user::setName, request.getName())
                 .set("middleName", user::getMiddleName, user::setMiddleName, request.getMiddleName())
-                .set("lastName", user::getLastName, user::setLastName, request.getLastName())
-                .set("photoUrl", user::getPhotoUrl, user::setPhotoUrl, request.getPhotoUrl());
+                .set("lastName", user::getLastName, user::setLastName, request.getLastName());
         User saved = userRepository.save(user);
         auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.UPDATE, "Profile updated",
                 null, changes);
