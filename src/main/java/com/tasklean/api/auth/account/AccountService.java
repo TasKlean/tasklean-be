@@ -20,6 +20,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,7 @@ public class AccountService {
     private final EmailTemplates emailTemplates;
     private final AuditLogService auditLogService;
     private final TwoFactorService twoFactorService;
+    private final UploadService uploadService;
 
     /**
      * Changes the caller's password after verifying the current one, then rotates sessions
@@ -223,6 +225,9 @@ public class AccountService {
         twoFactorService.requireSecondFactorIfEnabled(user, request.getCode());
 
         user.setIsActive(false);
+        // The photo goes with the account: left attached, nothing would ever collect the object.
+        uploadService.releaseUserPhoto(user);
+        user.setPhotoUid(null);
         userRepository.save(user);
         refreshTokenService.revokeAllUserTokens(user);
 

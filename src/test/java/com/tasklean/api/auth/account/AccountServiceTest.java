@@ -16,6 +16,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -54,6 +55,8 @@ class AccountServiceTest {
     private TwoFactorService twoFactorService;
     @Mock
     private EmailService emailService;
+    @Mock
+    private UploadService uploadService;
     @Spy
     private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
     @InjectMocks
@@ -312,6 +315,20 @@ class AccountServiceTest {
         verify(refreshTokenService).revokeAllUserTokens(user);
         verify(emailService).send("bob@example.com", emailTemplates.accountDeactivated());
         verify(auditLogService).recordAccountEvent(eq(USER_ID), eq(AuditAction.ACCOUNT_DELETED), anyString());
+    }
+
+    @Test
+    void deactivate_releasesThePhoto() {
+        User user = user("$old", null);
+        user.setPhotoUid("up-1");
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("pw", "$old")).thenReturn(true);
+
+        accountService.deactivate(USER_ID, new DeactivateAccountRequest("pw", null));
+
+        // A closed account's face stops being stored; left attached, nothing collects the object.
+        verify(uploadService).releaseUserPhoto(user);
+        assertThat(user.getPhotoUid()).isNull();
     }
 
     @Test

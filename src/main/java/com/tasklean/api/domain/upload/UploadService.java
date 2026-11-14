@@ -12,6 +12,7 @@ import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.upload.dto.SignedUrlResponse;
 import com.tasklean.api.domain.upload.dto.UploadRequest;
 import com.tasklean.api.domain.upload.dto.UploadResponse;
+import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -115,7 +116,7 @@ public class UploadService {
     @Transactional
     public String attachGroupPhoto(String uploadUid, Group group, Long callerUserId) {
         if (uploadUid == null) {
-            supersedeCurrentPhoto(group, null);
+            supersede(group.getPhotoUid(), null);
             return null;
         }
         if (uploadUid.equals(group.getPhotoUid())) {
@@ -127,7 +128,7 @@ public class UploadService {
         requireOwnPendingGroupPhoto(upload, group, callerUserId);
         requireObjectMatchesDeclaration(upload);
 
-        supersedeCurrentPhoto(group, uploadUid);
+        supersede(group.getPhotoUid(), uploadUid);
         upload.setStatus(UploadStatus.ATTACHED);
         upload.setDateAttached(LocalDateTime.now(clock));
         uploadRepository.save(upload);
@@ -171,12 +172,73 @@ public class UploadService {
      */
     @Transactional
     public void releaseGroupPhoto(Group group) {
-        supersedeCurrentPhoto(group, null);
+        supersede(group.getPhotoUid(), null);
     }
 
-    // A replaced photo's object is nobody's any more, so the sweep collects it.
-    private void supersedeCurrentPhoto(Group group, String replacementUid) {
-        Optional.ofNullable(group.getPhotoUid())
+    /**
+     * Points a user at an uploaded photo, after the same proof a group photo needs: that the object
+     * is really there and is really what was declared.
+     *
+     * <p>Re-sending the photo the account already has is a no-op.
+     *
+     * @param uploadUid    the upload's public uid, or {@code null} to clear the photo
+     * @param user         the account the photo belongs to
+     * @param callerUserId the id of the authenticated caller
+     * @return the uid to store on the user, or {@code null} when the photo is being cleared
+     * @throws InvalidRequestException if the upload is not this caller's own pending user photo, or
+     *                                 its object does not match what was declared
+     */
+    @Transactional
+    public String attachUserPhoto(String uploadUid, User user, Long callerUserId) {
+        if (uploadUid == null) {
+            supersede(user.getPhotoUid(), null);
+            return null;
+        }
+        if (uploadUid.equals(user.getPhotoUid())) {
+            return uploadUid;
+        }
+
+        Upload upload = uploadRepository.findByUid(uploadUid)
+                .orElseThrow(this::unusable);
+        requireOwnPendingUserPhoto(upload, user, callerUserId);
+        requireObjectMatchesDeclaration(upload);
+
+        supersede(user.getPhotoUid(), uploadUid);
+        upload.setStatus(UploadStatus.ATTACHED);
+        upload.setDateAttached(LocalDateTime.now(clock));
+        uploadRepository.save(upload);
+        log.info("Upload attached: uid={} purpose={} userUid={}",
+                upload.getUid(), upload.getPurpose(), user.getUid());
+        return upload.getUid();
+    }
+
+    /**
+     * Releases a user's photo, for when the account is being deactivated or deleted. Marking the
+     * row superseded is what hands the object to the sweep; left attached, nothing collects it.
+     *
+     * @param user the account being deactivated or deleted
+     */
+    @Transactional
+    public void releaseUserPhoto(User user) {
+        supersede(user.getPhotoUid(), null);
+    }
+
+    // A user photo carries no group, so its uploader is the only link back to a person - which is
+    // enough, because mayCreate already forced the uploader to be the subject.
+    private void requireOwnPendingUserPhoto(Upload upload, User user, Long callerUserId) {
+        boolean ownPendingPhotoForThisAccount = upload.getStatus() == UploadStatus.PENDING
+                && upload.getPurpose() == UploadPurpose.USER_PHOTO
+                && upload.getUser().getIdUser().equals(callerUserId)
+                && callerUserId.equals(user.getIdUser());
+        if (!ownPendingPhotoForThisAccount) {
+            throw unusable();
+        }
+    }
+
+    // A replaced photo's object is nobody's any more, so the sweep collects it. Takes the uid
+    // rather than what holds it, so a group and a user share the one implementation.
+    private void supersede(String currentUid, String replacementUid) {
+        Optional.ofNullable(currentUid)
                 .filter(current -> !current.equals(replacementUid))
                 .flatMap(uploadRepository::findByUid)
                 .ifPresent(previous -> {

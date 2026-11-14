@@ -3542,7 +3542,7 @@
         "tags" : [ "Users" ]
       },
       "put" : {
-        "description" : "Updates a user's profile.",
+        "description" : "Updates a user's profile. A photo uid is accepted only from the subject themselves, so this\n is one of the few rules a <code>@PreAuthorize</code> cannot state: it depends on the body.",
         "operationId" : "updateUser",
         "parameters" : [ {
           "description" : "the user's public UID",
@@ -5559,7 +5559,7 @@
       },
       "UserRequest" : {
         "type" : "object",
-        "description" : "A profile edit: the name parts, and deliberately nothing else. A photo URL is not accepted - an\n image of ours is attached by upload uid, never pasted as a link, which is the change V25 already\n made for group photos. The sign-in address is not a profile field either.",
+        "description" : "A profile edit: the name parts and the uid of an uploaded photo. A photo URL is not accepted - an\n image of ours is attached by upload uid, never pasted as a link, which is the change V25 already\n made for group photos. The sign-in address is not a profile field either.",
         "properties" : {
           "lastName" : {
             "type" : "string",
@@ -5575,6 +5575,12 @@
             "type" : "string",
             "maxLength" : 100,
             "minLength" : 1
+          },
+          "photoUid" : {
+            "type" : "string",
+            "description" : "The uid of a user-photo upload of yours, already PUT to the bucket; null clears ours so the\n Google picture shows again. Only the subject may send it - never an admin editing someone.",
+            "maxLength" : 100,
+            "minLength" : 0
           }
         },
         "required" : [ "lastName", "name" ]

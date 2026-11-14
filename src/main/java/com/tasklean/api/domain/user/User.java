@@ -37,7 +37,7 @@ public class User extends BaseEntity {
     private String lastName;
 
     // Google's picture, the only writer being the sign-in path. Kept as the fallback behind
-    // photo_uid: see PROJECT_BIBLE "A profile edit cannot set a photo".
+    // photo_uid: see PROJECT_BIBLE "Setting a profile photo".
     @Column(name = "photo_url", length = 500)
     private String photoUrl;
 

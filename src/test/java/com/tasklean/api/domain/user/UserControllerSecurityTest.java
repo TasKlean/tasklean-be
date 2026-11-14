@@ -114,7 +114,7 @@ class UserControllerSecurityTest {
 
     @Test
     void updateUser_self_ok() throws Exception {
-        when(userService.updateUser(eq("usr-1"), any())).thenReturn(UserResponse.builder().uid("usr-1").build());
+        when(userService.updateUser(eq("usr-1"), any(), any())).thenReturn(UserResponse.builder().uid("usr-1").build());
 
         mockMvc.perform(put("/api/users/usr-1")
                         .with(as(UserRole.USER, "usr-1"))
@@ -143,7 +143,7 @@ class UserControllerSecurityTest {
 
     @Test
     void updateUser_asSuperAdmin_ok() throws Exception {
-        when(userService.updateUser(eq("usr-2"), any())).thenReturn(UserResponse.builder().uid("usr-2").build());
+        when(userService.updateUser(eq("usr-2"), any(), any())).thenReturn(UserResponse.builder().uid("usr-2").build());
 
         mockMvc.perform(put("/api/users/usr-2")
                         .with(as(UserRole.SUPER_ADMIN, "usr-1"))

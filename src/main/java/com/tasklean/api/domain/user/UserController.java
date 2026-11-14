@@ -67,17 +67,21 @@ public class UserController {
     }
 
     /**
-     * Updates a user's profile.
+     * Updates a user's profile. A photo uid is accepted only from the subject themselves, so this
+     * is one of the few rules a {@code @PreAuthorize} cannot state: it depends on the body.
      *
-     * @param uid     the user's public UID
-     * @param request the new profile details
+     * @param uid       the user's public UID
+     * @param request   the new profile details
+     * @param principal the authenticated caller
      * @return {@code 200 OK} with the updated user
      */
     @PreAuthorize("hasRole('SUPER_ADMIN') or @accountSecurity.isSelf(#uid)")
     @PutMapping("/{uid}")
     public ResponseEntity<ApiResponse<UserResponse>> updateUser(
-            @PathVariable String uid, @Valid @RequestBody UserRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(userService.updateUser(uid, request)));
+            @PathVariable String uid, @Valid @RequestBody UserRequest request,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                userService.updateUser(uid, request, principal.userId())));
     }
 
     /**

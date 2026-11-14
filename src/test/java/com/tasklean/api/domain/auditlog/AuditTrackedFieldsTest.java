@@ -58,8 +58,9 @@ class AuditTrackedFieldsTest {
     void userRequest_everyField_isClassified() {
         assertEveryFieldClassified(UserRequest.class,
                 Set.of(),
-                // A person's own names, on a trail their household can read.
-                Set.of("name", "middleName", "lastName"),
+                // A person's own names, on a trail their household can read. The photo uid is a
+                // reference, not content, but names-only keeps it consistent with the group's.
+                Set.of("name", "middleName", "lastName", "photoUid"),
                 Set.of());
     }
 

@@ -371,4 +371,152 @@ class UploadServiceTest {
         assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
                 .isInstanceOf(InvalidRequestException.class);
     }
+    // --- attachUserPhoto ---
+
+    private static final String USER_KEY = "user-photo/x.png";
+
+    private User subject(String currentPhotoUid) {
+        return User.builder().idUser(USER_ID).uid(USER_UID).photoUid(currentPhotoUid).build();
+    }
+
+    private Upload userPhoto(Long requesterId, UploadStatus status) {
+        return Upload.builder()
+                .uid(UPLOAD_UID)
+                .storageKey(USER_KEY)
+                .purpose(UploadPurpose.USER_PHOTO)
+                .contentType("image/png")
+                .sizeBytes(12L)
+                .status(status)
+                .user(User.builder().idUser(requesterId).build())
+                .build();
+    }
+
+    private void stubUserObjectAsDeclared() {
+        when(objectStorage.head(USER_KEY)).thenReturn(Optional.of(new StoredObject("image/png", 12L)));
+        when(objectStorage.readPrefix(USER_KEY, 12)).thenReturn(Optional.of(PNG_BYTES));
+    }
+
+    @Test
+    void attachUserPhoto_ownPendingUploadThatArrived_isAttached() {
+        Upload upload = userPhoto(USER_ID, UploadStatus.PENDING);
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(upload));
+        stubUserObjectAsDeclared();
+
+        String stored = uploadService.attachUserPhoto(UPLOAD_UID, subject(null), USER_ID);
+
+        assertThat(stored).isEqualTo(UPLOAD_UID);
+        assertThat(upload.getStatus()).isEqualTo(UploadStatus.ATTACHED);
+        assertThat(upload.getDateAttached()).isNotNull();
+    }
+
+    @Test
+    void attachUserPhoto_null_clearsThePhotoAndSupersedesTheOldOne() {
+        Upload previous = userPhoto(USER_ID, UploadStatus.ATTACHED);
+        when(uploadRepository.findByUid("old-uid")).thenReturn(Optional.of(previous));
+
+        String stored = uploadService.attachUserPhoto(null, subject("old-uid"), USER_ID);
+
+        // Clearing ours is what lets the Google picture show again.
+        assertThat(stored).isNull();
+        assertThat(previous.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+    }
+
+    @Test
+    void attachUserPhoto_replacingAPhoto_supersedesTheOldOne() {
+        Upload previous = userPhoto(USER_ID, UploadStatus.ATTACHED);
+        Upload replacement = userPhoto(USER_ID, UploadStatus.PENDING);
+        when(uploadRepository.findByUid("old-uid")).thenReturn(Optional.of(previous));
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(replacement));
+        stubUserObjectAsDeclared();
+
+        uploadService.attachUserPhoto(UPLOAD_UID, subject("old-uid"), USER_ID);
+
+        assertThat(previous.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+        assertThat(replacement.getStatus()).isEqualTo(UploadStatus.ATTACHED);
+    }
+
+    @Test
+    void attachUserPhoto_thePhotoTheAccountAlreadyHas_changesNothing() {
+        String stored = uploadService.attachUserPhoto(UPLOAD_UID, subject(UPLOAD_UID), USER_ID);
+
+        assertThat(stored).isEqualTo(UPLOAD_UID);
+        verify(uploadRepository, never()).save(any());
+        verify(objectStorage, never()).head(anyString());
+    }
+
+    @Test
+    void attachUserPhoto_unknownUid_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> uploadService.attachUserPhoto(UPLOAD_UID, subject(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachUserPhoto_someoneElsesUpload_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID))
+                .thenReturn(Optional.of(userPhoto(2L, UploadStatus.PENDING)));
+
+        assertThatThrownBy(() -> uploadService.attachUserPhoto(UPLOAD_UID, subject(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(objectStorage, never()).head(anyString());
+    }
+
+    @Test
+    void attachUserPhoto_aGroupPhotoOfferedAsAnAvatar_throwsInvalidRequest() {
+        // An upload is usable only for what it was signed for: the purpose is what decided who may
+        // read the object, so letting one stand in for another would move its audience after the fact.
+        when(uploadRepository.findByUid(UPLOAD_UID))
+                .thenReturn(Optional.of(groupPhoto(USER_ID, UploadStatus.PENDING)));
+
+        assertThatThrownBy(() -> uploadService.attachUserPhoto(UPLOAD_UID, subject(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(objectStorage, never()).head(anyString());
+    }
+
+    @Test
+    void attachUserPhoto_ontoSomebodyElsesAccount_throwsInvalidRequest() {
+        // The caller signed it for themselves, so it cannot land on another profile even if the
+        // service were reached with one - belt to the 403 UserService answers first.
+        when(uploadRepository.findByUid(UPLOAD_UID))
+                .thenReturn(Optional.of(userPhoto(USER_ID, UploadStatus.PENDING)));
+        User somebodyElse = User.builder().idUser(2L).uid("other-user").build();
+
+        assertThatThrownBy(() -> uploadService.attachUserPhoto(UPLOAD_UID, somebodyElse, USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(objectStorage, never()).head(anyString());
+    }
+
+    @Test
+    void attachUserPhoto_anUploadAlreadySpent_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID))
+                .thenReturn(Optional.of(userPhoto(USER_ID, UploadStatus.ATTACHED)));
+
+        assertThatThrownBy(() -> uploadService.attachUserPhoto(UPLOAD_UID, subject(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(objectStorage, never()).head(anyString());
+    }
+
+    @Test
+    void attachUserPhoto_bytesAreNotTheDeclaredImage_throwsInvalidRequest() {
+        // Proves this path runs the same declaration check the group photo does.
+        when(uploadRepository.findByUid(UPLOAD_UID))
+                .thenReturn(Optional.of(userPhoto(USER_ID, UploadStatus.PENDING)));
+        when(objectStorage.head(USER_KEY)).thenReturn(Optional.of(new StoredObject("image/png", 12L)));
+        when(objectStorage.readPrefix(USER_KEY, 12)).thenReturn(Optional.of("<?php echo 1;".getBytes()));
+
+        assertThatThrownBy(() -> uploadService.attachUserPhoto(UPLOAD_UID, subject(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void releaseUserPhoto_supersedesTheCurrentPhoto() {
+        Upload current = userPhoto(USER_ID, UploadStatus.ATTACHED);
+        when(uploadRepository.findByUid("old-uid")).thenReturn(Optional.of(current));
+
+        uploadService.releaseUserPhoto(subject("old-uid"));
+
+        // A deactivated account's face stops being stored: the sweep collects the object.
+        assertThat(current.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+    }
 }
