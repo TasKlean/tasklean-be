@@ -52,7 +52,7 @@ public class UploadService {
      */
     @Transactional
     public UploadResponse createUpload(UploadRequest request, Long callerUserId) {
-        Group group = requireGroup(request.getTargetUid());
+        Group group = requireTarget(request);
 
         String uid = UUID.randomUUID().toString();
         // The key is derived from the uid, so there is one opaque identifier rather than two.
@@ -69,8 +69,10 @@ public class UploadService {
                 .group(group)
                 .build());
 
-        log.info("Upload signed: uid={} purpose={} groupUid={} bytes={}",
-                upload.getUid(), upload.getPurpose(), group.getUid(), upload.getSizeBytes());
+        // The target rather than the group: a user photo has no group, and the uid is what the
+        // caller named anyway.
+        log.info("Upload signed: uid={} purpose={} target={} bytes={}",
+                upload.getUid(), upload.getPurpose(), request.getTargetUid(), upload.getSizeBytes());
 
         return UploadResponse.builder()
                 .uid(upload.getUid())
@@ -186,6 +188,23 @@ public class UploadService {
     // One failure for every way an attach can be refused: which check caught it is our business.
     private InvalidRequestException unusable() {
         return new InvalidRequestException(ErrorMessages.UPLOAD_NOT_USABLE, ErrorCodes.UPLOAD_NOT_USABLE);
+    }
+
+    // The target is a different entity per purpose and must exist before anything is signed for
+    // it; only a group photo also records a group, which is what scopes who may read it later.
+    private Group requireTarget(UploadRequest request) {
+        return switch (request.getPurpose()) {
+            case GROUP_PHOTO -> requireGroup(request.getTargetUid());
+            case USER_PHOTO -> {
+                requireUser(request.getTargetUid());
+                yield null;
+            }
+        };
+    }
+
+    private void requireUser(String userUid) {
+        userRepository.findByUidAndIsActiveTrue(userUid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
     }
 
     private Group requireGroup(String groupUid) {

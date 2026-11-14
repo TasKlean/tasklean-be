@@ -52,6 +52,7 @@ class UploadServiceTest {
     private static final Long USER_ID = 1L;
     private static final String GROUP_UID = "group-uid";
     private static final String UPLOAD_UID = "upload-uid";
+    private static final String USER_UID = "user-uid";
     private static final String KEY = "group-photo/x.png";
 
     @BeforeEach
@@ -79,6 +80,15 @@ class UploadServiceTest {
         return request;
     }
 
+    private UploadRequest userPhotoRequest(String targetUid) {
+        UploadRequest request = new UploadRequest();
+        request.setPurpose(UploadPurpose.USER_PHOTO);
+        request.setTargetUid(targetUid);
+        request.setContentType("image/png");
+        request.setSizeBytes(1024L);
+        return request;
+    }
+
     private Upload savedUpload() {
         ArgumentCaptor<Upload> captor = ArgumentCaptor.forClass(Upload.class);
         verify(uploadRepository).save(captor.capture());
@@ -101,6 +111,35 @@ class UploadServiceTest {
         assertThat(upload.getStorageKey()).isEqualTo("group-photo/" + upload.getUid() + ".png");
         assertThat(upload.getGroup().getIdGroup()).isEqualTo(GROUP_ID);
         assertThat(upload.getUser().getIdUser()).isEqualTo(USER_ID);
+    }
+
+    @Test
+    void createUpload_userPhoto_recordsNoGroupAndItsOwnKeyPrefix() {
+        when(userRepository.findByUidAndIsActiveTrue(USER_UID))
+                .thenReturn(Optional.of(User.builder().idUser(USER_ID).uid(USER_UID).build()));
+        when(userRepository.getReferenceById(USER_ID)).thenReturn(User.builder().idUser(USER_ID).build());
+        when(uploadRepository.save(any(Upload.class))).thenAnswer(i -> i.getArgument(0));
+        when(objectStorage.presignUpload(anyString(), anyString(), anyLong())).thenReturn("https://bucket/put");
+
+        uploadService.createUpload(userPhotoRequest(USER_UID), USER_ID);
+
+        Upload upload = savedUpload();
+        // No group on the row: an avatar hangs on a person, which is what makes its read rule the
+        // shared-household one rather than the group one.
+        assertThat(upload.getGroup()).isNull();
+        assertThat(upload.getStorageKey()).isEqualTo("user-photo/" + upload.getUid() + ".png");
+        verifyNoInteractions(groupRepository);
+    }
+
+    @Test
+    void createUpload_userPhotoForAnUnknownUser_throwsNotFound() {
+        when(userRepository.findByUidAndIsActiveTrue("ghost")).thenReturn(Optional.empty());
+
+        // The target has to exist and be active before anything is signed for it, exactly as for a
+        // group photo - a SUPER_ADMIN bypasses mayCreate, so this is the only check standing.
+        assertThatThrownBy(() -> uploadService.createUpload(userPhotoRequest("ghost"), USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(uploadRepository);
     }
 
     @Test

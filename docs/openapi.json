@@ -5523,7 +5523,7 @@
           "purpose" : {
             "type" : "string",
             "description" : "What the image is for; it decides who may ask for the upload.",
-            "enum" : [ "GROUP_PHOTO" ]
+            "enum" : [ "GROUP_PHOTO", "USER_PHOTO" ]
           },
           "sizeBytes" : {
             "type" : "integer",

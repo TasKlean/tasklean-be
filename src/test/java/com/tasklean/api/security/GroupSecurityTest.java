@@ -20,6 +20,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +38,28 @@ class GroupSecurityTest {
     private static final Long USER_ID = 1L;
     private static final Long GROUP_ID = 10L;
     private static final String MEMBER_UID = "mem-1";
+
+    @Test
+    void sharesAnyGroupWith_aCommonGroup_isTrue() {
+        authenticate();
+        when(groupMemberRepository.countSharedActiveGroups(USER_ID, 2L)).thenReturn(1L);
+
+        assertThat(groupSecurity.sharesAnyGroupWith(2L)).isTrue();
+    }
+
+    @Test
+    void sharesAnyGroupWith_noCommonGroup_isFalse() {
+        authenticate();
+        when(groupMemberRepository.countSharedActiveGroups(USER_ID, 2L)).thenReturn(0L);
+
+        assertThat(groupSecurity.sharesAnyGroupWith(2L)).isFalse();
+    }
+
+    @Test
+    void sharesAnyGroupWith_anonymousCaller_isFalseWithoutAsking() {
+        assertThat(groupSecurity.sharesAnyGroupWith(2L)).isFalse();
+        verifyNoInteractions(groupMemberRepository);
+    }
 
     @AfterEach
     void clearContext() {
