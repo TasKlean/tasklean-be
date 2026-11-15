@@ -3542,7 +3542,7 @@
         "tags" : [ "Users" ]
       },
       "put" : {
-        "description" : "Updates a user's profile.",
+        "description" : "Updates a user's profile. A photo uid is accepted only from the subject themselves, so this\n is one of the few rules a <code>@PreAuthorize</code> cannot state: it depends on the body.",
         "operationId" : "updateUser",
         "parameters" : [ {
           "description" : "the user's public UID",
@@ -5523,7 +5523,7 @@
           "purpose" : {
             "type" : "string",
             "description" : "What the image is for; it decides who may ask for the upload.",
-            "enum" : [ "GROUP_PHOTO" ]
+            "enum" : [ "GROUP_PHOTO", "USER_PHOTO" ]
           },
           "sizeBytes" : {
             "type" : "integer",
@@ -5534,7 +5534,7 @@
           },
           "targetUid" : {
             "type" : "string",
-            "description" : "The uid of what the image is for — the group, for a group photo.",
+            "description" : "The uid of what the image is for — a group for a group photo, your own user for an avatar.",
             "maxLength" : 100,
             "minLength" : 1
           }
@@ -5559,30 +5559,35 @@
       },
       "UserRequest" : {
         "type" : "object",
+        "description" : "A profile edit: the name parts and the uid of an uploaded photo. A photo URL is not accepted - an\n image of ours is attached by upload uid, never pasted as a link, which is the change V25 already\n made for group photos. The sign-in address is not a profile field either.",
         "properties" : {
-          "email" : {
-            "type" : "string",
-            "minLength" : 1
-          },
           "lastName" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
           },
           "middleName" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
           },
           "name" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
           },
-          "photoUrl" : {
-            "type" : "string"
+          "photoUid" : {
+            "type" : "string",
+            "description" : "The uid of a user-photo upload of yours, already PUT to the bucket; null clears ours so the\n Google picture shows again. Only the subject may send it - never an admin editing someone.",
+            "maxLength" : 100,
+            "minLength" : 0
           }
         },
-        "required" : [ "email", "lastName", "name" ]
+        "required" : [ "lastName", "name" ]
       },
       "UserResponse" : {
         "type" : "object",
+        "description" : "A user's own profile, or one read by platform staff. Exactly one of <code>photoUid</code> and\n <code>photoUrl</code> is ever set - see <code>ProfilePhoto</code>.",
         "properties" : {
           "dateCreated" : {
             "type" : "string",
@@ -5608,6 +5613,9 @@
             "type" : "string"
           },
           "name" : {
+            "type" : "string"
+          },
+          "photoUid" : {
             "type" : "string"
           },
           "photoUrl" : {
@@ -5665,12 +5673,15 @@
       },
       "UserSummaryResponse" : {
         "type" : "object",
-        "description" : "The slice of a user that other people are allowed to see — enough to render them in a list.\n Deliberately omits email and account state; those belong to the account's owner and to staff.",
+        "description" : "The slice of a user that other people are allowed to see — enough to render them in a list.\n Deliberately omits email and account state; those belong to the account's owner and to staff.\n\n <p>Exactly one of <code>photoUid</code> and <code>photoUrl</code> is ever set - see <code>ProfilePhoto</code>.",
         "properties" : {
           "lastName" : {
             "type" : "string"
           },
           "name" : {
+            "type" : "string"
+          },
+          "photoUid" : {
             "type" : "string"
           },
           "photoUrl" : {

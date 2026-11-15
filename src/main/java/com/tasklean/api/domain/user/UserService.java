@@ -6,10 +6,12 @@ import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ import java.util.List;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final UploadService uploadService;
     private final AuditLogService auditLogService;
 
     /**
@@ -52,22 +55,37 @@ public class UserService {
     }
 
     /**
-     * Updates a user's profile fields (name parts and photo).
+     * Updates a user's name parts, and their photo when they are editing their own account. The
+     * photo is an upload of ours addressed by uid, never a URL a caller sends.
      *
-     * @param uid     the user's public UID
-     * @param request the new profile details
+     * @param uid          the user's public UID
+     * @param request      the new name parts, and the photo uid when editing your own account
+     * @param callerUserId the id of the authenticated caller
      * @return the updated user
      * @throws ResourceNotFoundException if no user has that UID
+     * @throws AccessDeniedException     if a caller other than the subject sent a photo uid
      */
     @Transactional
-    public UserResponse updateUser(String uid, UserRequest request) {
+    public UserResponse updateUser(String uid, UserRequest request, Long callerUserId) {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
+        boolean editingSelf = callerUserId.equals(user.getIdUser());
+        // A picture is self-service, SUPER_ADMIN included: a photo uid from anyone but the subject
+        // is refused rather than applied, since nobody puts a face on somebody else's profile.
+        if (!editingSelf && request.getPhotoUid() != null) {
+            throw new AccessDeniedException(ErrorMessages.ACCESS_DENIED);
+        }
+        // Resolved before the tracked sets so the old uid is still readable as the previous value.
+        // An administrative edit re-sets what is already there, so it cannot clear a photo by
+        // leaving the field out - which the subject's own edit is still free to do.
+        String photoUid = editingSelf
+                ? uploadService.attachUserPhoto(request.getPhotoUid(), user, callerUserId)
+                : user.getPhotoUid();
         AuditChanges changes = AuditChanges.create()
                 .set("name", user::getName, user::setName, request.getName())
                 .set("middleName", user::getMiddleName, user::setMiddleName, request.getMiddleName())
                 .set("lastName", user::getLastName, user::setLastName, request.getLastName())
-                .set("photoUrl", user::getPhotoUrl, user::setPhotoUrl, request.getPhotoUrl());
+                .set("photoUid", user::getPhotoUid, user::setPhotoUid, photoUid);
         User saved = userRepository.save(user);
         auditLogService.recordEvent(AuditEntityType.USER, saved.getIdUser(), AuditAction.UPDATE, "Profile updated",
                 null, changes);
@@ -110,6 +128,9 @@ public class UserService {
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         user.setIsActive(false);
+        // The photo goes with the account: left attached, nothing would ever collect the object.
+        uploadService.releaseUserPhoto(user);
+        user.setPhotoUid(null);
         userRepository.save(user);
         log.info("User soft-deleted: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.ACCOUNT_DELETED, "Account deleted", null);

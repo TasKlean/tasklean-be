@@ -78,6 +78,23 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
     long countByGroupIdGroupAndIsActiveTrue(Long groupId);
 
     /**
+     * How many groups the two users are both active members of. A join rather than two reads
+     * because the answer is only ever compared against zero, so nothing has to come back.
+     *
+     * @param userId      one user's internal id
+     * @param otherUserId the other user's internal id
+     * @return the number of groups both are active in
+     */
+    @Query("""
+            select count(mine)
+            from GroupMember mine, GroupMember theirs
+            where mine.user.idUser = :userId and theirs.user.idUser = :otherUserId
+              and mine.group.idGroup = theirs.group.idGroup
+              and mine.isActive = true and theirs.isActive = true
+            """)
+    long countSharedActiveGroups(Long userId, Long otherUserId);
+
+    /**
      * Active member counts for several groups at once, so a list of groups costs one query
      * instead of one per group.
      *

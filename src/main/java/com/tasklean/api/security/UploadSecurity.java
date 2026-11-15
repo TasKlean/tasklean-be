@@ -36,6 +36,8 @@ public class UploadSecurity {
         return switch (request.getPurpose()) {
             // Changing a household's picture is a group-admin act, so asking for one is too.
             case GROUP_PHOTO -> groupSecurity.isAdmin(request.getTargetUid());
+            // Nobody uploads a picture onto somebody else's profile, whatever their group role.
+            case USER_PHOTO -> request.getTargetUid().equals(currentUserUid());
         };
     }
 
@@ -50,8 +52,20 @@ public class UploadSecurity {
         return uploadRepository.findByUid(uid)
                 .map(upload -> upload.getStatus() == UploadStatus.PENDING
                         ? isRequester(upload)
-                        : sharesGroup(upload))
+                        : visibleWhereItHangs(upload))
                 .orElse(false);
+    }
+
+    // Once attached, an image is exactly as visible as what it belongs to - and that differs per
+    // purpose, so a new one has to answer here rather than inherit somebody else's audience.
+    private boolean visibleWhereItHangs(Upload upload) {
+        return switch (upload.getPurpose()) {
+            case GROUP_PHOTO -> sharesGroup(upload);
+            // An avatar is rendered on rosters, member pickers and the trail, so it is readable by
+            // the household rather than by its owner alone - but by nobody further out.
+            case USER_PHOTO -> isRequester(upload)
+                    || groupSecurity.sharesAnyGroupWith(upload.getUser().getIdUser());
+        };
     }
 
     private boolean isRequester(Upload upload) {
@@ -62,6 +76,11 @@ public class UploadSecurity {
     private boolean sharesGroup(Upload upload) {
         return upload.getGroup() != null
                 && groupSecurity.isMemberOfGroup(upload.getGroup().getIdGroup());
+    }
+
+    private String currentUserUid() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null && auth.getPrincipal() instanceof AuthPrincipal principal ? principal.uid() : null;
     }
 
     private Long currentUserId() {

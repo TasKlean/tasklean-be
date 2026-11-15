@@ -71,6 +71,9 @@ class UploadControllerSecurityTest {
     private static final String BODY = """
             {"purpose":"GROUP_PHOTO","targetUid":"grp-1","contentType":"image/png","sizeBytes":1024}""";
 
+    private static final String USER_PHOTO_BODY = """
+            {"purpose":"USER_PHOTO","targetUid":"%s","contentType":"image/png","sizeBytes":1024}""";
+
     private RequestPostProcessor as(UserRole platformRole) {
         AuthPrincipal principal = new AuthPrincipal(USER_ID, "usr-1", "user@example.com", platformRole);
         return authentication(new UsernamePasswordAuthenticationToken(
@@ -90,10 +93,23 @@ class UploadControllerSecurityTest {
 
     private void uploadExists(UploadStatus status, Long requesterId) {
         when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(Upload.builder()
-                .uid(UPLOAD_UID).status(status)
+                .uid(UPLOAD_UID).status(status).purpose(UploadPurpose.GROUP_PHOTO)
                 .user(User.builder().idUser(requesterId).build())
                 .group(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build())
                 .build()));
+    }
+
+    // An avatar hangs on a person, so its row carries no group at all - which is why the read rule
+    // cannot be the group one.
+    private void userPhotoExists(UploadStatus status, Long ownerId) {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(Upload.builder()
+                .uid(UPLOAD_UID).status(status).purpose(UploadPurpose.USER_PHOTO)
+                .user(User.builder().idUser(ownerId).build())
+                .build()));
+    }
+
+    private void sharesAGroupWith(Long ownerId, boolean shares) {
+        when(groupMemberRepository.countSharedActiveGroups(USER_ID, ownerId)).thenReturn(shares ? 1L : 0L);
     }
 
     private void serviceAnswers() {
@@ -147,6 +163,34 @@ class UploadControllerSecurityTest {
         mockMvc.perform(post("/api/uploads").with(as(UserRole.SUPER_ADMIN))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
                 .andExpect(status().isCreated());
+    }
+
+    // --- createUpload: a profile picture is the subject's own business ---
+
+    @Test
+    void createUpload_ownProfilePhoto_created() throws Exception {
+        serviceAnswers();
+
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(USER_PHOTO_BODY.formatted("usr-1")))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void createUpload_anotherUsersProfilePhoto_forbidden() throws Exception {
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(USER_PHOTO_BODY.formatted("usr-2")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createUpload_anotherUsersProfilePhotoAsGroupAdmin_forbidden() throws Exception {
+        // Being an admin of a household says nothing about a person's own picture.
+        callerIsMemberWithRole(GroupRole.GROUP_ADMIN);
+
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(USER_PHOTO_BODY.formatted("usr-2")))
+                .andExpect(status().isForbidden());
     }
 
     // --- createUpload: what is refused before any signature exists ---
@@ -222,6 +266,36 @@ class UploadControllerSecurityTest {
     @Test
     void getUrl_unknownUpload_forbidden() throws Exception {
         // Nothing to resolve a group from, so the check cannot pass - a uid is not a capability.
+        mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    // --- getUrl: an avatar is readable by the household, not by the whole platform ---
+
+    @Test
+    void getUrl_ownProfilePhoto_ok() throws Exception {
+        userPhotoExists(UploadStatus.ATTACHED, USER_ID);
+        serviceAnswers();
+
+        mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getUrl_profilePhotoOfSomeoneSharingAGroup_ok() throws Exception {
+        userPhotoExists(UploadStatus.ATTACHED, 2L);
+        sharesAGroupWith(2L, true);
+        serviceAnswers();
+
+        mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getUrl_profilePhotoOfAStranger_forbidden() throws Exception {
+        userPhotoExists(UploadStatus.ATTACHED, 2L);
+        sharesAGroupWith(2L, false);
+
         mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.USER)))
                 .andExpect(status().isForbidden());
     }

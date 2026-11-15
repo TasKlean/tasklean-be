@@ -70,6 +70,20 @@ public class GroupSecurity {
     }
 
     /**
+     * Whether the caller shares at least one active group with the given user. Not a membership
+     * check against one group but against all of them, which is what "somebody in my household"
+     * means when the thing being authorized belongs to a person rather than to a group.
+     *
+     * @param userId the other user's internal id
+     * @return {@code true} if both are active members of some group
+     */
+    public boolean sharesAnyGroupWith(Long userId) {
+        Long callerId = currentUserId();
+        return callerId != null && userId != null
+                && groupMemberRepository.countSharedActiveGroups(callerId, userId) > 0;
+    }
+
+    /**
      * Whether the caller may view the given membership — i.e. is an active member of its group.
      *
      * @param memberUid the target membership's public UID

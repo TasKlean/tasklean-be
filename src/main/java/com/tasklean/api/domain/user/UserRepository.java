@@ -13,6 +13,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByUid(String uid);
 
+    // Unfiltered above for callers that must still see a deactivated account (admin reads, role
+    // changes); filtered here for anything that treats the account as a usable target.
+    Optional<User> findByUidAndIsActiveTrue(String uid);
+
     Optional<User> findByGoogleSub(String googleSub);
 
     boolean existsByEmail(String email);

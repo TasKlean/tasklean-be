@@ -8,7 +8,10 @@ package com.tasklean.api.domain.upload;
 public enum UploadPurpose {
 
     /** A household's picture. Only that group's admin may ask for one. */
-    GROUP_PHOTO("group-photo");
+    GROUP_PHOTO("group-photo"),
+
+    /** A person's own profile picture. Only that person may ask for one. */
+    USER_PHOTO("user-photo");
 
     private final String keyPrefix;
 
