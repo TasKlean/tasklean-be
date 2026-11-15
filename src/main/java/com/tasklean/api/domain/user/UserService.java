@@ -7,6 +7,7 @@ import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.groupmember.MembershipClosure;
 import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
@@ -29,6 +30,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UploadService uploadService;
+    private final MembershipClosure membershipClosure;
     private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
 
@@ -122,16 +124,19 @@ public class UserService {
     }
 
     /**
-     * Soft-deletes a user account (sets it inactive), releases its photo and revokes every session
-     * it holds. The platform-admin counterpart to {@code POST /api/account/deactivate}, and it has
-     * to close the same things: an account left with live refresh tokens is only deleted until the
-     * next refresh.
+     * Soft-deletes a user account (sets it inactive), releases its photo, ends its group
+     * memberships and revokes every session it holds. The platform-admin counterpart to
+     * {@code POST /api/account/deactivate}, and it has to close the same things: an account left
+     * with live refresh tokens is only deleted until the next refresh, and one left in its
+     * households still reads as a current member of them.
      *
-     * @param uid the user's public UID
+     * @param uid          the user's public UID
+     * @param callerUserId the id of the authenticated caller, attributed as having ended the
+     *                     memberships
      * @throws ResourceNotFoundException if no active user has that UID
      */
     @Transactional
-    public void deleteUser(String uid) {
+    public void deleteUser(String uid, Long callerUserId) {
         // Filtered, so deleting twice is a 404 rather than a second entry on the account's trail.
         User user = userRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
@@ -140,6 +145,9 @@ public class UserService {
         uploadService.releaseUserPhoto(user);
         user.setPhotoUid(null);
         userRepository.save(user);
+        // After the account is inactive, so a household left without an admin inherits one from
+        // its surviving members rather than from the person on their way out.
+        membershipClosure.closeFor(user, callerUserId);
         // The JWT filter is stateless, so the access token lives out its TTL either way - but
         // refresh is where a session is renewed, and that has to stop here.
         refreshTokenService.revokeAllUserTokens(user);

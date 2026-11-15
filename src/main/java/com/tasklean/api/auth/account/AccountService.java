@@ -20,6 +20,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.groupmember.MembershipClosure;
 import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -53,6 +54,7 @@ public class AccountService {
     private final AuditLogService auditLogService;
     private final TwoFactorService twoFactorService;
     private final UploadService uploadService;
+    private final MembershipClosure membershipClosure;
 
     /**
      * Changes the caller's password after verifying the current one, then rotates sessions
@@ -199,9 +201,9 @@ public class AccountService {
     }
 
     /**
-     * Deactivates (soft-deletes) the caller's account and signs out every session. A password
-     * account must re-authenticate with its password; a Google-only account is confirmed by the
-     * authenticated session alone.
+     * Deactivates (soft-deletes) the caller's account, ends its group memberships and signs out
+     * every session. A password account must re-authenticate with its password; a Google-only
+     * account is confirmed by the authenticated session alone.
      *
      * @param userId  the authenticated caller's internal id
      * @param request the confirmation password (required only for a password account), plus a
@@ -229,6 +231,9 @@ public class AccountService {
         uploadService.releaseUserPhoto(user);
         user.setPhotoUid(null);
         userRepository.save(user);
+        // The households go with it too, and the caller is the subject here, so their departures
+        // are recorded as having left rather than been removed.
+        membershipClosure.closeFor(user, userId);
         refreshTokenService.revokeAllUserTokens(user);
 
         emailService.send(user.getEmail(), emailTemplates.accountDeactivated());

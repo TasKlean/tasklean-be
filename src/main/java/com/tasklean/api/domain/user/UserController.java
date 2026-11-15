@@ -102,13 +102,15 @@ public class UserController {
      * Soft-deletes a user account (platform admin action). Users deactivate their own account via
      * {@code POST /api/account/deactivate}, which re-authenticates and revokes sessions.
      *
-     * @param uid the user's public UID
+     * @param uid       the user's public UID
+     * @param principal the authenticated caller
      * @return {@code 200 OK} with a confirmation message
      */
     @PreAuthorize("hasRole('SUPER_ADMIN')")
     @DeleteMapping("/{uid}")
-    public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable String uid) {
-        userService.deleteUser(uid);
+    public ResponseEntity<ApiResponse<Void>> deleteUser(
+            @PathVariable String uid, @AuthenticationPrincipal AuthPrincipal principal) {
+        userService.deleteUser(uid, principal.userId());
         return ResponseEntity.ok(ApiResponse.success("User deleted", null));
     }
 }

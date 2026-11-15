@@ -7,6 +7,7 @@ import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditFieldChange;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.groupmember.MembershipClosure;
 import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import com.tasklean.api.domain.user.dto.UserResponse;
@@ -41,6 +42,9 @@ class UserServiceTest {
 
     @Mock
     private UploadService uploadService;
+
+    @Mock
+    private MembershipClosure membershipClosure;
 
     @Mock
     private RefreshTokenService refreshTokenService;
@@ -142,7 +146,7 @@ class UserServiceTest {
         User user = User.builder().idUser(1L).uid("usr-x").isActive(true).build();
         when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
 
-        userService.deleteUser("usr-x");
+        userService.deleteUser("usr-x", 99L);
 
         assertThat(user.getIsActive()).isFalse();
         verify(auditLogService).recordEvent(eq(AuditEntityType.USER), eq(1L), eq(AuditAction.ACCOUNT_DELETED), anyString(), isNull());
@@ -216,7 +220,7 @@ class UserServiceTest {
         User user = User.builder().idUser(1L).uid("usr-x").isActive(true).photoUid("up-1").build();
         when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
 
-        userService.deleteUser("usr-x");
+        userService.deleteUser("usr-x", 99L);
 
         // Left attached, nothing would ever collect the object.
         verify(uploadService).releaseUserPhoto(user);
@@ -228,10 +232,22 @@ class UserServiceTest {
         User user = User.builder().idUser(1L).uid("usr-x").isActive(true).build();
         when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
 
-        userService.deleteUser("usr-x");
+        userService.deleteUser("usr-x", 99L);
 
         // Without this an admin-deleted account renews itself at the next refresh.
         verify(refreshTokenService).revokeAllUserTokens(user);
+    }
+
+    @Test
+    void deleteUser_endsTheHouseholdMemberships() {
+        User user = User.builder().idUser(1L).uid("usr-x").isActive(true).build();
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
+
+        userService.deleteUser("usr-x", 99L);
+
+        // The acting admin is passed on, not the subject: an admin who is also a member of one of
+        // these households is the one attributed with ending the membership.
+        verify(membershipClosure).closeFor(user, 99L);
     }
 
     @Test
@@ -240,10 +256,11 @@ class UserServiceTest {
         // empty too, so without this the test would pass however the lookup was written.
         deletedButStillOnTheUnfilteredFinder();
 
-        assertThatThrownBy(() -> userService.deleteUser("usr-x"))
+        assertThatThrownBy(() -> userService.deleteUser("usr-x", 99L))
                 .isInstanceOf(ResourceNotFoundException.class);
-        // A second delete must not stamp a second ACCOUNT_DELETED on the trail.
-        verifyNoInteractions(auditLogService, refreshTokenService);
+        // A second delete must not stamp a second ACCOUNT_DELETED on the trail, nor end
+        // memberships that the first one already ended.
+        verifyNoInteractions(auditLogService, refreshTokenService, membershipClosure);
         verify(userRepository, never()).save(any());
     }
 
