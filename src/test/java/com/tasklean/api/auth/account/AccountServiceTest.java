@@ -16,6 +16,7 @@ import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.groupmember.MembershipClosure;
 import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -57,6 +58,8 @@ class AccountServiceTest {
     private EmailService emailService;
     @Mock
     private UploadService uploadService;
+    @Mock
+    private MembershipClosure membershipClosure;
     @Spy
     private EmailTemplates emailTemplates = new EmailTemplates("http://localhost:3000");
     @InjectMocks
@@ -329,6 +332,29 @@ class AccountServiceTest {
         // A closed account's face stops being stored; left attached, nothing collects the object.
         verify(uploadService).releaseUserPhoto(user);
         assertThat(user.getPhotoUid()).isNull();
+    }
+
+    @Test
+    void deactivate_endsTheHouseholdMemberships() {
+        User user = user("$old", null);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("pw", "$old")).thenReturn(true);
+
+        accountService.deactivate(USER_ID, new DeactivateAccountRequest("pw", null));
+
+        // The subject is the caller, so their departures are recorded as having left.
+        verify(membershipClosure).closeFor(user, USER_ID);
+    }
+
+    @Test
+    void deactivate_wrongPassword_leavesTheMembershipsAlone() {
+        User user = user("$old", null);
+        when(userRepository.findById(USER_ID)).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("bad", "$old")).thenReturn(false);
+
+        assertThatThrownBy(() -> accountService.deactivate(USER_ID, new DeactivateAccountRequest("bad", null)))
+                .isInstanceOf(BadCredentialsException.class);
+        verifyNoInteractions(membershipClosure);
     }
 
     @Test

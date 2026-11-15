@@ -95,6 +95,24 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, Long> 
     long countSharedActiveGroups(Long userId, Long otherUserId);
 
     /**
+     * A group's active memberships whose user is still a live account, oldest join first. Answers
+     * everything succession needs from one query: whether anybody is left, whether an admin is
+     * among them, and who inherits if not. A membership of a closed account is excluded, so an
+     * admin who has since deleted their account does not count as the group's admin.
+     *
+     * @param groupId the group's internal id
+     * @return the surviving memberships, ordered by {@code dateJoined} then id
+     */
+    @Query("""
+            select m
+            from GroupMember m
+            where m.group.idGroup = :groupId
+              and m.isActive = true and m.user.isActive = true
+            order by m.dateJoined asc, m.idGroupMember asc
+            """)
+    List<GroupMember> findSurvivingMemberships(Long groupId);
+
+    /**
      * Active member counts for several groups at once, so a list of groups costs one query
      * instead of one per group.
      *
