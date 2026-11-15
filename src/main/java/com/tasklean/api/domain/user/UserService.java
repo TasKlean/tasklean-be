@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.user;
 
+import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -28,6 +29,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final UploadService uploadService;
+    private final RefreshTokenService refreshTokenService;
     private final AuditLogService auditLogService;
 
     /**
@@ -62,12 +64,14 @@ public class UserService {
      * @param request      the new name parts, and the photo uid when editing your own account
      * @param callerUserId the id of the authenticated caller
      * @return the updated user
-     * @throws ResourceNotFoundException if no user has that UID
+     * @throws ResourceNotFoundException if no active user has that UID
      * @throws AccessDeniedException     if a caller other than the subject sent a photo uid
      */
     @Transactional
     public UserResponse updateUser(String uid, UserRequest request, Long callerUserId) {
-        User user = userRepository.findByUid(uid)
+        // Filtered: a closed account is no longer an editable target, for its own holder on a
+        // still-valid access token as much as for an admin.
+        User user = userRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         boolean editingSelf = callerUserId.equals(user.getIdUser());
         // A picture is self-service, SUPER_ADMIN included: a photo uid from anyone but the subject
@@ -118,20 +122,27 @@ public class UserService {
     }
 
     /**
-     * Soft-deletes a user account (sets it inactive).
+     * Soft-deletes a user account (sets it inactive), releases its photo and revokes every session
+     * it holds. The platform-admin counterpart to {@code POST /api/account/deactivate}, and it has
+     * to close the same things: an account left with live refresh tokens is only deleted until the
+     * next refresh.
      *
      * @param uid the user's public UID
-     * @throws ResourceNotFoundException if no user has that UID
+     * @throws ResourceNotFoundException if no active user has that UID
      */
     @Transactional
     public void deleteUser(String uid) {
-        User user = userRepository.findByUid(uid)
+        // Filtered, so deleting twice is a 404 rather than a second entry on the account's trail.
+        User user = userRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
         user.setIsActive(false);
         // The photo goes with the account: left attached, nothing would ever collect the object.
         uploadService.releaseUserPhoto(user);
         user.setPhotoUid(null);
         userRepository.save(user);
+        // The JWT filter is stateless, so the access token lives out its TTL either way - but
+        // refresh is where a session is renewed, and that has to stop here.
+        refreshTokenService.revokeAllUserTokens(user);
         log.info("User soft-deleted: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.USER, user.getIdUser(), AuditAction.ACCOUNT_DELETED, "Account deleted", null);
     }

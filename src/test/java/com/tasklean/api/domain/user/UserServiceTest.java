@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.user;
 
+import com.tasklean.api.auth.refresh.RefreshTokenService;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
@@ -26,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -39,6 +41,9 @@ class UserServiceTest {
 
     @Mock
     private UploadService uploadService;
+
+    @Mock
+    private RefreshTokenService refreshTokenService;
 
     @Mock
     private AuditLogService auditLogService;
@@ -92,7 +97,7 @@ class UserServiceTest {
     @Test
     void updateUser_success_savesAndAudits() {
         User user = User.builder().idUser(1L).uid("usr-x").build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         UserRequest request = new UserRequest();
         request.setName("New");
@@ -115,7 +120,7 @@ class UserServiceTest {
     void updateUser_accountWithAPhoto_leavesItAlone() {
         User user = User.builder().idUser(1L).uid("usr-x")
                 .photoUrl("https://lh3.googleusercontent.com/a/abc").build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         UserRequest request = new UserRequest();
         request.setName("New");
@@ -135,7 +140,7 @@ class UserServiceTest {
     @Test
     void deleteUser_success_softDeletesAndAudits() {
         User user = User.builder().idUser(1L).uid("usr-x").isActive(true).build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
 
         userService.deleteUser("usr-x");
 
@@ -145,7 +150,7 @@ class UserServiceTest {
     @Test
     void updateUser_self_attachesTheUploadAndTracksItByName() {
         User user = User.builder().idUser(1L).uid("usr-x").build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         when(uploadService.attachUserPhoto("up-1", user, 1L)).thenReturn("up-1");
         UserRequest request = namedRequest();
@@ -164,7 +169,7 @@ class UserServiceTest {
     @Test
     void updateUser_selfSendingNoPhotoUid_clearsThePhoto() {
         User user = User.builder().idUser(1L).uid("usr-x").photoUid("up-old").build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
         when(uploadService.attachUserPhoto(isNull(), eq(user), eq(1L))).thenReturn(null);
 
@@ -177,7 +182,7 @@ class UserServiceTest {
     @Test
     void updateUser_superAdminSendingAPhotoUid_throwsAccessDenied() {
         User subject = User.builder().idUser(1L).uid("usr-x").build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(subject));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(subject));
         UserRequest request = namedRequest();
         request.setPhotoUid("up-1");
 
@@ -191,7 +196,7 @@ class UserServiceTest {
     @Test
     void updateUser_superAdminEditingNames_leavesThePhotoAlone() {
         User subject = User.builder().idUser(1L).uid("usr-x").photoUid("up-old").build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(subject));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(subject));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
         userService.updateUser("usr-x", namedRequest(), 99L);
@@ -209,13 +214,48 @@ class UserServiceTest {
     @Test
     void deleteUser_releasesThePhoto() {
         User user = User.builder().idUser(1L).uid("usr-x").isActive(true).photoUid("up-1").build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
 
         userService.deleteUser("usr-x");
 
         // Left attached, nothing would ever collect the object.
         verify(uploadService).releaseUserPhoto(user);
         assertThat(user.getPhotoUid()).isNull();
+    }
+
+    @Test
+    void deleteUser_revokesEverySession() {
+        User user = User.builder().idUser(1L).uid("usr-x").isActive(true).build();
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
+
+        userService.deleteUser("usr-x");
+
+        // Without this an admin-deleted account renews itself at the next refresh.
+        verify(refreshTokenService).revokeAllUserTokens(user);
+    }
+
+    @Test
+    void deleteUser_alreadyDeleted_throwsNotFound() {
+        // The row is deliberately reachable through the unfiltered finder: an unstubbed one answers
+        // empty too, so without this the test would pass however the lookup was written.
+        deletedButStillOnTheUnfilteredFinder();
+
+        assertThatThrownBy(() -> userService.deleteUser("usr-x"))
+                .isInstanceOf(ResourceNotFoundException.class);
+        // A second delete must not stamp a second ACCOUNT_DELETED on the trail.
+        verifyNoInteractions(auditLogService, refreshTokenService);
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void updateUser_deletedAccount_throwsNotFound() {
+        deletedButStillOnTheUnfilteredFinder();
+
+        // A closed account is not an editable target, whoever is asking.
+        assertThatThrownBy(() -> userService.updateUser("usr-x", namedRequest(), 1L))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(userRepository, never()).save(any());
+        verifyNoInteractions(uploadService, auditLogService);
     }
 
     @Test
@@ -241,6 +281,14 @@ class UserServiceTest {
 
         assertThat(response.getPhotoUrl()).isEqualTo("https://lh3.googleusercontent.com/a/abc");
         assertThat(response.getPhotoUid()).isNull();
+    }
+
+    // A soft-deleted account as the two finders see it: still there unfiltered, gone filtered.
+    // Lenient because the point of each test using it is that the unfiltered stub goes untouched.
+    private void deletedButStillOnTheUnfilteredFinder() {
+        User deleted = User.builder().idUser(1L).uid("usr-x").isActive(false).build();
+        lenient().when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(deleted));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.empty());
     }
 
     private UserRequest namedRequest() {
