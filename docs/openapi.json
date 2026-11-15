@@ -5534,7 +5534,7 @@
           },
           "targetUid" : {
             "type" : "string",
-            "description" : "The uid of what the image is for — the group, for a group photo.",
+            "description" : "The uid of what the image is for — a group for a group photo, your own user for an avatar.",
             "maxLength" : 100,
             "minLength" : 1
           }

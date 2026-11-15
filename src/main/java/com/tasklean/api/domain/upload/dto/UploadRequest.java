@@ -20,7 +20,7 @@ public class UploadRequest {
     @NotNull
     private UploadPurpose purpose;
 
-    /** The uid of what the image is for — the group, for a group photo. */
+    /** The uid of what the image is for — a group for a group photo, your own user for an avatar. */
     @NotBlank
     @Size(min = 1, max = FieldLimits.UID)
     private String targetUid;
