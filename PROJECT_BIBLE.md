@@ -109,6 +109,7 @@ The `role` column is CHECK-constrained to `'GROUP_ADMIN'` or `'GROUP_MEMBER'` (t
 - **Statuses**: `TODO`, `IN_PROGRESS`, `COMPLETED`, `ARCHIVED` (CHECK constraint in migration)
 - **Priorities**: `HIGH`, `MEDIUM`, `LOW` (CHECK constraint in migration)
 - **Recurrence types**: `DAILY`, `WEEKLY`, `MONTHLY`, `CUSTOM` (CHECK constraint, nullable)
+- **Recurrence**: all of it lives in `RecurrenceSchedule` (`domain/task`) - `next` for one step on, `rollForward` for the first due date past a cutoff, `anchorFor` for the pattern to store. It takes a cutoff rather than a `Clock`, so it depends on nothing and every rule is provable without a mock. `RecurrenceType` is the enum behind the column's CHECK constraint
 - **Recurrence pattern**: JSONB column, **server-set, never sent by a caller**. `next_due_date` is the single schedule anchor, so DAILY and WEEKLY need no pattern at all; MONTHLY stores `{"dayOfMonth": N}` taken from the first due date, so a February clamp cannot ratchet the schedule earlier for good. `CUSTOM` is unimplemented
 - **Photo proof**: `requires_photo_proof` flag, set by the task's creator; the photo is an upload of ours in `TaskCompletion.completion_photo_uid` (V32), never a URL
 - **Completion**: each instance is its own `TaskCompletion` row, so a recurring task accumulates history. `UNIQUE (task_id, due_date) WHERE is_active` is what stops one instance being recorded twice; a one-off task has no `due_date`, and nulls are distinct in Postgres, so that case is guarded by `status = COMPLETED` instead
@@ -1017,6 +1018,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `NotificationSettingsControllerSecurityTest` | 13 | `@WebMvcTest` slice — GET/PUT/PUT-batch require authentication (anonymous denied); the caller comes only from the token; an unknown `{type}`, a missing channel field, an empty batch, a batch entry missing a channel and duplicate types in a batch are all 400; `/batch` routes to the batch handler rather than being read as a type; id fields smuggled into the body are ignored |
 | `CategoryServiceTest` | 11 | get/getByGroup/create/update/delete + not-found + duplicate |
 | `TagServiceTest` | 10 | get/getByGroup/create/update/delete + not-found + duplicate |
+| `RecurrenceScheduleTest` | 17 | When a recurring task is next due, with no mocks: a day and a week on; a weekly step keeping its weekday; the time of day preserved; a monthly step keeping its day, clamping into a short month, and **returning to the anchor day after that clamp**; leap February; a missing anchor falling back to the due date's day; an anchor beyond any month clamped into it; custom refused; roll-forward taking one step, skipping ten days of neglect to the next real due date, counting from the due date rather than the cutoff, and crossing several missed months; the stored anchor |
 | `TaskServiceTest` | 15 | get/getByGroup/create/update/delete incl. assignee & category branches + not-found |
 | `TaskCompletionServiceTest` | 5 | list by task/member; create (+ task/member not-found) |
 | `DeviceServiceTest` | 18 | registerDevice (success / duplicate token / user missing); resolveLoginDevice (no device id, unseen creates + flags new, known updates but keeps user-renamed name, known device on an untrusted hop keeps its stored IP rather than taking infrastructure's, a removed device signing in again is flagged new + reactivated + renamed from its UA); deleteAllMyDevices (every device deactivated and saved + every session revoked by user, revokes even with no devices to remove, never revokes per-device); recordActivity (trusted hop updates IP + last-used and saves, untrusted keeps the IP but still advances last-used); listMyDevices (active-session + current-device flags); logout/delete/rename my device (owner-scoped; non-owned → not found) |
@@ -1036,7 +1038,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **828 tests** across 65 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **845 tests** across 66 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
