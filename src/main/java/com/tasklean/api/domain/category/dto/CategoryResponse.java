@@ -16,8 +16,7 @@ public class CategoryResponse {
     private String name;
     private String color;
     private String icon;
-    private Boolean isActive;
-    private Long groupId;
+    private String groupUid;
     private LocalDateTime dateCreated;
     private LocalDateTime dateUpdated;
 
@@ -27,8 +26,7 @@ public class CategoryResponse {
                 .name(category.getName())
                 .color(category.getColor())
                 .icon(category.getIcon())
-                .isActive(category.getIsActive())
-                .groupId(category.getGroup().getIdGroup())
+                .groupUid(category.getGroup().getUid())
                 .dateCreated(category.getDateCreated())
                 .dateUpdated(category.getDateUpdated())
                 .build();

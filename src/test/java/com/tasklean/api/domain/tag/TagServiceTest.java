@@ -3,13 +3,13 @@ package com.tasklean.api.domain.tag;
 import com.tasklean.api.common.exception.DuplicateResourceException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
-import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
-import com.tasklean.api.domain.tag.dto.TagRequest;
-import com.tasklean.api.domain.tag.dto.TagResponse;
+import com.tasklean.api.domain.tag.dto.TagCreateRequest;
+import com.tasklean.api.domain.tag.dto.TagQueryRequest;
+import com.tasklean.api.domain.tag.dto.TagUpdateRequest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -41,105 +41,181 @@ class TagServiceTest {
     private static final Long GROUP_ID = 10L;
 
     private Group group() {
-        return Group.builder().idGroup(GROUP_ID).build();
+        return Group.builder().idGroup(GROUP_ID).uid("grp-1").isActive(true).build();
     }
 
-    private TagRequest request() {
-        TagRequest r = new TagRequest();
-        r.setName("quick");
-        r.setColor("#0F0");
-        r.setGroupId(GROUP_ID);
+    private Tag tag(Long id, String name) {
+        return Tag.builder().idTag(id).name(name).isActive(true).group(group()).build();
+    }
+
+    private TagCreateRequest createRequest(String name) {
+        TagCreateRequest r = new TagCreateRequest();
+        r.setGroupUid("grp-1");
+        r.setName(name);
+        r.setColor("#2ECC71");
         return r;
     }
 
-    private Tag tag() {
-        return Tag.builder().idTag(1L).name("quick").isActive(true).group(group()).build();
+    private TagUpdateRequest updateRequest(String name) {
+        TagUpdateRequest r = new TagUpdateRequest();
+        r.setName(name);
+        return r;
+    }
+
+    private TagQueryRequest query(String q) {
+        TagQueryRequest r = new TagQueryRequest();
+        r.setGroupUid("grp-1");
+        r.setQ(q);
+        return r;
+    }
+
+    private void groupExists() {
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(group()));
+    }
+
+    private void savesWhatItIsGiven() {
+        when(tagRepository.save(any(Tag.class))).thenAnswer(i -> i.getArgument(0));
+    }
+
+    private Tag saved() {
+        ArgumentCaptor<Tag> saved = ArgumentCaptor.forClass(Tag.class);
+        verify(tagRepository).save(saved.capture());
+        return saved.getValue();
     }
 
     @Test
-    void getTagById_found_returns() {
-        when(tagRepository.findById(1L)).thenReturn(Optional.of(tag()));
-        assertThat(tagService.getTagById(1L).getId()).isEqualTo(1L);
+    void getTagById_found_returnsIt() {
+        when(tagRepository.findByIdTagAndIsActiveTrue(1L)).thenReturn(Optional.of(tag(1L, "quick")));
+
+        assertThat(tagService.getTagById(1L).getName()).isEqualTo("quick");
     }
 
     @Test
-    void getTagById_missing_throws() {
-        when(tagRepository.findById(1L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> tagService.getTagById(1L)).isInstanceOf(ResourceNotFoundException.class);
+    void getTagById_deleted_isNotFound() {
+        when(tagRepository.findByIdTagAndIsActiveTrue(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> tagService.getTagById(1L))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void getTagsByGroup_returnsList() {
-        when(tagRepository.findByGroupIdGroupAndIsActiveTrue(GROUP_ID)).thenReturn(List.of(tag()));
-        assertThat(tagService.getTagsByGroup(GROUP_ID)).hasSize(1);
+    void searchTags_noSearch_asksForTheWholeList() {
+        groupExists();
+        when(tagRepository.searchActive(GROUP_ID, "")).thenReturn(List.of(tag(1L, "quick")));
+
+        // An absent search becomes an empty string, which the LIKE treats as "everything" - so
+        // there is one query for both cases rather than a branch.
+        assertThat(tagService.searchTags(query(null))).hasSize(1);
     }
 
     @Test
-    void createTag_success_savesAndAudits() {
-        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group()));
-        when(tagRepository.existsByGroupIdGroupAndName(GROUP_ID, "quick")).thenReturn(false);
-        when(tagRepository.save(any(Tag.class))).thenAnswer(i -> {
-            Tag t = i.getArgument(0);
-            t.setIdTag(1L);
-            return t;
-        });
+    void searchTags_searchTrimmed_beforeItIsMatched() {
+        groupExists();
+        when(tagRepository.searchActive(GROUP_ID, "quick")).thenReturn(List.of(tag(1L, "quick")));
 
-        TagResponse response = tagService.createTag(request());
-
-        assertThat(response.getName()).isEqualTo("quick");
-        verify(auditLogService).recordEvent(eq(AuditEntityType.TAG), eq(1L), eq(AuditAction.CREATE), any(), any(Group.class));
+        assertThat(tagService.searchTags(query("  quick "))).hasSize(1);
     }
 
     @Test
-    void createTag_groupMissing_throws() {
-        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> tagService.createTag(request())).isInstanceOf(ResourceNotFoundException.class);
+    void searchTags_deletedHousehold_isNotFound() {
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> tagService.searchTags(query(null)))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void createTag_duplicateName_throws() {
-        when(groupRepository.findById(GROUP_ID)).thenReturn(Optional.of(group()));
-        when(tagRepository.existsByGroupIdGroupAndName(GROUP_ID, "quick")).thenReturn(true);
-        assertThatThrownBy(() -> tagService.createTag(request())).isInstanceOf(DuplicateResourceException.class);
+    void createTag_newName_insertsIt() {
+        groupExists();
+        when(tagRepository.findByGroupAndName(GROUP_ID, "quick")).thenReturn(Optional.empty());
+        savesWhatItIsGiven();
+
+        tagService.createTag(createRequest("quick"));
+
+        assertThat(saved().getIdTag()).isNull();
+        assertThat(saved().getIsActive()).isTrue();
+    }
+
+    @Test
+    void createTag_nameNormalised_beforeItIsStored() {
+        groupExists();
+        when(tagRepository.findByGroupAndName(GROUP_ID, "deep clean")).thenReturn(Optional.empty());
+        savesWhatItIsGiven();
+
+        tagService.createTag(createRequest(" deep   clean "));
+
+        assertThat(saved().getName()).isEqualTo("deep clean");
+    }
+
+    @Test
+    void createTag_nameInUse_isRefused() {
+        groupExists();
+        when(tagRepository.findByGroupAndName(GROUP_ID, "quick")).thenReturn(Optional.of(tag(1L, "quick")));
+
+        assertThatThrownBy(() -> tagService.createTag(createRequest("quick")))
+                .isInstanceOf(DuplicateResourceException.class);
+    }
+
+    @Test
+    void createTag_nameHeldByADeletedOne_revivesThatRow() {
+        groupExists();
+        Tag deleted = tag(1L, "quick");
+        deleted.setIsActive(false);
+        when(tagRepository.findByGroupAndName(GROUP_ID, "quick")).thenReturn(Optional.of(deleted));
+        savesWhatItIsGiven();
+
+        tagService.createTag(createRequest("quick"));
+
+        // The same label coming back, with whatever it was already attached to.
+        assertThat(saved().getIdTag()).isEqualTo(1L);
+        assertThat(saved().getIsActive()).isTrue();
+    }
+
+    @Test
+    void updateTag_keepingItsOwnName_isAllowed() {
+        when(tagRepository.findByIdTagAndIsActiveTrue(1L)).thenReturn(Optional.of(tag(1L, "quick")));
+        when(tagRepository.findByGroupAndName(GROUP_ID, "quick")).thenReturn(Optional.of(tag(1L, "quick")));
+        savesWhatItIsGiven();
+
+        assertThat(tagService.updateTag(1L, updateRequest("quick")).getName()).isEqualTo("quick");
+    }
+
+    @Test
+    void updateTag_nameOfAnother_isRefused() {
+        when(tagRepository.findByIdTagAndIsActiveTrue(1L)).thenReturn(Optional.of(tag(1L, "quick")));
+        when(tagRepository.findByGroupAndName(GROUP_ID, "weekly")).thenReturn(Optional.of(tag(2L, "weekly")));
+
+        assertThatThrownBy(() -> tagService.updateTag(1L, updateRequest("weekly")))
+                .isInstanceOf(DuplicateResourceException.class);
         verify(tagRepository, never()).save(any());
     }
 
     @Test
-    void updateTag_success() {
-        Tag existing = tag();
-        when(tagRepository.findById(1L)).thenReturn(Optional.of(existing));
-        when(tagRepository.save(any(Tag.class))).thenAnswer(i -> i.getArgument(0));
+    void updateTag_deleted_isNotFound() {
+        when(tagRepository.findByIdTagAndIsActiveTrue(1L)).thenReturn(Optional.empty());
 
-        tagService.updateTag(1L, request());
-
-        assertThat(existing.getName()).isEqualTo("quick");
-        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
-        verify(auditLogService).recordEvent(eq(AuditEntityType.TAG), eq(1L), eq(AuditAction.UPDATE),
-                any(), any(), changes.capture());
-        // The fixture's name already matches the request, so only the colour moved.
-        assertThat(changes.getValue().fields()).containsExactly("color");
+        assertThatThrownBy(() -> tagService.updateTag(1L, updateRequest("weekly")))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void updateTag_missing_throws() {
-        when(tagRepository.findById(1L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> tagService.updateTag(1L, request())).isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    @Test
-    void deleteTag_success_softDeletesAndAudits() {
-        Tag existing = tag();
-        when(tagRepository.findById(1L)).thenReturn(Optional.of(existing));
+    void deleteTag_marksItInactive() {
+        when(tagRepository.findByIdTagAndIsActiveTrue(1L)).thenReturn(Optional.of(tag(1L, "quick")));
 
         tagService.deleteTag(1L);
 
-        assertThat(existing.getIsActive()).isFalse();
-        verify(auditLogService).recordEvent(eq(AuditEntityType.TAG), eq(1L), eq(AuditAction.DELETE), any(), any());
+        // No usage check, unlike a category: a tag is a loose label, so the tasks carrying it just
+        // stop showing it.
+        assertThat(saved().getIsActive()).isFalse();
+        verify(auditLogService).recordEvent(eq(AuditEntityType.TAG), eq(1L),
+                eq(AuditAction.DELETE), any(), any());
     }
 
     @Test
-    void deleteTag_missing_throws() {
-        when(tagRepository.findById(1L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> tagService.deleteTag(1L)).isInstanceOf(ResourceNotFoundException.class);
+    void deleteTag_alreadyDeleted_isNotFound() {
+        when(tagRepository.findByIdTagAndIsActiveTrue(1L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> tagService.deleteTag(1L))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

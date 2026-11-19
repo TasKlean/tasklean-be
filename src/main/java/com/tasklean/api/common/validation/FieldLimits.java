@@ -49,6 +49,15 @@ public final class FieldLimits {
      */
     public static final int TASK_MINUTES = 1440;
 
+    /** The name column on "category" and on "tag" — a group-scoped label. */
+    public static final int LABEL_NAME = 100;
+
+    /** The color columns, which hold a `#RRGGBB` hex code and nothing else. */
+    public static final int COLOR = 7;
+
+    /** The icon column on "category" — a name the frontend resolves to a glyph. */
+    public static final int ICON = 50;
+
     /** A free-text description. The column is TEXT, so this bound is ours, not Postgres's. */
     public static final int DESCRIPTION = 2000;
 

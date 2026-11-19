@@ -1,8 +1,10 @@
 package com.tasklean.api.domain.auditlog;
 
-import com.tasklean.api.domain.category.dto.CategoryRequest;
+import com.tasklean.api.domain.category.dto.CategoryCreateRequest;
+import com.tasklean.api.domain.category.dto.CategoryUpdateRequest;
 import com.tasklean.api.domain.group.dto.GroupRequest;
-import com.tasklean.api.domain.tag.dto.TagRequest;
+import com.tasklean.api.domain.tag.dto.TagCreateRequest;
+import com.tasklean.api.domain.tag.dto.TagUpdateRequest;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import com.tasklean.api.domain.user.dto.UserRequest;
@@ -71,19 +73,30 @@ class AuditTrackedFieldsTest {
     }
 
     @Test
-    void categoryRequest_everyField_isClassified() {
-        assertEveryFieldClassified(CategoryRequest.class,
+    void categoryUpdateRequest_everyField_isClassified() {
+        assertEveryFieldClassified(CategoryUpdateRequest.class,
                 Set.of("color", "icon"),
                 Set.of("name"),
-                Set.of("groupId"));
+                Set.of());
     }
 
     @Test
-    void tagRequest_everyField_isClassified() {
-        assertEveryFieldClassified(TagRequest.class,
+    void categoryCreateRequest_everyField_isClassified() {
+        // A create adds only the household, which no edit can change and so no entry reports.
+        assertEveryFieldClassified(CategoryCreateRequest.class, Set.of(), Set.of(), Set.of("groupUid"));
+    }
+
+    @Test
+    void tagUpdateRequest_everyField_isClassified() {
+        assertEveryFieldClassified(TagUpdateRequest.class,
                 Set.of("color"),
                 Set.of("name"),
-                Set.of("groupId"));
+                Set.of());
+    }
+
+    @Test
+    void tagCreateRequest_everyField_isClassified() {
+        assertEveryFieldClassified(TagCreateRequest.class, Set.of(), Set.of(), Set.of("groupUid"));
     }
 
     private static void assertEveryFieldClassified(Class<?> request, Set<String> valuesShown,

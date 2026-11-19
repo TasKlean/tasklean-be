@@ -1,6 +1,8 @@
 package com.tasklean.api.common.jpa;
 
+import com.tasklean.api.domain.category.CategoryRepository;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.tag.TagRepository;
 import com.tasklean.api.domain.task.TaskRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -41,6 +43,19 @@ class LazyFetchContractTest {
         // TaskResponse reads the group's uid and the names behind both memberships.
         assertThat(pathsOf(TaskRepository.class, "findDetailedByUidAndIsActiveTrue", String.class))
                 .contains("group", "createdBy.user", "assignedTo.user");
+    }
+
+    @Test
+    void labelFinders_fetchTheHousehold() throws Exception {
+        // Both responses name the household by uid, which a proxy cannot serve.
+        assertThat(pathsOf(CategoryRepository.class, "findByIdCategoryAndIsActiveTrue", Long.class))
+                .contains("group");
+        assertThat(pathsOf(CategoryRepository.class,
+                "findByGroupIdGroupAndIsActiveTrueOrderByName", Long.class)).contains("group");
+        assertThat(pathsOf(TagRepository.class, "findByIdTagAndIsActiveTrue", Long.class))
+                .contains("group");
+        assertThat(pathsOf(TagRepository.class, "searchActive", Long.class, String.class))
+                .contains("group");
     }
 
     @Test

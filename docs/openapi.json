@@ -1228,16 +1228,16 @@
     },
     "/api/categories" : {
       "get" : {
-        "description" : "Lists a group's active categories.",
-        "operationId" : "getCategoriesByGroup",
+        "description" : "Lists a household's categories, ordered by name.",
+        "operationId" : "getCategories",
         "parameters" : [ {
-          "description" : "the group id",
           "in" : "query",
-          "name" : "groupId",
+          "name" : "groupUid",
           "required" : true,
           "schema" : {
-            "type" : "integer",
-            "format" : "int64"
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
           }
         } ],
         "responses" : {
@@ -1267,21 +1267,21 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists a group's active categories.",
+        "summary" : "Lists a household's categories, ordered by name.",
         "tags" : [ "Categories" ]
       },
       "post" : {
-        "description" : "Creates a category.",
+        "description" : "Creates a category in a household the caller administers.",
         "operationId" : "createCategory",
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/CategoryRequest"
+                "$ref" : "#/components/schemas/CategoryCreateRequest"
               }
             }
           },
-          "description" : "the category details (name, color, icon, group)",
+          "description" : "the category's details and the household it belongs to",
           "required" : true
         },
         "responses" : {
@@ -1311,13 +1311,13 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Creates a category.",
+        "summary" : "Creates a category in a household the caller administers.",
         "tags" : [ "Categories" ]
       }
     },
     "/api/categories/{id}" : {
       "delete" : {
-        "description" : "Soft-deletes a category.",
+        "description" : "Soft-deletes a category no task is filed under.",
         "operationId" : "deleteCategory",
         "parameters" : [ {
           "description" : "the category id",
@@ -1356,7 +1356,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Soft-deletes a category.",
+        "summary" : "Soft-deletes a category no task is filed under.",
         "tags" : [ "Categories" ]
       },
       "get" : {
@@ -1419,11 +1419,11 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/CategoryRequest"
+                "$ref" : "#/components/schemas/CategoryUpdateRequest"
               }
             }
           },
-          "description" : "the new category details",
+          "description" : "the new details",
           "required" : true
         },
         "responses" : {
@@ -2635,16 +2635,26 @@
     },
     "/api/tags" : {
       "get" : {
-        "description" : "Lists a group's active tags.",
-        "operationId" : "getTagsByGroup",
+        "description" : "Lists a household's tags, ordered by name and optionally narrowed by a search — this is\n what the frontend suggests from as a member types a label.",
+        "operationId" : "getTags",
         "parameters" : [ {
-          "description" : "the group id",
           "in" : "query",
-          "name" : "groupId",
+          "name" : "groupUid",
           "required" : true,
           "schema" : {
-            "type" : "integer",
-            "format" : "int64"
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
+          }
+        }, {
+          "description" : "Matched case-insensitively anywhere in a tag's name. Omitted, the whole list comes back.",
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
           }
         } ],
         "responses" : {
@@ -2656,7 +2666,7 @@
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the tags"
+            "description" : "<code>200 OK</code> with the matching tags"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -2674,21 +2684,21 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists a group's active tags.",
+        "summary" : "Lists a household's tags, ordered by name and optionally narrowed by a search — this is\n what the frontend suggests from as a member types a label.",
         "tags" : [ "Tags" ]
       },
       "post" : {
-        "description" : "Creates a tag.",
+        "description" : "Creates a tag in a household the caller belongs to, or brings back the deleted one that\n already holds the name.",
         "operationId" : "createTag",
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/TagRequest"
+                "$ref" : "#/components/schemas/TagCreateRequest"
               }
             }
           },
-          "description" : "the tag details (name, color, group)",
+          "description" : "the tag's details and the household it belongs to",
           "required" : true
         },
         "responses" : {
@@ -2718,7 +2728,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Creates a tag.",
+        "summary" : "Creates a tag in a household the caller belongs to, or brings back the deleted one that\n already holds the name.",
         "tags" : [ "Tags" ]
       }
     },
@@ -2826,11 +2836,11 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/TagRequest"
+                "$ref" : "#/components/schemas/TagUpdateRequest"
               }
             }
           },
-          "description" : "the new tag details",
+          "description" : "the new details",
           "required" : true
         },
         "responses" : {
@@ -4461,25 +4471,34 @@
           }
         }
       },
-      "CategoryRequest" : {
+      "CategoryCreateRequest" : {
         "type" : "object",
+        "description" : "A new category. Everything editable comes from {@link CategoryUpdateRequest CategoryUpdateRequest}; this adds the\n household it belongs to, which is the one thing a later edit cannot change.",
         "properties" : {
           "color" : {
-            "type" : "string"
+            "type" : "string",
+            "description" : "A `#RRGGBB` hex code. The column holds seven characters, so nothing else fits.",
+            "maxLength" : 7,
+            "minLength" : 0,
+            "pattern" : "^#[0-9a-fA-F]{6}$"
           },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "groupUid" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
           },
           "icon" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 50,
+            "minLength" : 0
           },
           "name" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
           }
         },
-        "required" : [ "groupId", "name" ]
+        "required" : [ "groupUid", "name" ]
       },
       "CategoryResponse" : {
         "type" : "object",
@@ -4495,9 +4514,8 @@
             "type" : "string",
             "format" : "date-time"
           },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "groupUid" : {
+            "type" : "string"
           },
           "icon" : {
             "type" : "string"
@@ -4506,13 +4524,34 @@
             "type" : "integer",
             "format" : "int64"
           },
-          "isActive" : {
-            "type" : "boolean"
-          },
           "name" : {
             "type" : "string"
           }
         }
+      },
+      "CategoryUpdateRequest" : {
+        "type" : "object",
+        "description" : "The editable state of a category. Carries no household: a category cannot move between them,\n and one that could would take every task classified by it along.",
+        "properties" : {
+          "color" : {
+            "type" : "string",
+            "description" : "A `#RRGGBB` hex code. The column holds seven characters, so nothing else fits.",
+            "maxLength" : 7,
+            "minLength" : 0,
+            "pattern" : "^#[0-9a-fA-F]{6}$"
+          },
+          "icon" : {
+            "type" : "string",
+            "maxLength" : 50,
+            "minLength" : 0
+          },
+          "name" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
+          }
+        },
+        "required" : [ "name" ]
       },
       "ChangePasswordRequest" : {
         "type" : "object",
@@ -5142,22 +5181,29 @@
           }
         }
       },
-      "TagRequest" : {
+      "TagCreateRequest" : {
         "type" : "object",
+        "description" : "A new tag. Everything editable comes from {@link TagUpdateRequest TagUpdateRequest}; this adds the household it\n belongs to. Any member may create one — a tag is a label somebody found useful, not a setting.",
         "properties" : {
           "color" : {
-            "type" : "string"
+            "type" : "string",
+            "description" : "A `#RRGGBB` hex code. The column holds seven characters, so nothing else fits.",
+            "maxLength" : 7,
+            "minLength" : 0,
+            "pattern" : "^#[0-9a-fA-F]{6}$"
           },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "groupUid" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
           },
           "name" : {
             "type" : "string",
+            "maxLength" : 100,
             "minLength" : 1
           }
         },
-        "required" : [ "groupId", "name" ]
+        "required" : [ "groupUid", "name" ]
       },
       "TagResponse" : {
         "type" : "object",
@@ -5173,21 +5219,36 @@
             "type" : "string",
             "format" : "date-time"
           },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "groupUid" : {
+            "type" : "string"
           },
           "id" : {
             "type" : "integer",
             "format" : "int64"
           },
-          "isActive" : {
-            "type" : "boolean"
-          },
           "name" : {
             "type" : "string"
           }
         }
+      },
+      "TagUpdateRequest" : {
+        "type" : "object",
+        "description" : "The editable state of a tag. Carries no household, for the same reason a category does not: a\n tag that could move between them would take every task labelled with it along.",
+        "properties" : {
+          "color" : {
+            "type" : "string",
+            "description" : "A `#RRGGBB` hex code. The column holds seven characters, so nothing else fits.",
+            "maxLength" : 7,
+            "minLength" : 0,
+            "pattern" : "^#[0-9a-fA-F]{6}$"
+          },
+          "name" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
+          }
+        },
+        "required" : [ "name" ]
       },
       "TaskCompletionRequest" : {
         "type" : "object",

@@ -15,8 +15,7 @@ public class TagResponse {
     private Long id;
     private String name;
     private String color;
-    private Boolean isActive;
-    private Long groupId;
+    private String groupUid;
     private LocalDateTime dateCreated;
     private LocalDateTime dateUpdated;
 
@@ -25,8 +24,7 @@ public class TagResponse {
                 .id(tag.getIdTag())
                 .name(tag.getName())
                 .color(tag.getColor())
-                .isActive(tag.getIsActive())
-                .groupId(tag.getGroup().getIdGroup())
+                .groupUid(tag.getGroup().getUid())
                 .dateCreated(tag.getDateCreated())
                 .dateUpdated(tag.getDateUpdated())
                 .build();

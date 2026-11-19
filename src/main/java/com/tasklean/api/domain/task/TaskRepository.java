@@ -14,7 +14,7 @@ import java.util.Optional;
 public interface TaskRepository extends JpaRepository<Task, Long> {
 
     /**
-     * One task by uid, whether or not it is still active. Unfiltered and graph-free on purpose:
+     * One task by uid, whether it is still active. Unfiltered and graph-free on purpose:
      * this is what {@code TaskSecurity} resolves, and it reads ids only. Keeping a deleted task
      * visible here is what makes a former member's 404 distinct from a stranger's 403.
      *
@@ -41,6 +41,17 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
      * @return the task, or empty if no active task has that UID
      */
     Optional<Task> findByUidAndIsActiveTrue(String uid);
+
+    /**
+     * How many live tasks are classified under a category. Archived and completed ones count:
+     * they still carry the category on every share and history screen, so deleting it out from
+     * under them would leave a classification nothing can resolve.
+     *
+     * @param categoryId the category id
+     * @return the number of tasks still pointing at it
+     */
+    @Query("select count(t) from Task t where t.category.idCategory = :categoryId and t.isActive = true")
+    long countActiveByCategory(Long categoryId);
 
     /**
      * The live tasks a membership is still on the hook for. Used when that membership ends, so the

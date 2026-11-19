@@ -1,19 +1,25 @@
 package com.tasklean.api.domain.category;
 
 import com.tasklean.api.common.ApiResponse;
-import com.tasklean.api.domain.category.dto.CategoryRequest;
+import com.tasklean.api.domain.category.dto.CategoryCreateRequest;
+import com.tasklean.api.domain.category.dto.CategoryQueryRequest;
 import com.tasklean.api.domain.category.dto.CategoryResponse;
+import com.tasklean.api.domain.category.dto.CategoryUpdateRequest;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 /**
- * REST endpoints for task categories — create, fetch, list by group, update, and delete.
+ * REST endpoints for a household's task categories. Every member reads them; only a group admin
+ * adds, renames or removes one, because the filing system belongs to the household rather than to
+ * whoever happened to set it up.
  */
 @Tag(name = "Categories", description = "Group-scoped task categories.")
 @RestController
@@ -24,13 +30,15 @@ public class CategoryController {
     private final CategoryService categoryService;
 
     /**
-     * Creates a category.
+     * Creates a category in a household the caller administers.
      *
-     * @param request the category details (name, color, icon, group)
+     * @param request the category's details and the household it belongs to
      * @return {@code 201 Created} with the created category
      */
+    @PreAuthorize("@groupSecurity.isAdmin(#request.groupUid)")
     @PostMapping
-    public ResponseEntity<ApiResponse<CategoryResponse>> createCategory(@Valid @RequestBody CategoryRequest request) {
+    public ResponseEntity<ApiResponse<CategoryResponse>> createCategory(
+            @Valid @RequestBody CategoryCreateRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(ApiResponse.success(categoryService.createCategory(request)));
     }
@@ -41,41 +49,47 @@ public class CategoryController {
      * @param id the category id
      * @return {@code 200 OK} with the category
      */
+    @PreAuthorize("@categorySecurity.canView(#id)")
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<CategoryResponse>> getCategory(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success(categoryService.getCategoryById(id)));
     }
 
     /**
-     * Lists a group's active categories.
+     * Lists a household's categories, ordered by name.
      *
-     * @param groupId the group id
+     * @param query the household to list
      * @return {@code 200 OK} with the categories
      */
+    @PreAuthorize("@groupSecurity.isMember(#query.groupUid)")
     @GetMapping
-    public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategoriesByGroup(@RequestParam Long groupId) {
-        return ResponseEntity.ok(ApiResponse.success(categoryService.getCategoriesByGroup(groupId)));
+    public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategories(
+            @Valid @ParameterObject CategoryQueryRequest query) {
+        return ResponseEntity.ok(
+                ApiResponse.success(categoryService.getCategoriesByGroup(query.getGroupUid())));
     }
 
     /**
      * Updates a category.
      *
      * @param id      the category id
-     * @param request the new category details
+     * @param request the new details
      * @return {@code 200 OK} with the updated category
      */
+    @PreAuthorize("@categorySecurity.canManage(#id)")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<CategoryResponse>> updateCategory(
-            @PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
+            @PathVariable Long id, @Valid @RequestBody CategoryUpdateRequest request) {
         return ResponseEntity.ok(ApiResponse.success(categoryService.updateCategory(id, request)));
     }
 
     /**
-     * Soft-deletes a category.
+     * Soft-deletes a category no task is filed under.
      *
      * @param id the category id
      * @return {@code 200 OK} with a confirmation message
      */
+    @PreAuthorize("@categorySecurity.canManage(#id)")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<Void>> deleteCategory(@PathVariable Long id) {
         categoryService.deleteCategory(id);
