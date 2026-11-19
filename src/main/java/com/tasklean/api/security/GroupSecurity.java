@@ -70,6 +70,19 @@ public class GroupSecurity {
     }
 
     /**
+     * The id of the caller's own active membership of the given group. Lets another resolver ask
+     * whether a row attributed to a membership is attributed to the caller's, which is a question
+     * about ids only — so it stays answerable outside a session, where a lazy hop to the user
+     * behind that membership would not be.
+     *
+     * @param groupId the target group id
+     * @return the caller's membership id, or empty if they are not an active member
+     */
+    public Optional<Long> callersMembershipId(Long groupId) {
+        return membership(groupId).map(GroupMember::getIdGroupMember);
+    }
+
+    /**
      * Whether the caller shares at least one active group with the given user. Not a membership
      * check against one group but against all of them, which is what "somebody in my household"
      * means when the thing being authorized belongs to a person rather than to a group.

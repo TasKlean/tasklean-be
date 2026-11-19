@@ -12,6 +12,7 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberRequest;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
+import com.tasklean.api.domain.task.TaskAssignmentRelease;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class GroupMemberService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final GroupRepository groupRepository;
+    private final TaskAssignmentRelease taskAssignmentRelease;
     private final AuditLogService auditLogService;
     private final Clock clock;
 
@@ -173,6 +175,8 @@ public class GroupMemberService {
         // recorded as having removed themselves along with everyone else.
         GroupMember actor = actingMember(callerUserId, group.getIdGroup());
         LocalDateTime now = LocalDateTime.now(clock);
+        // Assignments are deliberately left alone here: the household itself is going, so no
+        // board will read them again - unlike one member leaving a group that carries on.
         for (GroupMember member : members) {
             member.setIsActive(false);
             member.setDateLeft(now);
@@ -196,6 +200,9 @@ public class GroupMemberService {
         member.setDateLeft(LocalDateTime.now(clock));
         member.setRemovedBy(removedBy);
         groupMemberRepository.save(member);
+        // Their chores go back to the household: a task still assigned to somebody who has
+        // left reads as taken care of, and nobody else claims it.
+        taskAssignmentRelease.releaseFor(member);
     }
 
     // Both attribution columns point at a membership, not a user, so a SUPER_ADMIN acting from the

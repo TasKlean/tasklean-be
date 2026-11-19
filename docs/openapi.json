@@ -2999,61 +2999,18 @@
       }
     },
     "/api/tasks" : {
-      "get" : {
-        "description" : "Lists a group's active tasks.",
-        "operationId" : "getTasksByGroup",
-        "parameters" : [ {
-          "description" : "the group id",
-          "in" : "query",
-          "name" : "groupId",
-          "required" : true,
-          "schema" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListTaskResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the tasks"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Lists a group's active tasks.",
-        "tags" : [ "Tasks" ]
-      },
       "post" : {
-        "description" : "Creates a task.",
+        "description" : "Creates a task in a household the caller belongs to. The author is the caller.",
         "operationId" : "createTask",
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/TaskRequest"
+                "$ref" : "#/components/schemas/TaskCreateRequest"
               }
             }
           },
-          "description" : "the task details",
+          "description" : "the task's details and the household it belongs to",
           "required" : true
         },
         "responses" : {
@@ -3083,7 +3040,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Creates a task.",
+        "summary" : "Creates a task in a household the caller belongs to.",
         "tags" : [ "Tasks" ]
       }
     },
@@ -3173,7 +3130,7 @@
         "tags" : [ "Tasks" ]
       },
       "put" : {
-        "description" : "Updates a task.",
+        "description" : "Updates a task's details.",
         "operationId" : "updateTask",
         "parameters" : [ {
           "description" : "the task's public UID",
@@ -3188,11 +3145,11 @@
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/TaskRequest"
+                "$ref" : "#/components/schemas/TaskUpdateRequest"
               }
             }
           },
-          "description" : "the new task details",
+          "description" : "the new details",
           "required" : true
         },
         "responses" : {
@@ -3222,7 +3179,51 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Updates a task.",
+        "summary" : "Updates a task's details.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/tasks/{uid}/archive" : {
+      "post" : {
+        "description" : "Retires a task the household has stopped doing, keeping its history.",
+        "operationId" : "archiveTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the archived task"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Retires a task the household has stopped doing, keeping its history.",
         "tags" : [ "Tasks" ]
       }
     },
@@ -4010,27 +4011,6 @@
             "type" : "array",
             "items" : {
               "$ref" : "#/components/schemas/TaskCompletionResponse"
-            }
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "success" : {
-            "type" : "boolean"
-          }
-        }
-      },
-      "ApiResponseListTaskResponse" : {
-        "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "data" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/TaskResponse"
             }
           },
           "message" : {
@@ -5260,78 +5240,74 @@
           }
         }
       },
-      "TaskRequest" : {
+      "TaskCreateRequest" : {
         "type" : "object",
+        "description" : "A new task. Everything editable comes from {@link TaskUpdateRequest TaskUpdateRequest}; this adds the household it\n belongs to, which is the one thing a later edit cannot change. The author is taken from the\n caller's token, never from the request — a task that named its own creator could be attributed\n to anybody.",
         "properties" : {
-          "assignedToId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "assignedToUid" : {
+            "type" : "string",
+            "description" : "The membership uid of whoever it is for. Omitted, the task sits in the household's pool.",
+            "maxLength" : 100,
+            "minLength" : 0
           },
           "categoryId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "createdById" : {
             "type" : "integer",
             "format" : "int64"
           },
           "description" : {
-            "type" : "string"
+            "type" : "string",
+            "maxLength" : 2000,
+            "minLength" : 0
           },
           "estimatedTimeMinutes" : {
             "type" : "integer",
-            "format" : "int32"
+            "format" : "int32",
+            "maximum" : 1440,
+            "minimum" : 1
           },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "groupUid" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 1
           },
           "name" : {
             "type" : "string",
+            "maxLength" : 255,
             "minLength" : 1
           },
           "nextDueDate" : {
             "type" : "string",
-            "format" : "date-time"
-          },
-          "photoUid" : {
-            "type" : "string"
+            "format" : "date-time",
+            "description" : "When the task is next due. Required for a recurring task, since it is the schedule's only\n anchor — a weekly chore recurs on whichever day this falls on. Carries an offset so the\n stored UTC instant is the one the caller meant."
           },
           "priority" : {
             "type" : "string",
-            "minLength" : 1
-          },
-          "recurrencePattern" : {
-            "type" : "object",
-            "additionalProperties" : { }
+            "enum" : [ "HIGH", "MEDIUM", "LOW" ]
           },
           "recurrenceType" : {
-            "type" : "string"
+            "type" : "string",
+            "description" : "How often the task recurs. Omitted, it happens once.",
+            "enum" : [ "DAILY", "WEEKLY", "MONTHLY", "CUSTOM" ]
           },
           "requiresPhotoProof" : {
             "type" : "boolean"
-          },
-          "status" : {
-            "type" : "string",
-            "minLength" : 1
           }
         },
-        "required" : [ "createdById", "groupId", "name", "priority", "status" ]
+        "required" : [ "groupUid", "name", "priority" ]
       },
       "TaskResponse" : {
         "type" : "object",
+        "description" : "A task as returned by the API. Carries the people behind its author and assignee rather than\n ids, so a client can render it without a second call.",
         "properties" : {
-          "assignedToId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "assignedTo" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
           },
           "categoryId" : {
             "type" : "integer",
             "format" : "int64"
           },
-          "createdById" : {
-            "type" : "integer",
-            "format" : "int64"
+          "createdBy" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
           },
           "dateCompleted" : {
             "type" : "string",
@@ -5352,16 +5328,8 @@
             "type" : "integer",
             "format" : "int32"
           },
-          "groupId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "id" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "isActive" : {
-            "type" : "boolean"
+          "groupUid" : {
+            "type" : "string"
           },
           "name" : {
             "type" : "string"
@@ -5370,29 +5338,75 @@
             "type" : "string",
             "format" : "date-time"
           },
-          "photoUid" : {
-            "type" : "string"
-          },
           "priority" : {
-            "type" : "string"
-          },
-          "recurrencePattern" : {
-            "type" : "object",
-            "additionalProperties" : { }
+            "type" : "string",
+            "enum" : [ "HIGH", "MEDIUM", "LOW" ]
           },
           "recurrenceType" : {
-            "type" : "string"
+            "type" : "string",
+            "enum" : [ "DAILY", "WEEKLY", "MONTHLY", "CUSTOM" ]
           },
           "requiresPhotoProof" : {
             "type" : "boolean"
           },
           "status" : {
-            "type" : "string"
+            "type" : "string",
+            "enum" : [ "TODO", "IN_PROGRESS", "COMPLETED", "ARCHIVED" ]
           },
           "uid" : {
             "type" : "string"
           }
         }
+      },
+      "TaskUpdateRequest" : {
+        "type" : "object",
+        "description" : "The editable state of a task. Carries neither its group nor its author, because an edit can\n change neither, and no status — completing and archiving are their own operations.",
+        "properties" : {
+          "assignedToUid" : {
+            "type" : "string",
+            "description" : "The membership uid of whoever it is for. Omitted, the task sits in the household's pool.",
+            "maxLength" : 100,
+            "minLength" : 0
+          },
+          "categoryId" : {
+            "type" : "integer",
+            "format" : "int64"
+          },
+          "description" : {
+            "type" : "string",
+            "maxLength" : 2000,
+            "minLength" : 0
+          },
+          "estimatedTimeMinutes" : {
+            "type" : "integer",
+            "format" : "int32",
+            "maximum" : 1440,
+            "minimum" : 1
+          },
+          "name" : {
+            "type" : "string",
+            "maxLength" : 255,
+            "minLength" : 1
+          },
+          "nextDueDate" : {
+            "type" : "string",
+            "format" : "date-time",
+            "description" : "When the task is next due. Required for a recurring task, since it is the schedule's only\n anchor — a weekly chore recurs on whichever day this falls on. Carries an offset so the\n stored UTC instant is the one the caller meant."
+          },
+          "priority" : {
+            "type" : "string",
+            "enum" : [ "HIGH", "MEDIUM", "LOW" ]
+          },
+          "recurrenceType" : {
+            "type" : "string",
+            "description" : "How often the task recurs. Omitted, it happens once.",
+            "enum" : [ "DAILY", "WEEKLY", "MONTHLY", "CUSTOM" ]
+          },
+          "requiresPhotoProof" : {
+            "type" : "boolean"
+          }
+        },
+        "required" : [ "name", "priority" ]
       },
       "TwoFactorConfirmRequest" : {
         "type" : "object",

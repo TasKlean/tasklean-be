@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.task;
 
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
@@ -12,19 +13,23 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
-import com.tasklean.api.domain.task.dto.TaskRequest;
+import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskResponse;
+import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Map;
 import java.util.UUID;
 
 /**
- * Manages tasks within a group — lookup by UID, listing, creation, updates, and
- * soft-deletion, including optional assignee and category resolution.
+ * Manages the tasks of a household — creating one, editing it, retiring it and ending it. The
+ * board that lists them, and completing one, live elsewhere.
  */
 @Slf4j
 @Service
@@ -35,6 +40,7 @@ public class TaskService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final CategoryRepository categoryRepository;
+    private final RecurrenceSchedule recurrenceSchedule;
     private final AuditLogService auditLogService;
 
     /**
@@ -42,145 +48,202 @@ public class TaskService {
      *
      * @param uid the task's public UID
      * @return the task
-     * @throws ResourceNotFoundException if no task has that UID
+     * @throws ResourceNotFoundException if no active task has that UID
      */
     public TaskResponse getTaskByUid(String uid) {
-        Task task = taskRepository.findByUid(uid)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
-        return TaskResponse.from(task);
+        return TaskResponse.from(taskRepository.findDetailedByUidAndIsActiveTrue(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND)));
     }
 
     /**
-     * Returns the active tasks for a group.
+     * Creates a task in a household, authored by the caller.
      *
-     * @param groupId the group id
-     * @return the group's active tasks
-     */
-    public List<TaskResponse> getTasksByGroup(Long groupId) {
-        return taskRepository.findByGroupIdGroupAndIsActiveTrue(groupId).stream()
-                .map(TaskResponse::from)
-                .toList();
-    }
-
-    /**
-     * Creates a task in a group, resolving its creator and optional assignee/category.
-     *
-     * @param request the task details
+     * @param request      the task's details and the household it belongs to
+     * @param callerUserId the id of the authenticated caller, recorded as the author
      * @return the created task
-     * @throws ResourceNotFoundException if the group, creator, assignee, or category does not exist
+     * @throws ResourceNotFoundException if the group, the assignee or the category is not part of
+     *                                   the caller's household
+     * @throws InvalidRequestException   if a recurring task arrives without a due date, or declares
+     *                                   a recurrence that cannot be scheduled
      */
     @Transactional
-    public TaskResponse createTask(TaskRequest request) {
-        Group group = groupRepository.findById(request.getGroupId())
+    public TaskResponse createTask(TaskCreateRequest request, Long callerUserId) {
+        Group group = groupRepository.findByUidAndIsActiveTrue(request.getGroupUid())
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
-        GroupMember createdBy = groupMemberRepository.findById(request.getCreatedById())
+        // Authorship comes from the token: the request has no say in who it is attributed to.
+        GroupMember author = groupMemberRepository
+                .findByUserIdUserAndGroupIdGroup(callerUserId, group.getIdGroup())
+                .filter(member -> Boolean.TRUE.equals(member.getIsActive()))
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
+
+        LocalDateTime nextDueDate = utc(request.getNextDueDate());
+        requireDueDateForRecurrence(request.getRecurrenceType(), nextDueDate);
 
         Task task = Task.builder()
                 .uid(UUID.randomUUID().toString())
                 .name(request.getName())
                 .description(request.getDescription())
-                .photoUid(request.getPhotoUid())
                 .priority(request.getPriority())
                 .recurrenceType(request.getRecurrenceType())
-                .recurrencePattern(request.getRecurrencePattern())
-                .nextDueDate(request.getNextDueDate())
-                .requiresPhotoProof(request.getRequiresPhotoProof() != null && request.getRequiresPhotoProof())
+                // Derived, never sent: a pattern a caller chose could contradict the due date.
+                .recurrencePattern(anchorFor(request.getRecurrenceType(), nextDueDate))
+                .nextDueDate(nextDueDate)
+                .requiresPhotoProof(Boolean.TRUE.equals(request.getRequiresPhotoProof()))
                 .estimatedTimeMinutes(request.getEstimatedTimeMinutes())
-                .status(request.getStatus())
+                .status(TaskStatus.TODO)
                 .isActive(true)
                 .group(group)
-                .createdBy(createdBy)
+                .createdBy(author)
+                .assignedTo(assigneeIn(group, request.getAssignedToUid()))
+                .category(categoryIn(group, request.getCategoryId()))
                 .build();
 
-        if (request.getAssignedToId() != null) {
-            task.setAssignedTo(groupMemberRepository.findById(request.getAssignedToId())
-                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.ASSIGNED_MEMBER_NOT_FOUND)));
-        }
-        if (request.getCategoryId() != null) {
-            task.setCategory(categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)));
-        }
-
         Task saved = taskRepository.save(task);
-        // Significant business event → INFO. Log the business identifier (uid), never full entities or PII.
-        log.info("Task created: uid={} group={}", saved.getUid(), group.getIdGroup());
+        log.info("Task created: uid={} groupUid={}", saved.getUid(), group.getUid());
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.CREATE,
                 auditMessage(saved.getName(), "created"), group);
         return TaskResponse.from(saved);
     }
 
     /**
-     * Updates a task's fields, re-resolving or clearing its assignee and category.
+     * Updates a task's details. Its household and its author are not editable, and neither is its
+     * status.
      *
      * @param uid     the task's public UID
-     * @param request the new task details
+     * @param request the new details
      * @return the updated task
-     * @throws ResourceNotFoundException if the task, assignee, or category does not exist
+     * @throws ResourceNotFoundException if no active task has that UID, or the assignee or category
+     *                                   is not part of its household
+     * @throws InvalidRequestException   if a recurring task arrives without a due date, or declares
+     *                                   a recurrence that cannot be scheduled
      */
     @Transactional
-    public TaskResponse updateTask(String uid, TaskRequest request) {
-        Task task = taskRepository.findByUid(uid)
+    public TaskResponse updateTask(String uid, TaskUpdateRequest request) {
+        Task task = taskRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
+        Group group = task.getGroup();
+
+        LocalDateTime nextDueDate = utc(request.getNextDueDate());
+        requireDueDateForRecurrence(request.getRecurrenceType(), nextDueDate);
+        // Both resolved before the tracked sets below, so a reference into another household is
+        // refused before any of this task's own fields have moved.
+        GroupMember assignee = assigneeIn(group, request.getAssignedToUid());
+        Category category = categoryIn(group, request.getCategoryId());
 
         AuditChanges changes = AuditChanges.create()
                 .set("name", task::getName, task::setName, request.getName())
                 .set("description", task::getDescription, task::setDescription, request.getDescription())
-                .set("photoUid", task::getPhotoUid, task::setPhotoUid, request.getPhotoUid())
                 // Values kept from here down: each is a fixed token, a flag, a number or a date, so
                 // keeping it discloses nothing a reader cannot already see on the task itself.
                 .setVisible("priority", task::getPriority, task::setPriority, request.getPriority())
                 .setVisible("recurrenceType", task::getRecurrenceType, task::setRecurrenceType,
                         request.getRecurrenceType())
-                // The pattern is free-form JSON rather than a token, so it stays withheld.
-                .set("recurrencePattern", task::getRecurrencePattern, task::setRecurrencePattern,
-                        request.getRecurrencePattern())
-                .setVisible("nextDueDate", task::getNextDueDate, task::setNextDueDate, request.getNextDueDate())
+                .setVisible("nextDueDate", task::getNextDueDate, task::setNextDueDate, nextDueDate)
                 .setVisible("requiresPhotoProof", task::getRequiresPhotoProof, task::setRequiresPhotoProof,
-                        request.getRequiresPhotoProof() != null && request.getRequiresPhotoProof())
-                .setVisible("estimatedTimeMinutes", task::getEstimatedTimeMinutes, task::setEstimatedTimeMinutes,
-                        request.getEstimatedTimeMinutes())
-                .setVisible("status", task::getStatus, task::setStatus, request.getStatus())
-                // Compared by id, and read before the sets below: two loads of one row are not the
-                // same object, so comparing the entities would call every reassignment a change.
-                .track("assignedToId", idOf(task.getAssignedTo()), request.getAssignedToId())
+                        Boolean.TRUE.equals(request.getRequiresPhotoProof()))
+                .setVisible("estimatedTimeMinutes", task::getEstimatedTimeMinutes,
+                        task::setEstimatedTimeMinutes, request.getEstimatedTimeMinutes())
+                // Compared by id: two loads of one row are not the same object, so comparing the
+                // entities would call every reassignment a change.
+                .track("assignedToUid", idOf(task.getAssignedTo()), idOf(assignee))
                 .track("categoryId", idOf(task.getCategory()), request.getCategoryId());
 
-        if (request.getAssignedToId() != null) {
-            task.setAssignedTo(groupMemberRepository.findById(request.getAssignedToId())
-                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.ASSIGNED_MEMBER_NOT_FOUND)));
-        } else {
-            task.setAssignedTo(null);
-        }
-
-        if (request.getCategoryId() != null) {
-            task.setCategory(categoryRepository.findById(request.getCategoryId())
-                    .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND)));
-        } else {
-            task.setCategory(null);
-        }
+        task.setAssignedTo(assignee);
+        task.setCategory(category);
+        // Re-derived rather than tracked: the anchor is a restatement of the due date, so an entry
+        // naming it would say the same thing twice.
+        task.setRecurrencePattern(anchorFor(task.getRecurrenceType(), task.getNextDueDate()));
 
         Task saved = taskRepository.save(task);
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
-                auditMessage(saved.getName(), "updated"), saved.getGroup(), changes);
+                auditMessage(saved.getName(), "updated"), group, changes);
         return TaskResponse.from(saved);
     }
 
     /**
-     * Soft-deletes a task (sets it inactive).
+     * Retires a task the household has stopped doing. It leaves every board but keeps its history,
+     * which is what separates this from deleting it.
      *
      * @param uid the task's public UID
-     * @throws ResourceNotFoundException if no task has that UID
+     * @return the archived task
+     * @throws ResourceNotFoundException if no active task has that UID
+     */
+    @Transactional
+    public TaskResponse archiveTask(String uid) {
+        Task task = taskRepository.findByUidAndIsActiveTrue(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
+        AuditChanges changes = AuditChanges.create()
+                .setVisible("status", task::getStatus, task::setStatus, TaskStatus.ARCHIVED);
+        Task saved = taskRepository.save(task);
+        log.info("Task archived: uid={}", uid);
+        auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
+                auditMessage(saved.getName(), "archived"), saved.getGroup(), changes);
+        return TaskResponse.from(saved);
+    }
+
+    /**
+     * Soft-deletes a task.
+     *
+     * @param uid the task's public UID
+     * @throws ResourceNotFoundException if no active task has that UID
      */
     @Transactional
     public void deleteTask(String uid) {
-        Task task = taskRepository.findByUid(uid)
+        // Filtered, so deleting twice is a 404 rather than a second entry on the task's trail.
+        Task task = taskRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         task.setIsActive(false);
         taskRepository.save(task);
         log.info("Task soft-deleted: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.TASK, task.getIdTask(), AuditAction.DELETE,
                 auditMessage(task.getName(), "deleted"), task.getGroup());
+    }
+
+    // A recurring task without a due date has no schedule to recur on, and nothing later would
+    // give it one.
+    private void requireDueDateForRecurrence(RecurrenceType type, LocalDateTime nextDueDate) {
+        if (type != null && nextDueDate == null) {
+            throw new InvalidRequestException("A recurring task needs a due date to recur from");
+        }
+    }
+
+    private Map<String, Object> anchorFor(RecurrenceType type, LocalDateTime nextDueDate) {
+        return type == null ? null : recurrenceSchedule.anchorFor(type, nextDueDate);
+    }
+
+    /**
+     * The membership named by the caller, or null when nobody was named — an unassigned task sits
+     * in the household's pool for anybody to claim.
+     *
+     * <p>A membership of another household answers "not found" rather than "not allowed": a 403
+     * would confirm the uid belongs to somebody, somewhere.
+     */
+    private GroupMember assigneeIn(Group group, String memberUid) {
+        if (memberUid == null) {
+            return null;
+        }
+        return groupMemberRepository.findByUid(memberUid)
+                .filter(member -> Boolean.TRUE.equals(member.getIsActive()))
+                .filter(member -> member.getGroup().getIdGroup().equals(group.getIdGroup()))
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.ASSIGNED_MEMBER_NOT_FOUND));
+    }
+
+    // Categories are scoped to a household too, so one from another household is as absent as one
+    // that never existed.
+    private Category categoryIn(Group group, Long categoryId) {
+        if (categoryId == null) {
+            return null;
+        }
+        return categoryRepository.findById(categoryId)
+                .filter(category -> Boolean.TRUE.equals(category.getIsActive()))
+                .filter(category -> category.getGroup().getIdGroup().equals(group.getIdGroup()))
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.CATEGORY_NOT_FOUND));
+    }
+
+    // The column holds UTC with no zone of its own, so the caller's offset is applied here rather
+    // than compared against it - the request states an instant, the column stores one.
+    private LocalDateTime utc(OffsetDateTime value) {
+        return value != null ? value.withOffsetSameInstant(ZoneOffset.UTC).toLocalDateTime() : null;
     }
 
     private static String auditMessage(String name, String verb) {

@@ -10,6 +10,7 @@ import com.tasklean.api.domain.auditlog.AuditFieldChange;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
+import com.tasklean.api.domain.task.TaskAssignmentRelease;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberRequest;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRepository;
@@ -43,6 +44,9 @@ class GroupMemberServiceTest {
 
     @Mock
     private GroupRepository groupRepository;
+
+    @Mock
+    private TaskAssignmentRelease taskAssignmentRelease;
 
     @Mock
     private AuditLogService auditLogService;

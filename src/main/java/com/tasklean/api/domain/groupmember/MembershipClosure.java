@@ -6,6 +6,7 @@ import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupService;
+import com.tasklean.api.domain.task.TaskAssignmentRelease;
 import com.tasklean.api.domain.user.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,7 @@ public class MembershipClosure {
 
     private final GroupMemberRepository groupMemberRepository;
     private final GroupService groupService;
+    private final TaskAssignmentRelease taskAssignmentRelease;
     private final AuditLogService auditLogService;
     private final Clock clock;
 
@@ -80,6 +82,8 @@ public class MembershipClosure {
         membership.setDateLeft(now);
         membership.setRemovedBy(left ? membership : actingMember(callerUserId, membership.getGroup()));
         groupMemberRepository.save(membership);
+        // Same reason as the ordinary removal path: nothing may still read as theirs to do.
+        taskAssignmentRelease.releaseFor(membership);
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, membership.getIdGroupMember(),
                 left ? AuditAction.MEMBER_LEFT : AuditAction.MEMBER_REMOVED,
                 "Membership ended with the account's closure", membership.getGroup());

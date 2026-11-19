@@ -1,19 +1,23 @@
 package com.tasklean.api.domain.task;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
-import com.tasklean.api.domain.task.dto.TaskRequest;
+import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskResponse;
+import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
 /**
- * REST endpoints for tasks — create, fetch, list by group, update, and delete.
+ * REST endpoints for a household's tasks — create, fetch, update, archive and delete. Any member
+ * may add a chore; only its author or a group admin may change one. The board that lists them is
+ * served separately, and completing one lives with the completions.
  */
 @Tag(name = "Tasks", description = "Chores within a household.")
 @RestController
@@ -24,15 +28,19 @@ public class TaskController {
     private final TaskService taskService;
 
     /**
-     * Creates a task.
+     * Creates a task in a household the caller belongs to. The author is the caller.
      *
-     * @param request the task details
+     * @param request   the task's details and the household it belongs to
+     * @param principal the authenticated caller
      * @return {@code 201 Created} with the created task
      */
+    @PreAuthorize("@groupSecurity.isMember(#request.groupUid)")
     @PostMapping
-    public ResponseEntity<ApiResponse<TaskResponse>> createTask(@Valid @RequestBody TaskRequest request) {
+    public ResponseEntity<ApiResponse<TaskResponse>> createTask(
+            @Valid @RequestBody TaskCreateRequest request,
+            @AuthenticationPrincipal AuthPrincipal principal) {
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(taskService.createTask(request)));
+                .body(ApiResponse.success(taskService.createTask(request, principal.userId())));
     }
 
     /**
@@ -41,33 +49,36 @@ public class TaskController {
      * @param uid the task's public UID
      * @return {@code 200 OK} with the task
      */
+    @PreAuthorize("@taskSecurity.canView(#uid)")
     @GetMapping("/{uid}")
     public ResponseEntity<ApiResponse<TaskResponse>> getTask(@PathVariable String uid) {
         return ResponseEntity.ok(ApiResponse.success(taskService.getTaskByUid(uid)));
     }
 
     /**
-     * Lists a group's active tasks.
+     * Updates a task's details.
      *
-     * @param groupId the group id
-     * @return {@code 200 OK} with the tasks
+     * @param uid     the task's public UID
+     * @param request the new details
+     * @return {@code 200 OK} with the updated task
      */
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<TaskResponse>>> getTasksByGroup(@RequestParam Long groupId) {
-        return ResponseEntity.ok(ApiResponse.success(taskService.getTasksByGroup(groupId)));
+    @PreAuthorize("@taskSecurity.canEdit(#uid)")
+    @PutMapping("/{uid}")
+    public ResponseEntity<ApiResponse<TaskResponse>> updateTask(
+            @PathVariable String uid, @Valid @RequestBody TaskUpdateRequest request) {
+        return ResponseEntity.ok(ApiResponse.success(taskService.updateTask(uid, request)));
     }
 
     /**
-     * Updates a task.
+     * Retires a task the household has stopped doing, keeping its history.
      *
-     * @param uid     the task's public UID
-     * @param request the new task details
-     * @return {@code 200 OK} with the updated task
+     * @param uid the task's public UID
+     * @return {@code 200 OK} with the archived task
      */
-    @PutMapping("/{uid}")
-    public ResponseEntity<ApiResponse<TaskResponse>> updateTask(
-            @PathVariable String uid, @Valid @RequestBody TaskRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(taskService.updateTask(uid, request)));
+    @PreAuthorize("@taskSecurity.canEdit(#uid)")
+    @PostMapping("/{uid}/archive")
+    public ResponseEntity<ApiResponse<TaskResponse>> archiveTask(@PathVariable String uid) {
+        return ResponseEntity.ok(ApiResponse.success(taskService.archiveTask(uid)));
     }
 
     /**
@@ -76,6 +87,7 @@ public class TaskController {
      * @param uid the task's public UID
      * @return {@code 200 OK} with a confirmation message
      */
+    @PreAuthorize("@taskSecurity.canEdit(#uid)")
     @DeleteMapping("/{uid}")
     public ResponseEntity<ApiResponse<Void>> deleteTask(@PathVariable String uid) {
         taskService.deleteTask(uid);

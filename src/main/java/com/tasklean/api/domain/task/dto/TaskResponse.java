@@ -1,11 +1,19 @@
 package com.tasklean.api.domain.task.dto;
 
+import com.tasklean.api.domain.groupmember.GroupMember;
+import com.tasklean.api.domain.task.RecurrenceType;
 import com.tasklean.api.domain.task.Task;
+import com.tasklean.api.domain.task.TaskPriority;
+import com.tasklean.api.domain.task.TaskStatus;
+import com.tasklean.api.domain.user.dto.UserSummaryResponse;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.Map;
 
+/**
+ * A task as returned by the API. Carries the people behind its author and assignee rather than
+ * ids, so a client can render it without a second call.
+ */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -13,49 +21,46 @@ import java.util.Map;
 @Builder
 public class TaskResponse {
 
-    private Long id;
     private String uid;
     private String name;
     private String description;
-    private String photoUid;
-    private String priority;
-    private String recurrenceType;
-    private Map<String, Object> recurrencePattern;
+    private TaskPriority priority;
+    private RecurrenceType recurrenceType;
     private LocalDateTime nextDueDate;
     private Boolean requiresPhotoProof;
     private Integer estimatedTimeMinutes;
-    private String status;
-    private Boolean isActive;
+    private TaskStatus status;
     private LocalDateTime dateCreated;
     private LocalDateTime dateUpdated;
     private LocalDateTime dateCompleted;
-    private Long groupId;
-    private Long createdById;
-    private Long assignedToId;
+    private String groupUid;
+    private UserSummaryResponse createdBy;
+    private UserSummaryResponse assignedTo;
     private Long categoryId;
 
     public static TaskResponse from(Task task) {
         return TaskResponse.builder()
-                .id(task.getIdTask())
                 .uid(task.getUid())
                 .name(task.getName())
                 .description(task.getDescription())
-                .photoUid(task.getPhotoUid())
                 .priority(task.getPriority())
                 .recurrenceType(task.getRecurrenceType())
-                .recurrencePattern(task.getRecurrencePattern())
                 .nextDueDate(task.getNextDueDate())
                 .requiresPhotoProof(task.getRequiresPhotoProof())
                 .estimatedTimeMinutes(task.getEstimatedTimeMinutes())
                 .status(task.getStatus())
-                .isActive(task.getIsActive())
                 .dateCreated(task.getDateCreated())
                 .dateUpdated(task.getDateUpdated())
                 .dateCompleted(task.getDateCompleted())
-                .groupId(task.getGroup().getIdGroup())
-                .createdById(task.getCreatedBy().getIdGroupMember())
-                .assignedToId(task.getAssignedTo() != null ? task.getAssignedTo().getIdGroupMember() : null)
+                .groupUid(task.getGroup().getUid())
+                // created_by and assigned_to reference a membership; a client wants the person.
+                .createdBy(person(task.getCreatedBy()))
+                .assignedTo(person(task.getAssignedTo()))
                 .categoryId(task.getCategory() != null ? task.getCategory().getIdCategory() : null)
                 .build();
+    }
+
+    private static UserSummaryResponse person(GroupMember membership) {
+        return membership == null ? null : UserSummaryResponse.from(membership.getUser());
     }
 }

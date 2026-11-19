@@ -29,7 +29,7 @@ public class Task extends BaseEntity {
     @Column(name = "uid", unique = true, nullable = false, length = 500)
     private String uid;
 
-    @Column(name = "name", nullable = false, length = 255)
+    @Column(name = "name", nullable = false)
     private String name;
 
     @Column(name = "description", columnDefinition = "TEXT")
@@ -38,11 +38,13 @@ public class Task extends BaseEntity {
     @Column(name = "photo_uid", length = 100)
     private String photoUid;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "priority", nullable = false, length = 50)
-    private String priority;
+    private TaskPriority priority;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "recurrence_type", length = 50)
-    private String recurrenceType;
+    private RecurrenceType recurrenceType;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "recurrence_pattern", columnDefinition = "jsonb")
@@ -58,8 +60,9 @@ public class Task extends BaseEntity {
     @Column(name = "estimated_time_minutes")
     private Integer estimatedTimeMinutes;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 50)
-    private String status;
+    private TaskStatus status;
 
     @Builder.Default
     @Column(name = "is_active", nullable = false)

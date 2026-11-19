@@ -7,6 +7,7 @@ import com.tasklean.api.domain.auditlog.AuditFieldChange;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupService;
+import com.tasklean.api.domain.task.TaskAssignmentRelease;
 import com.tasklean.api.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +43,9 @@ class MembershipClosureTest {
 
     @Mock
     private GroupService groupService;
+
+    @Mock
+    private TaskAssignmentRelease taskAssignmentRelease;
 
     @Mock
     private AuditLogService auditLogService;

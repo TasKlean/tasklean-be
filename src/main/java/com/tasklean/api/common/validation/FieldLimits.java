@@ -39,6 +39,16 @@ public final class FieldLimits {
     /** The name column on "group". */
     public static final int GROUP_NAME = 255;
 
+    /** The name column on "task". */
+    public static final int TASK_NAME = 255;
+
+    /**
+     * How long a task may be estimated to take. The column is a plain INTEGER, so this bound is
+     * ours: a chore is a chore, and a whole day of one is already beyond anything a household
+     * schedules as a single job.
+     */
+    public static final int TASK_MINUTES = 1440;
+
     /** A free-text description. The column is TEXT, so this bound is ours, not Postgres's. */
     public static final int DESCRIPTION = 2000;
 

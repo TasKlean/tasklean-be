@@ -1,6 +1,7 @@
 package com.tasklean.api.common.jpa;
 
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.task.TaskRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.jpa.repository.EntityGraph;
 
@@ -33,6 +34,21 @@ class LazyFetchContractTest {
     void singleMemberFinder_fetchesTheUserBehindEveryAttribution() throws Exception {
         assertThat(pathsOf(GroupMemberRepository.class, "findDetailedByUid", String.class))
                 .contains("user", "addedBy.user", "removedBy.user");
+    }
+
+    @Test
+    void taskFinder_fetchesTheHouseholdAndThePeople() throws Exception {
+        // TaskResponse reads the group's uid and the names behind both memberships.
+        assertThat(pathsOf(TaskRepository.class, "findDetailedByUidAndIsActiveTrue", String.class))
+                .contains("group", "createdBy.user", "assignedTo.user");
+    }
+
+    @Test
+    void taskAuthorizationFinder_staysLean() throws Exception {
+        // TaskSecurity reads the group id and the author's membership id, both served by proxies.
+        Method method = TaskRepository.class.getMethod("findByUid", String.class);
+
+        assertThat(method.getAnnotation(EntityGraph.class)).isNull();
     }
 
     @Test

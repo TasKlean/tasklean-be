@@ -3,7 +3,8 @@ package com.tasklean.api.domain.auditlog;
 import com.tasklean.api.domain.category.dto.CategoryRequest;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.tag.dto.TagRequest;
-import com.tasklean.api.domain.task.dto.TaskRequest;
+import com.tasklean.api.domain.task.dto.TaskCreateRequest;
+import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import com.tasklean.api.domain.user.dto.UserRequest;
 import org.junit.jupiter.api.Test;
 
@@ -33,17 +34,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AuditTrackedFieldsTest {
 
     @Test
-    void taskRequest_everyField_isClassified() {
-        assertEveryFieldClassified(TaskRequest.class,
+    void taskUpdateRequest_everyField_isClassified() {
+        assertEveryFieldClassified(TaskUpdateRequest.class,
                 // Fixed tokens, a flag, a number and a date - nothing a person wrote.
                 Set.of("priority", "recurrenceType", "nextDueDate", "requiresPhotoProof",
-                        "estimatedTimeMinutes", "status"),
-                // Free text, an image key, free-form JSON, and two associations compared by
-                // internal id - an id must never reach a response.
-                Set.of("name", "description", "photoUid", "recurrencePattern",
-                        "assignedToId", "categoryId"),
-                // A task cannot move group or change author, so updateTask ignores both.
-                Set.of("groupId", "createdById"));
+                        "estimatedTimeMinutes"),
+                // Free text, and two associations whose values are a membership uid and a
+                // category id - neither says anything on its own.
+                Set.of("name", "description", "assignedToUid", "categoryId"),
+                Set.of());
+    }
+
+    @Test
+    void taskCreateRequest_everyField_isClassified() {
+        // Everything editable is inherited from the update request above; a create adds only the
+        // household, which no edit can change and so no entry ever reports.
+        assertEveryFieldClassified(TaskCreateRequest.class, Set.of(), Set.of(), Set.of("groupUid"));
     }
 
     @Test
