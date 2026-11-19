@@ -17,7 +17,7 @@ public class TaskResponse {
     private String uid;
     private String name;
     private String description;
-    private String taskPhotoUrl;
+    private String photoUid;
     private String priority;
     private String recurrenceType;
     private Map<String, Object> recurrencePattern;
@@ -40,7 +40,7 @@ public class TaskResponse {
                 .uid(task.getUid())
                 .name(task.getName())
                 .description(task.getDescription())
-                .taskPhotoUrl(task.getTaskPhotoUrl())
+                .photoUid(task.getPhotoUid())
                 .priority(task.getPriority())
                 .recurrenceType(task.getRecurrenceType())
                 .recurrencePattern(task.getRecurrencePattern())

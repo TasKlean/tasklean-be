@@ -15,7 +15,7 @@ public class TaskCompletionRequest {
     @NotNull
     private Long groupMemberId;
 
-    private String completionPhotoUrl;
+    private String completionPhotoUid;
 
     private String completionNote;
 }

@@ -18,7 +18,7 @@ public class TaskRequest {
 
     private String description;
 
-    private String taskPhotoUrl;
+    private String photoUid;
 
     @NotBlank
     private String priority;

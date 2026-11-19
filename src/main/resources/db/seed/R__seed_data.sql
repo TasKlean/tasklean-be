@@ -122,7 +122,7 @@ INSERT INTO task (uid, name, description, priority, recurrence_type, recurrence_
 VALUES
     -- Weekly kitchen clean, assigned to Bob, recurring
     ('e26d3a60-e882-4249-9435-7f5ae8a08c30', 'Clean kitchen counters', 'Wipe down all counters and stovetop', 'HIGH', 'WEEKLY',
-     '{"dayOfWeek": "MONDAY"}', NOW() + INTERVAL '3 days', FALSE, 20, 'TODO',
+     NULL, NOW() + INTERVAL '3 days', FALSE, 20, 'TODO',
      (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001'),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'alice@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'bob@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
@@ -130,7 +130,8 @@ VALUES
 
     -- Bathroom deep clean, assigned to Charlie, requires photo proof
     ('79b4c0c6-567f-464c-b7c8-20c03121a111', 'Deep clean bathroom', 'Scrub tiles, clean toilet, mop floor', 'MEDIUM', 'MONTHLY',
-     '{"dayOfMonth": 1}', NOW() + INTERVAL '10 days', TRUE, 45, 'TODO',
+     jsonb_build_object('dayOfMonth', EXTRACT(DAY FROM NOW() + INTERVAL '10 days')::int),
+     NOW() + INTERVAL '10 days', TRUE, 45, 'TODO',
      (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001'),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'alice@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'charlie@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
@@ -138,7 +139,7 @@ VALUES
 
     -- Vacuuming, assigned to Alice herself, in progress
     ('60e1f1e7-82a8-49f7-ab7b-d334344e8245', 'Vacuum living room', 'Vacuum carpet and under furniture', 'LOW', 'WEEKLY',
-     '{"dayOfWeek": "THURSDAY"}', NOW() + INTERVAL '1 day', FALSE, 15, 'IN_PROGRESS',
+     NULL, NOW() + INTERVAL '1 day', FALSE, 15, 'IN_PROGRESS',
      (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001'),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'alice@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'alice@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001')),
@@ -175,7 +176,7 @@ VALUES
 
     -- Weekend outdoor task with photo proof
     ('8650837b-dd07-4d5c-85d3-1106f121f3bf', 'Mow the lawn', 'Front and back yard', 'HIGH', 'WEEKLY',
-     '{"dayOfWeek": "SATURDAY"}', NOW() + INTERVAL '5 days', TRUE, 60, 'TODO',
+     NULL, NOW() + INTERVAL '5 days', TRUE, 60, 'TODO',
      (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002'),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'charlie@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002')),
      (SELECT gm.id_group_member FROM group_member gm JOIN "user" u ON gm.user_id = u.id_user WHERE u.email = 'charlie@example.com' AND gm.group_id = (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002')),
@@ -217,10 +218,10 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
--- TASK COMPLETIONS (3 completions: one with photo, two without)
+-- TASK COMPLETIONS (3 recorded instances, all done - one of them a day late)
 -- ============================================================================
-INSERT INTO task_completion (completion_photo_url, completion_note, date_completed, task_id, group_member_id)
-SELECT NULL, 'Fixed with new washer from hardware store', NOW() - INTERVAL '2 days',
+INSERT INTO task_completion (due_date, outcome, minutes, completion_photo_uid, completion_note, date_completed, task_id, group_member_id)
+SELECT NULL, 'DONE', 30, NULL, 'Fixed with new washer from hardware store', NOW() - INTERVAL '2 days',
        t.id_task, gm.id_group_member
 FROM task t
 JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = 'bob@example.com')
@@ -228,8 +229,8 @@ JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = '
 WHERE t.name = 'Fix leaky faucet'
 AND NOT EXISTS (SELECT 1 FROM task_completion tc WHERE tc.task_id = t.id_task AND tc.completion_note = 'Fixed with new washer from hardware store');
 
-INSERT INTO task_completion (completion_photo_url, completion_note, date_completed, task_id, group_member_id)
-SELECT NULL, 'Counters wiped and stovetop scrubbed', NOW() - INTERVAL '7 days',
+INSERT INTO task_completion (due_date, outcome, minutes, completion_photo_uid, completion_note, date_completed, task_id, group_member_id)
+SELECT NOW() - INTERVAL '8 days', 'DONE', 20, NULL, 'Counters wiped and stovetop scrubbed', NOW() - INTERVAL '7 days',
        t.id_task, gm.id_group_member
 FROM task t
 JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = 'bob@example.com')
@@ -237,8 +238,8 @@ JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = '
 WHERE t.name = 'Clean kitchen counters'
 AND NOT EXISTS (SELECT 1 FROM task_completion tc WHERE tc.task_id = t.id_task AND tc.completion_note = 'Counters wiped and stovetop scrubbed');
 
-INSERT INTO task_completion (completion_photo_url, completion_note, date_completed, task_id, group_member_id)
-SELECT 'https://placeholder.example.com/photos/bathroom-clean-001.jpg', 'Monthly deep clean done', NOW() - INTERVAL '30 days',
+INSERT INTO task_completion (due_date, outcome, minutes, completion_photo_uid, completion_note, date_completed, task_id, group_member_id)
+SELECT NOW() - INTERVAL '30 days', 'DONE', 45, NULL, 'Monthly deep clean done', NOW() - INTERVAL '30 days',
        t.id_task, gm.id_group_member
 FROM task t
 JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = 'charlie@example.com')
@@ -296,9 +297,11 @@ WHERE NOT EXISTS (SELECT 1 FROM notification WHERE title = 'New member' AND user
 
 -- ============================================================================
 -- AUDIT LOG (sample entries)
+-- The uid is generated per row: audit_log.uid is NOT NULL with no default (V26 backfilled
+-- rather than defaulted), so a seed that leaves it out fails on a fresh database.
 -- ============================================================================
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
-SELECT 'GROUP', g.id_group, 'CREATE', 'Group "Apartment 4B" created', '127.0.0.1',
+INSERT INTO audit_log (uid, entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
+SELECT gen_random_uuid()::text, 'GROUP', g.id_group, 'CREATE', 'Group "Apartment 4B" created', '127.0.0.1',
        gm.id_group_member, g.id_group, gm.user_id
 FROM "group" g
 JOIN group_member gm ON gm.group_id = g.id_group
@@ -306,8 +309,8 @@ JOIN group_member gm ON gm.group_id = g.id_group
 WHERE g.invite_code = 'APT4B001'
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'CREATE' AND entity_type = 'GROUP' AND entity_id = g.id_group);
 
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
-SELECT 'TASK', t.id_task, 'CREATE', 'Task "Clean kitchen counters" created', '127.0.0.1',
+INSERT INTO audit_log (uid, entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
+SELECT gen_random_uuid()::text, 'TASK', t.id_task, 'CREATE', 'Task "Clean kitchen counters" created', '127.0.0.1',
        gm.id_group_member, (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001'), gm.user_id
 FROM task t
 JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = 'alice@example.com')
@@ -315,8 +318,8 @@ JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = '
 WHERE t.name = 'Clean kitchen counters'
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'CREATE' AND entity_type = 'TASK' AND entity_id = t.id_task);
 
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
-SELECT 'TASK', t.id_task, 'UPDATE', 'Task "Fix leaky faucet" marked as COMPLETED', '127.0.0.1',
+INSERT INTO audit_log (uid, entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
+SELECT gen_random_uuid()::text, 'TASK', t.id_task, 'UPDATE', 'Task "Fix leaky faucet" marked as COMPLETED', '127.0.0.1',
        gm.id_group_member, (SELECT id_group FROM "group" WHERE invite_code = 'APT4B001'), gm.user_id
 FROM task t
 JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = 'bob@example.com')
@@ -324,8 +327,8 @@ JOIN group_member gm ON gm.user_id = (SELECT id_user FROM "user" WHERE email = '
 WHERE t.name = 'Fix leaky faucet'
 AND NOT EXISTS (SELECT 1 FROM audit_log WHERE action = 'UPDATE' AND entity_type = 'TASK' AND entity_id = t.id_task);
 
-INSERT INTO audit_log (entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
-SELECT 'GROUP_MEMBER', gm_alice.id_group_member, 'CREATE', 'Alice joined "Family Home"', '127.0.0.1',
+INSERT INTO audit_log (uid, entity_type, entity_id, action, action_message, ip_address, group_member_id, group_id, actor_user_id)
+SELECT gen_random_uuid()::text, 'GROUP_MEMBER', gm_alice.id_group_member, 'CREATE', 'Alice joined "Family Home"', '127.0.0.1',
        gm_charlie.id_group_member, (SELECT id_group FROM "group" WHERE invite_code = 'FAMLY002'), gm_charlie.user_id
 FROM group_member gm_alice
 JOIN group_member gm_charlie ON gm_charlie.user_id = (SELECT id_user FROM "user" WHERE email = 'charlie@example.com')

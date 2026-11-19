@@ -5215,7 +5215,7 @@
           "completionNote" : {
             "type" : "string"
           },
-          "completionPhotoUrl" : {
+          "completionPhotoUid" : {
             "type" : "string"
           },
           "groupMemberId" : {
@@ -5235,7 +5235,7 @@
           "completionNote" : {
             "type" : "string"
           },
-          "completionPhotoUrl" : {
+          "completionPhotoUid" : {
             "type" : "string"
           },
           "dateCompleted" : {
@@ -5294,6 +5294,9 @@
             "type" : "string",
             "format" : "date-time"
           },
+          "photoUid" : {
+            "type" : "string"
+          },
           "priority" : {
             "type" : "string",
             "minLength" : 1
@@ -5311,9 +5314,6 @@
           "status" : {
             "type" : "string",
             "minLength" : 1
-          },
-          "taskPhotoUrl" : {
-            "type" : "string"
           }
         },
         "required" : [ "createdById", "groupId", "name", "priority", "status" ]
@@ -5370,6 +5370,9 @@
             "type" : "string",
             "format" : "date-time"
           },
+          "photoUid" : {
+            "type" : "string"
+          },
           "priority" : {
             "type" : "string"
           },
@@ -5384,9 +5387,6 @@
             "type" : "boolean"
           },
           "status" : {
-            "type" : "string"
-          },
-          "taskPhotoUrl" : {
             "type" : "string"
           },
           "uid" : {

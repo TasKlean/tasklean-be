@@ -54,7 +54,7 @@ public class TaskCompletionService {
      * @return the member's completions
      */
     public List<TaskCompletionResponse> getCompletionsByMember(Long groupMemberId) {
-        return taskCompletionRepository.findByCompletedByIdGroupMemberOrderByDateCompletedDesc(groupMemberId).stream()
+        return taskCompletionRepository.findByAttributedToIdGroupMemberOrderByDateCompletedDesc(groupMemberId).stream()
                 .map(TaskCompletionResponse::from)
                 .toList();
     }
@@ -75,8 +75,8 @@ public class TaskCompletionService {
 
         TaskCompletion completion = TaskCompletion.builder()
                 .task(task)
-                .completedBy(member)
-                .completionPhotoUrl(request.getCompletionPhotoUrl())
+                .attributedTo(member)
+                .completionPhotoUid(request.getCompletionPhotoUid())
                 .completionNote(request.getCompletionNote())
                 .dateCompleted(LocalDateTime.now(clock))
                 .build();

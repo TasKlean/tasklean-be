@@ -11,5 +11,5 @@ public interface TaskCompletionRepository extends JpaRepository<TaskCompletion, 
 
     List<TaskCompletion> findByTaskIdTaskOrderByDateCompletedDesc(Long taskId);
 
-    List<TaskCompletion> findByCompletedByIdGroupMemberOrderByDateCompletedDesc(Long groupMemberId);
+    List<TaskCompletion> findByAttributedToIdGroupMemberOrderByDateCompletedDesc(Long groupMemberId);
 }

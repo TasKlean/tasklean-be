@@ -40,7 +40,7 @@ class AuditTrackedFieldsTest {
                         "estimatedTimeMinutes", "status"),
                 // Free text, an image key, free-form JSON, and two associations compared by
                 // internal id - an id must never reach a response.
-                Set.of("name", "description", "taskPhotoUrl", "recurrencePattern",
+                Set.of("name", "description", "photoUid", "recurrencePattern",
                         "assignedToId", "categoryId"),
                 // A task cannot move group or change author, so updateTask ignores both.
                 Set.of("groupId", "createdById"));

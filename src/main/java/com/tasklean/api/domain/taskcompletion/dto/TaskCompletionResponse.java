@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 public class TaskCompletionResponse {
 
     private Long id;
-    private String completionPhotoUrl;
+    private String completionPhotoUid;
     private String completionNote;
     private LocalDateTime dateCompleted;
     private LocalDateTime dateCreated;
@@ -23,12 +23,12 @@ public class TaskCompletionResponse {
     public static TaskCompletionResponse from(TaskCompletion completion) {
         return TaskCompletionResponse.builder()
                 .id(completion.getIdTaskCompletion())
-                .completionPhotoUrl(completion.getCompletionPhotoUrl())
+                .completionPhotoUid(completion.getCompletionPhotoUid())
                 .completionNote(completion.getCompletionNote())
                 .dateCompleted(completion.getDateCompleted())
                 .dateCreated(completion.getDateCreated())
                 .taskId(completion.getTask().getIdTask())
-                .groupMemberId(completion.getCompletedBy().getIdGroupMember())
+                .groupMemberId(completion.getAttributedTo() != null ? completion.getAttributedTo().getIdGroupMember() : null)
                 .build();
     }
 }

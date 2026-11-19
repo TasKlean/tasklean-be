@@ -80,7 +80,7 @@ public class TaskService {
                 .uid(UUID.randomUUID().toString())
                 .name(request.getName())
                 .description(request.getDescription())
-                .taskPhotoUrl(request.getTaskPhotoUrl())
+                .photoUid(request.getPhotoUid())
                 .priority(request.getPriority())
                 .recurrenceType(request.getRecurrenceType())
                 .recurrencePattern(request.getRecurrencePattern())
@@ -126,7 +126,7 @@ public class TaskService {
         AuditChanges changes = AuditChanges.create()
                 .set("name", task::getName, task::setName, request.getName())
                 .set("description", task::getDescription, task::setDescription, request.getDescription())
-                .set("taskPhotoUrl", task::getTaskPhotoUrl, task::setTaskPhotoUrl, request.getTaskPhotoUrl())
+                .set("photoUid", task::getPhotoUid, task::setPhotoUid, request.getPhotoUid())
                 // Values kept from here down: each is a fixed token, a flag, a number or a date, so
                 // keeping it discloses nothing a reader cannot already see on the task itself.
                 .setVisible("priority", task::getPriority, task::setPriority, request.getPriority())

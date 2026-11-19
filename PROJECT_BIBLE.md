@@ -74,11 +74,11 @@ Everything revolves around the Group. A User does nothing alone — they must be
 | User | `id_user` | Yes (`uid`, 100 chars) | Yes | `is_active` | Also has `google_sub` for OAuth; `role` (platform role: `SUPER_ADMIN`/`ADMIN`/`USER`); two photo columns — `photo_uid` (an upload of ours, V31) winning over `photo_url` (Google's picture) |
 | Group | `id_group` | Yes (`uid`, 500 chars) | Yes | `is_active` | Has `invite_code` for joining, and `photo_uid` — an FK to `upload(uid)`, never a URL (V25) |
 | GroupMember | `id_group_member` | Yes (`uid`, 500 chars, V23) | No | `is_active` + `date_left` | Junction with `role` (`GROUP_ADMIN`/`GROUP_MEMBER`); unique on `(user_id, group_id)`. The uid is how the REST API addresses a membership |
-| Task | `id_task` | Yes (`uid`, 500 chars) | Yes | `is_active` | Central domain object |
+| Task | `id_task` | Yes (`uid`, 500 chars) | Yes | `is_active` | Central domain object; `photo_uid` is an FK to `upload(uid)`, never a URL (V32) |
 | Category | `id_category` | No | Yes | `is_active` | Scoped to group; unique on `(group_id, name)` |
 | Tag | `id_tag` | No | Yes | `is_active` | Scoped to group; unique on `(group_id, name)` |
 | TaskTag | `id_task_tag` | No | No | No (hard delete via CASCADE) | Junction; unique on `(task_id, tag_id)` |
-| TaskCompletion | `id_task_completion` | No | No | None | Immutable completion record |
+| TaskCompletion | `id_task_completion` | No | No | `is_active` | One scheduled instance of a task and what became of it (V32): `due_date`, `outcome` (`DONE`/`SKIPPED`/`MISSED`), a `minutes` snapshot and `completion_photo_uid`. `group_member_id` is nullable - it names who the instance is attributed to, and an unassigned task leaves nobody to name |
 | Device | `id_device` | No | Yes | `is_active` | Per-device record: sign-in sessions + push tokens. `client_device_id` (stable id from `X-Device-Id`), `ip_address` (last seen, refreshed on token rotation — not the sign-in address), `user_agent`; push `device_token` nullable. `is_active=false` means the user removed it; `date_created` is the first-ever sighting, which survives a removal |
 | Notification | `id_notification` | No | No | None | Has `is_read` + `read_at`; `type` is a free-form column, but the canonical values live in the `NotificationType` enum (`TASK_ASSIGNED`, `TASK_COMPLETED`, `TASK_REMINDER`, `MEMBER_JOINED`), which is also what `notification_settings` is keyed by |
 | AuditLog | `id_audit_log` | Yes (`uid`, 100 chars, V26) | No | None | Immutable; polymorphic via `entity_type` + `entity_id` |
@@ -109,9 +109,9 @@ The `role` column is CHECK-constrained to `'GROUP_ADMIN'` or `'GROUP_MEMBER'` (t
 - **Statuses**: `TODO`, `IN_PROGRESS`, `COMPLETED`, `ARCHIVED` (CHECK constraint in migration)
 - **Priorities**: `HIGH`, `MEDIUM`, `LOW` (CHECK constraint in migration)
 - **Recurrence types**: `DAILY`, `WEEKLY`, `MONTHLY`, `CUSTOM` (CHECK constraint, nullable)
-- **Recurrence pattern**: JSONB column for flexible recurrence rules (e.g., specific days of week)
-- **Photo proof**: `requires_photo_proof` flag; completion photos stored as URLs in `TaskCompletion.completion_photo_url`
-- **Completion**: each completion is a separate `TaskCompletion` record (supports recurring tasks being completed multiple times)
+- **Recurrence pattern**: JSONB column, **server-set, never sent by a caller**. `next_due_date` is the single schedule anchor, so DAILY and WEEKLY need no pattern at all; MONTHLY stores `{"dayOfMonth": N}` taken from the first due date, so a February clamp cannot ratchet the schedule earlier for good. `CUSTOM` is unimplemented
+- **Photo proof**: `requires_photo_proof` flag, set by the task's creator; the photo is an upload of ours in `TaskCompletion.completion_photo_uid` (V32), never a URL
+- **Completion**: each instance is its own `TaskCompletion` row, so a recurring task accumulates history. `UNIQUE (task_id, due_date) WHERE is_active` is what stops one instance being recorded twice; a one-off task has no `due_date`, and nulls are distinct in Postgres, so that case is guarded by `status = COMPLETED` instead
 
 ### Notification types
 
@@ -212,11 +212,15 @@ Every FK column is indexed. Additional indexes on:
 | V23 | Adds `group_member.uid` + unique index (backfilled; no new table) | `group_member` |
 | V24 | `upload` (one row per signed upload: `uid`, internal `storage_key`, `purpose`, `content_type`, `size_bytes`, `status`, `date_attached`; CHECK on both enums) | `user`, `group` |
 | V25 | Replaces `group.photo_url` with `photo_uid` FK to `upload(uid)` — a group photo is an upload of ours, not a pasted URL (existing links discarded) | `group`, `upload` |
-| V31 | Adds `user.photo_uid` FK to `upload(uid)` — a profile picture can be an upload of ours. Only adds: `photo_url` stays as the Google fallback, and nothing is backfilled | `user`, `upload` |
 | V26 | Adds `audit_log.uid` (backfilled with `gen_random_uuid()`, then `NOT NULL` + unique) — the trail was the last readable table handing out its PK | `audit_log` |
 | V27 | Swaps `idx_al_group_id` and `idx_al_entity` for the keyset composites `(group_id, date_created DESC, id_audit_log DESC)` and `(entity_type, entity_id, date_created DESC, id_audit_log DESC)` — each covers the index it replaces as a prefix | `audit_log` |
+| V28 | Adds `audit_log.changed_fields` JSONB — an update entry names the fields it touched instead of saying only that something was edited | `audit_log` |
+| V29 | Converts `changed_fields` from a list of names to objects, so a field whose value is safe to keep carries it too | `audit_log` |
+| V30 | Adds `idx_al_group_actor_keyset` — a group trail narrowed to one actor still pages by keyset | `audit_log` |
+| V31 | Adds `user.photo_uid` FK to `upload(uid)` — a profile picture can be an upload of ours. Only adds: `photo_url` stays as the Google fallback, and nothing is backfilled | `user`, `upload` |
+| V32 | Widens `task_completion` into an instance record (`due_date`, `outcome`, `is_active`, `minutes`; `group_member_id` nullable; partial unique on `(task_id, due_date)`), and moves both task and completion photos onto `upload(uid)` | `task`, `task_completion`, `upload` |
 
-Next available version: **V32**.
+Next available version: **V33**.
 
 ### Dev seed data
 
@@ -1049,7 +1053,7 @@ Total: **828 tests** across 65 test classes. Controller authorization is covered
 
 2. **User creation has no REST endpoint.** The `UserController` has GET/PUT/DELETE but no POST. Users are created through the auth flow (`POST /api/auth/register` or Google OAuth).
 
-3. **GroupMember is the actor, not User.** Tasks reference `GroupMember` for `created_by`, `assigned_to`, and `TaskCompletion.completed_by`. Any authorization logic must resolve the current user to their GroupMember within the relevant group.
+3. **GroupMember is the actor, not User.** Tasks reference `GroupMember` for `created_by`, `assigned_to`, and `TaskCompletion.attributed_to`. Any authorization logic must resolve the current user to their GroupMember within the relevant group.
 
 4. **TaskTag is in the `tag` package**, not `task`. It was placed there because it's the junction entity for the tag side of the many-to-many. It has its own repository (`TaskTagRepository`) but no controller/service — tag assignment is expected to go through the task or tag service.
 

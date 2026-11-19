@@ -63,7 +63,7 @@ class TaskCompletionServiceTest {
     }
 
     private TaskCompletion completion() {
-        return TaskCompletion.builder().idTaskCompletion(1L).task(task()).completedBy(member()).build();
+        return TaskCompletion.builder().idTaskCompletion(1L).task(task()).attributedTo(member()).build();
     }
 
     @Test
@@ -74,7 +74,7 @@ class TaskCompletionServiceTest {
 
     @Test
     void getCompletionsByMember_returnsList() {
-        when(taskCompletionRepository.findByCompletedByIdGroupMemberOrderByDateCompletedDesc(MEMBER_ID))
+        when(taskCompletionRepository.findByAttributedToIdGroupMemberOrderByDateCompletedDesc(MEMBER_ID))
                 .thenReturn(List.of(completion()));
         assertThat(taskCompletionService.getCompletionsByMember(MEMBER_ID)).hasSize(1);
     }

@@ -35,8 +35,8 @@ public class Task extends BaseEntity {
     @Column(name = "description", columnDefinition = "TEXT")
     private String description;
 
-    @Column(name = "task_photo_url", length = 500)
-    private String taskPhotoUrl;
+    @Column(name = "photo_uid", length = 100)
+    private String photoUid;
 
     @Column(name = "priority", nullable = false, length = 50)
     private String priority;

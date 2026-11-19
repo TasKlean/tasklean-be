@@ -164,7 +164,7 @@ class TaskServiceTest {
         TaskRequest r = request();
         r.setName("Scrub");
         r.setDescription("the floor");
-        r.setTaskPhotoUrl("https://example.test/photo.jpg");
+        r.setPhotoUid("upl-1");
         r.setPriority("HIGH");
         r.setRecurrenceType("WEEKLY");
         r.setRecurrencePattern(Map.of("day", "MON"));
@@ -184,7 +184,7 @@ class TaskServiceTest {
 
         // Every field this endpoint can change, in the order it applies them. groupId and
         // createdById are deliberately absent - updateTask ignores both.
-        assertThat(capturedChanges().fields()).containsExactly("name", "description", "taskPhotoUrl",
+        assertThat(capturedChanges().fields()).containsExactly("name", "description", "photoUid",
                 "priority", "recurrenceType", "recurrencePattern", "nextDueDate", "requiresPhotoProof",
                 "estimatedTimeMinutes", "status", "assignedToId", "categoryId");
     }
