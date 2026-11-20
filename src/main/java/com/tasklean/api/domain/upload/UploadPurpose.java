@@ -11,7 +11,14 @@ public enum UploadPurpose {
     GROUP_PHOTO("group-photo"),
 
     /** A person's own profile picture. Only that person may ask for one. */
-    USER_PHOTO("user-photo");
+    USER_PHOTO("user-photo"),
+
+    /** A chore's reference picture - what "done" is meant to look like. Targets the household,
+     * because no task exists yet while its picture is being chosen. */
+    TASK_PHOTO("task-photo"),
+
+    /** Proof that a round of a chore was done. Targets the task, which does exist by then. */
+    COMPLETION_PHOTO("completion-photo");
 
     private final String keyPrefix;
 

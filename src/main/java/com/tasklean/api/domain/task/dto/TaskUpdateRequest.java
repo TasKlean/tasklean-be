@@ -65,4 +65,8 @@ public class TaskUpdateRequest {
      */
     @Size(max = FieldLimits.TASK_TAGS)
     private List<@NotBlank @Size(min = 1, max = FieldLimits.LABEL_NAME) String> tagNames;
+
+    /** An uploaded picture of what "done" looks like, signed for this task's household. */
+    @Size(max = FieldLimits.UID)
+    private String photoUid;
 }

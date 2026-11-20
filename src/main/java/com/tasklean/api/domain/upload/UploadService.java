@@ -9,6 +9,8 @@ import com.tasklean.api.common.storage.StoredObject;
 import com.tasklean.api.config.StorageProperties;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
+import com.tasklean.api.domain.task.Task;
+import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.upload.dto.SignedUrlResponse;
 import com.tasklean.api.domain.upload.dto.UploadRequest;
 import com.tasklean.api.domain.upload.dto.UploadResponse;
@@ -38,6 +40,7 @@ public class UploadService {
     private final UploadRepository uploadRepository;
     private final GroupRepository groupRepository;
     private final UserRepository userRepository;
+    private final TaskRepository taskRepository;
     private final ObjectStorage objectStorage;
     private final StorageProperties storageProperties;
     private final Clock clock;
@@ -53,7 +56,7 @@ public class UploadService {
      */
     @Transactional
     public UploadResponse createUpload(UploadRequest request, Long callerUserId) {
-        Group group = requireTarget(request);
+        UploadTarget target = requireTarget(request);
 
         String uid = UUID.randomUUID().toString();
         // The key is derived from the uid, so there is one opaque identifier rather than two.
@@ -66,8 +69,9 @@ public class UploadService {
                 .contentType(request.getContentType())
                 .sizeBytes(request.getSizeBytes())
                 .status(UploadStatus.PENDING)
-                .user(userRepository.getReferenceById(callerUserId))
-                .group(group)
+                .userId(callerUserId)
+                .groupId(target.groupId())
+                .taskId(target.taskId())
                 .build());
 
         // The target rather than the group: a user photo has no group, and the uid is what the
@@ -141,9 +145,9 @@ public class UploadService {
     private void requireOwnPendingGroupPhoto(Upload upload, Group group, Long callerUserId) {
         boolean ownPendingPhotoForThisGroup = upload.getStatus() == UploadStatus.PENDING
                 && upload.getPurpose() == UploadPurpose.GROUP_PHOTO
-                && upload.getUser().getIdUser().equals(callerUserId)
-                && upload.getGroup() != null
-                && upload.getGroup().getIdGroup().equals(group.getIdGroup());
+                && callerUserId.equals(upload.getUserId())
+                && upload.getGroupId() != null
+                && upload.getGroupId().equals(group.getIdGroup());
         if (!ownPendingPhotoForThisGroup) {
             throw unusable();
         }
@@ -173,6 +177,113 @@ public class UploadService {
     @Transactional
     public void releaseGroupPhoto(Group group) {
         supersede(group.getPhotoUid(), null);
+    }
+
+    /**
+     * Points a task at its reference photo, after the same proof the other photos need.
+     *
+     * <p>Re-sending the photo the task already has is a no-op.
+     *
+     * @param uploadUid    the upload's public uid, or {@code null} to clear the photo
+     * @param task         the task the photo belongs to
+     * @param callerUserId the id of the authenticated caller
+     * @return the uid to store on the task, or {@code null} when the photo is being cleared
+     * @throws InvalidRequestException if the upload is not this caller's pending task photo for this
+     *                                 task's household, or its object does not match what was declared
+     */
+    @Transactional
+    public String attachTaskPhoto(String uploadUid, Task task, Long callerUserId) {
+        if (uploadUid == null) {
+            supersede(task.getPhotoUid(), null);
+            return null;
+        }
+        if (uploadUid.equals(task.getPhotoUid())) {
+            return uploadUid;
+        }
+
+        Upload upload = uploadRepository.findByUid(uploadUid).orElseThrow(this::unusable);
+        // Checked against the household, not the task: the photo is signed on the create form, when
+        // the task it will belong to does not exist yet.
+        requireOwnPending(upload, UploadPurpose.TASK_PHOTO, callerUserId,
+                upload.getGroupId() != null
+                        && upload.getGroupId().equals(task.getGroup().getIdGroup()));
+        requireObjectMatchesDeclaration(upload);
+
+        supersede(task.getPhotoUid(), uploadUid);
+        markAttached(upload);
+        log.info("Upload attached: uid={} purpose={} taskUid={}",
+                upload.getUid(), upload.getPurpose(), task.getUid());
+        return upload.getUid();
+    }
+
+    /**
+     * Releases a task's reference photo, so the sweeper collects the object.
+     *
+     * @param task the task whose photo is no longer reachable
+     */
+    @Transactional
+    public void releaseTaskPhoto(Task task) {
+        supersede(task.getPhotoUid(), null);
+    }
+
+    /**
+     * Points one round of a chore at the photo proving it was done.
+     *
+     * @param uploadUid    the upload's public uid, or {@code null} when no proof was sent
+     * @param task         the task the round belongs to
+     * @param callerUserId the id of the authenticated caller
+     * @return the uid to store on the instance, or {@code null} when none was sent
+     * @throws InvalidRequestException if the upload is not this caller's pending completion photo
+     *                                 signed for this task, or its object does not match what was
+     *                                 declared
+     */
+    @Transactional
+    public String attachCompletionPhoto(String uploadUid, Task task, Long callerUserId) {
+        if (uploadUid == null) {
+            return null;
+        }
+
+        Upload upload = uploadRepository.findByUid(uploadUid).orElseThrow(this::unusable);
+        // Checked against the task itself. This one is signed against a chore that already exists,
+        // so proof taken for one round must not be attachable to another chore's.
+        requireOwnPending(upload, UploadPurpose.COMPLETION_PHOTO, callerUserId,
+                upload.getTaskId() != null
+                        && upload.getTaskId().equals(task.getIdTask()));
+        requireObjectMatchesDeclaration(upload);
+
+        markAttached(upload);
+        log.info("Upload attached: uid={} purpose={} taskUid={}",
+                upload.getUid(), upload.getPurpose(), task.getUid());
+        return upload.getUid();
+    }
+
+    /**
+     * Releases the photo behind an undone round, so the sweeper collects the object.
+     *
+     * @param photoUid the instance's photo uid, or {@code null} if it had none
+     */
+    @Transactional
+    public void releaseCompletionPhoto(String photoUid) {
+        supersede(photoUid, null);
+    }
+
+    // Everything the caller claimed, checked against the row written at signing. The target test
+    // differs per purpose and is passed in; the rest is the same every time.
+    private void requireOwnPending(Upload upload, UploadPurpose purpose, Long callerUserId,
+                                   boolean targetMatches) {
+        boolean usable = upload.getStatus() == UploadStatus.PENDING
+                && upload.getPurpose() == purpose
+                && callerUserId.equals(upload.getUserId())
+                && targetMatches;
+        if (!usable) {
+            throw unusable();
+        }
+    }
+
+    private void markAttached(Upload upload) {
+        upload.setStatus(UploadStatus.ATTACHED);
+        upload.setDateAttached(LocalDateTime.now(clock));
+        uploadRepository.save(upload);
     }
 
     /**
@@ -228,7 +339,7 @@ public class UploadService {
     private void requireOwnPendingUserPhoto(Upload upload, User user, Long callerUserId) {
         boolean ownPendingPhotoForThisAccount = upload.getStatus() == UploadStatus.PENDING
                 && upload.getPurpose() == UploadPurpose.USER_PHOTO
-                && upload.getUser().getIdUser().equals(callerUserId)
+                && callerUserId.equals(upload.getUserId())
                 && callerUserId.equals(user.getIdUser());
         if (!ownPendingPhotoForThisAccount) {
             throw unusable();
@@ -253,15 +364,33 @@ public class UploadService {
     }
 
     // The target is a different entity per purpose and must exist before anything is signed for
-    // it; only a group photo also records a group, which is what scopes who may read it later.
-    private Group requireTarget(UploadRequest request) {
+    // it. The household is what scopes who may read the image later, so every purpose that has one
+    // records it - including a completion photo, which resolves it through the chore.
+    private UploadTarget requireTarget(UploadRequest request) {
         return switch (request.getPurpose()) {
-            case GROUP_PHOTO -> requireGroup(request.getTargetUid());
+            case GROUP_PHOTO, TASK_PHOTO ->
+                    new UploadTarget(requireGroup(request.getTargetUid()).getIdGroup(), null);
+            // Both: the chore is what an attach must match, and its household is what the read
+            // rule asks about - the same question every other purpose answers.
+            case COMPLETION_PHOTO -> {
+                Task task = requireTask(request.getTargetUid());
+                yield new UploadTarget(task.getGroup().getIdGroup(), task.getIdTask());
+            }
             case USER_PHOTO -> {
                 requireUser(request.getTargetUid());
-                yield null;
+                yield new UploadTarget(null, null);
             }
         };
+    }
+
+    // What a signed upload is recorded against, as ids: no foreign key backs these, so there is no
+    // association to hold. Neither side is set for a photo whose owner is the caller themselves.
+    private record UploadTarget(Long groupId, Long taskId) {
+    }
+
+    private Task requireTask(String taskUid) {
+        return taskRepository.findByUidAndIsActiveTrue(taskUid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
     }
 
     private void requireUser(String userUid) {

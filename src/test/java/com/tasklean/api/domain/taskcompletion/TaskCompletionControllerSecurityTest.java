@@ -114,7 +114,7 @@ class TaskCompletionControllerSecurityTest {
     @Test
     void undoCompletion_itsOwnMember_ok() throws Exception {
         entryAttributedTo(CALLER_MEMBERSHIP_ID, GroupRole.GROUP_MEMBER);
-        when(taskCompletionService.undo(any(), any())).thenReturn(new TaskCompletionResponse());
+        when(taskCompletionService.undo(any())).thenReturn(new TaskCompletionResponse());
 
         mockMvc.perform(delete("/api/task-completions/{id}", ENTRY_ID).with(as(UserRole.USER)))
                 .andExpect(status().isOk());
@@ -132,7 +132,7 @@ class TaskCompletionControllerSecurityTest {
     @Test
     void undoCompletion_householdAdmin_ok() throws Exception {
         entryAttributedTo(9L, GroupRole.GROUP_ADMIN);
-        when(taskCompletionService.undo(any(), any())).thenReturn(new TaskCompletionResponse());
+        when(taskCompletionService.undo(any())).thenReturn(new TaskCompletionResponse());
 
         // Somebody has to be able to correct a record for a member who is no longer around to
         // correct it themselves.

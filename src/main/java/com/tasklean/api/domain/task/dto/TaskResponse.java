@@ -33,6 +33,8 @@ public class TaskResponse {
     private RecurrenceType recurrenceType;
     private LocalDateTime nextDueDate;
     private Boolean requiresPhotoProof;
+
+    private String photoUid;
     private Integer estimatedTimeMinutes;
     private TaskStatus status;
     private LocalDateTime dateCreated;
@@ -56,6 +58,7 @@ public class TaskResponse {
                 .recurrenceType(task.getRecurrenceType())
                 .nextDueDate(task.getNextDueDate())
                 .requiresPhotoProof(task.getRequiresPhotoProof())
+                .photoUid(task.getPhotoUid())
                 .estimatedTimeMinutes(task.getEstimatedTimeMinutes())
                 .status(task.getStatus())
                 .dateCreated(task.getDateCreated())

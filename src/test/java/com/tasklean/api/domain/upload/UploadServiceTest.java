@@ -9,6 +9,8 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.upload.dto.UploadRequest;
 import com.tasklean.api.domain.user.User;
+import com.tasklean.api.domain.task.Task;
+import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +43,9 @@ class UploadServiceTest {
     private UserRepository userRepository;
 
     @Mock
+    private TaskRepository taskRepository;
+
+    @Mock
     private ObjectStorage objectStorage;
 
     // Not a mock: the TTLs it carries are what the response reports, so the real binding is used.
@@ -60,14 +65,12 @@ class UploadServiceTest {
         storageProperties.setUploadTtl(Duration.ofMinutes(5));
         storageProperties.setDownloadTtl(Duration.ofMinutes(15));
         uploadService = new UploadService(uploadRepository, groupRepository, userRepository,
-                objectStorage, storageProperties, Clock.systemUTC());
+                taskRepository, objectStorage, storageProperties, Clock.systemUTC());
     }
 
     private void stubTargetAndSave() {
         when(groupRepository.findByUidAndIsActiveTrue(GROUP_UID))
                 .thenReturn(Optional.of(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build()));
-        when(userRepository.getReferenceById(USER_ID))
-                .thenReturn(User.builder().idUser(USER_ID).build());
         when(uploadRepository.save(any(Upload.class))).thenAnswer(i -> i.getArgument(0));
     }
 
@@ -109,15 +112,14 @@ class UploadServiceTest {
         assertThat(upload.getUid()).isEqualTo(response.getUid()).isNotBlank();
         // One opaque identifier, not two: the key is derived from the uid the API publishes.
         assertThat(upload.getStorageKey()).isEqualTo("group-photo/" + upload.getUid() + ".png");
-        assertThat(upload.getGroup().getIdGroup()).isEqualTo(GROUP_ID);
-        assertThat(upload.getUser().getIdUser()).isEqualTo(USER_ID);
+        assertThat(upload.getGroupId()).isEqualTo(GROUP_ID);
+        assertThat(upload.getUserId()).isEqualTo(USER_ID);
     }
 
     @Test
     void createUpload_userPhoto_recordsNoGroupAndItsOwnKeyPrefix() {
         when(userRepository.findByUidAndIsActiveTrue(USER_UID))
                 .thenReturn(Optional.of(User.builder().idUser(USER_ID).uid(USER_UID).build()));
-        when(userRepository.getReferenceById(USER_ID)).thenReturn(User.builder().idUser(USER_ID).build());
         when(uploadRepository.save(any(Upload.class))).thenAnswer(i -> i.getArgument(0));
         when(objectStorage.presignUpload(anyString(), anyString(), anyLong())).thenReturn("https://bucket/put");
 
@@ -126,7 +128,7 @@ class UploadServiceTest {
         Upload upload = savedUpload();
         // No group on the row: an avatar hangs on a person, which is what makes its read rule the
         // shared-household one rather than the group one.
-        assertThat(upload.getGroup()).isNull();
+        assertThat(upload.getGroupId()).isNull();
         assertThat(upload.getStorageKey()).isEqualTo("user-photo/" + upload.getUid() + ".png");
         verifyNoInteractions(groupRepository);
     }
@@ -234,8 +236,8 @@ class UploadServiceTest {
                 .contentType("image/png")
                 .sizeBytes(12L)
                 .status(status)
-                .user(User.builder().idUser(requesterId).build())
-                .group(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build())
+                .userId(requesterId)
+                .groupId(GROUP_ID)
                 .build();
     }
 
@@ -318,7 +320,7 @@ class UploadServiceTest {
     @Test
     void attachGroupPhoto_uploadForAnotherGroup_throwsInvalidRequest() {
         Upload elsewhere = groupPhoto(USER_ID, UploadStatus.PENDING);
-        elsewhere.setGroup(Group.builder().idGroup(99L).uid("other").build());
+        elsewhere.setGroupId(99L);
         when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(elsewhere));
 
         assertThatThrownBy(() -> uploadService.attachGroupPhoto(UPLOAD_UID, targetGroup(null), USER_ID))
@@ -387,7 +389,7 @@ class UploadServiceTest {
                 .contentType("image/png")
                 .sizeBytes(12L)
                 .status(status)
-                .user(User.builder().idUser(requesterId).build())
+                .userId(requesterId)
                 .build();
     }
 
@@ -518,5 +520,175 @@ class UploadServiceTest {
 
         // A deactivated account's face stops being stored: the sweep collects the object.
         assertThat(current.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+    }
+    // --- task and completion photos ---
+
+    private static final Long TASK_ID = 44L;
+    private static final String TASK_UID = "tsk-1";
+
+    private Task targetTask(String currentPhotoUid) {
+        return Task.builder().idTask(TASK_ID).uid(TASK_UID).photoUid(currentPhotoUid)
+                .group(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build())
+                .build();
+    }
+
+    private Upload photoFor(UploadPurpose purpose, Long groupId, Long taskId, UploadStatus status) {
+        return Upload.builder()
+                .uid(UPLOAD_UID).storageKey(KEY).purpose(purpose)
+                .contentType("image/png").sizeBytes(12L).status(status)
+                .userId(USER_ID)
+                .groupId(groupId).taskId(taskId)
+                .build();
+    }
+
+    @Test
+    void attachTaskPhoto_ownPendingUploadForThatHousehold_isAttached() {
+        Upload upload = photoFor(UploadPurpose.TASK_PHOTO, GROUP_ID, null,
+                UploadStatus.PENDING);
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(upload));
+        stubObjectAsDeclared();
+
+        String stored = uploadService.attachTaskPhoto(UPLOAD_UID, targetTask(null), USER_ID);
+
+        assertThat(stored).isEqualTo(UPLOAD_UID);
+        assertThat(upload.getStatus()).isEqualTo(UploadStatus.ATTACHED);
+    }
+
+    @Test
+    void attachTaskPhoto_uploadSignedForAnotherHousehold_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(
+                photoFor(UploadPurpose.TASK_PHOTO, 999L, null, UploadStatus.PENDING)));
+
+        // The household is what a task photo is signed against, so it is what has to match - a
+        // picture signed for one home must not land on another home's chore.
+        assertThatThrownBy(() -> uploadService.attachTaskPhoto(UPLOAD_UID, targetTask(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachTaskPhoto_aCompletionPhotoOfferedAsAReferencePicture_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(
+                photoFor(UploadPurpose.COMPLETION_PHOTO, GROUP_ID, TASK_ID, UploadStatus.PENDING)));
+
+        // Purpose is part of what was signed: proof of one round is not the chore's own picture.
+        assertThatThrownBy(() -> uploadService.attachTaskPhoto(UPLOAD_UID, targetTask(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachTaskPhoto_null_clearsThePhotoAndSupersedesTheOldOne() {
+        Upload previous = photoFor(UploadPurpose.TASK_PHOTO, GROUP_ID, null,
+                UploadStatus.ATTACHED);
+        when(uploadRepository.findByUid("old-uid")).thenReturn(Optional.of(previous));
+
+        assertThat(uploadService.attachTaskPhoto(null, targetTask("old-uid"), USER_ID)).isNull();
+        assertThat(previous.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+    }
+
+    @Test
+    void attachCompletionPhoto_ownPendingUploadSignedForThatTask_isAttached() {
+        Upload upload = photoFor(UploadPurpose.COMPLETION_PHOTO, GROUP_ID, TASK_ID,
+                UploadStatus.PENDING);
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(upload));
+        stubObjectAsDeclared();
+
+        String stored = uploadService.attachCompletionPhoto(UPLOAD_UID, targetTask(null), USER_ID);
+
+        assertThat(stored).isEqualTo(UPLOAD_UID);
+        assertThat(upload.getStatus()).isEqualTo(UploadStatus.ATTACHED);
+    }
+
+    @Test
+    void attachCompletionPhoto_uploadSignedForAnotherTask_throwsInvalidRequest() {
+        // Signed for a different chore in the same household: the household agreeing is not
+        // enough, the chore itself has to.
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(
+                photoFor(UploadPurpose.COMPLETION_PHOTO, GROUP_ID, 999L, UploadStatus.PENDING)));
+
+        // The task is the target here, not the household: proof taken for one chore must not be
+        // offered as proof of another, even inside the same home.
+        assertThatThrownBy(() ->
+                uploadService.attachCompletionPhoto(UPLOAD_UID, targetTask(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachCompletionPhoto_somebodyElsesUpload_throwsInvalidRequest() {
+        Upload theirs = photoFor(UploadPurpose.COMPLETION_PHOTO, GROUP_ID, TASK_ID,
+                UploadStatus.PENDING);
+        theirs.setUserId(999L);
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(theirs));
+
+        assertThatThrownBy(() ->
+                uploadService.attachCompletionPhoto(UPLOAD_UID, targetTask(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachCompletionPhoto_bytesAreNotTheDeclaredImage_throwsInvalidRequest() {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(
+                photoFor(UploadPurpose.COMPLETION_PHOTO, GROUP_ID, TASK_ID, UploadStatus.PENDING)));
+        when(objectStorage.head(KEY)).thenReturn(Optional.of(new StoredObject("image/png", 12L)));
+        when(objectStorage.readPrefix(KEY, 12)).thenReturn(Optional.of(new byte[12]));
+
+        // The bucket stores whatever content type it is handed, so the magic number is the real
+        // check - the same guard every other purpose gets.
+        assertThatThrownBy(() ->
+                uploadService.attachCompletionPhoto(UPLOAD_UID, targetTask(null), USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void attachCompletionPhoto_noPhotoSent_isNullAndReadsNothing() {
+        assertThat(uploadService.attachCompletionPhoto(null, targetTask(null), USER_ID)).isNull();
+        verifyNoInteractions(objectStorage);
+    }
+
+    @Test
+    void releaseCompletionPhoto_always_supersedesTheProof() {
+        Upload proof = photoFor(UploadPurpose.COMPLETION_PHOTO, GROUP_ID, TASK_ID,
+                UploadStatus.ATTACHED);
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(proof));
+
+        uploadService.releaseCompletionPhoto(UPLOAD_UID);
+
+        assertThat(proof.getStatus()).isEqualTo(UploadStatus.SUPERSEDED);
+    }
+
+    @Test
+    void createUpload_completionPhoto_recordsBothTheChoreAndItsHousehold() {
+        when(taskRepository.findByUidAndIsActiveTrue(TASK_UID))
+                .thenReturn(Optional.of(targetTask(null)));
+        when(uploadRepository.save(any(Upload.class))).thenAnswer(i -> i.getArgument(0));
+
+        uploadService.createUpload(
+                uploadRequest(UploadPurpose.COMPLETION_PHOTO, TASK_UID), USER_ID);
+
+        ArgumentCaptor<Upload> saved = ArgumentCaptor.forClass(Upload.class);
+        verify(uploadRepository).save(saved.capture());
+        // The chore is what an attach must match; the household is what the read rule asks
+        // about, so a completion photo has to carry it like every other purpose does.
+        assertThat(saved.getValue().getTaskId()).isEqualTo(TASK_ID);
+        assertThat(saved.getValue().getGroupId()).isEqualTo(GROUP_ID);
+        assertThat(saved.getValue().getStorageKey()).startsWith("completion-photo/");
+    }
+
+    @Test
+    void createUpload_completionPhotoForAnUnknownTask_throwsNotFoundAndSignsNothing() {
+        when(taskRepository.findByUidAndIsActiveTrue("gone")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> uploadService.createUpload(
+                uploadRequest(UploadPurpose.COMPLETION_PHOTO, "gone"), USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verifyNoInteractions(objectStorage);
+    }
+
+    private static UploadRequest uploadRequest(UploadPurpose purpose, String targetUid) {
+        UploadRequest request = new UploadRequest();
+        request.setPurpose(purpose);
+        request.setTargetUid(targetUid);
+        request.setContentType("image/png");
+        request.setSizeBytes(12L);
+        return request;
     }
 }

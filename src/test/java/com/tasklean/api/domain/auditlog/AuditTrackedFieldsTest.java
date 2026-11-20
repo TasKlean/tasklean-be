@@ -43,16 +43,20 @@ class AuditTrackedFieldsTest {
                 Set.of("priority", "recurrenceType", "nextDueDate", "requiresPhotoProof",
                         "estimatedTimeMinutes"),
                 // Free text, two associations whose values are a membership uid and a category id
-                // - neither says anything on its own - and the tags, which are text as well.
-                Set.of("name", "description", "assignedToUid", "categoryId", "tagNames"),
+                // - neither says anything on its own - the tags, which are text as well, and the
+                // photo, a pointer that says nothing about what it points at.
+                Set.of("name", "description", "assignedToUid", "categoryId", "tagNames",
+                        "photoUid"),
                 Set.of());
     }
 
     @Test
     void taskCreateRequest_everyField_isClassified() {
         // Everything editable is inherited from the update request above; a create adds only the
-        // household, which no edit can change and so no entry ever reports.
-        assertEveryFieldClassified(TaskCreateRequest.class, Set.of(), Set.of(), Set.of("groupUid"));
+        // household, which no edit can change and so no entry ever reports. The photo is set here
+        // too, but a creation entry names no fields at all - only an update does.
+        assertEveryFieldClassified(TaskCreateRequest.class, Set.of(), Set.of(),
+                Set.of("groupUid", "photoUid"));
     }
 
     @Test

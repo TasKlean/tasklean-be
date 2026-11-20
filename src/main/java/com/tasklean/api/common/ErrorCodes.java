@@ -32,6 +32,9 @@ public final class ErrorCodes {
     /** The page cursor was not one we handed out; ask for the list again without one. */
     public static final String PAGE_CURSOR_INVALID = "PAGE_CURSOR_INVALID";
 
+    /** The chore asks for a photo and none was sent. */
+    public static final String TASK_PHOTO_PROOF_REQUIRED = "TASK_PHOTO_PROOF_REQUIRED";
+
     /** The round is not due yet; nothing to record until it comes round. */
     public static final String TASK_ROUND_NOT_DUE = "TASK_ROUND_NOT_DUE";
 

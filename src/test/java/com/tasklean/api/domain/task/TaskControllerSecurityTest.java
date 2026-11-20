@@ -158,7 +158,7 @@ class TaskControllerSecurityTest {
     @Test
     void updateTask_theAuthor_ok() throws Exception {
         taskAuthoredBy(CALLER_MEMBERSHIP_ID, GroupRole.GROUP_MEMBER);
-        when(taskService.updateTask(any(), any())).thenReturn(new TaskResponse());
+        when(taskService.updateTask(any(), any(), any())).thenReturn(new TaskResponse());
 
         mockMvc.perform(put("/api/tasks/{uid}", TASK_UID).with(as(UserRole.USER))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
@@ -177,7 +177,7 @@ class TaskControllerSecurityTest {
     @Test
     void updateTask_householdAdmin_ok() throws Exception {
         taskAuthoredBy(9L, GroupRole.GROUP_ADMIN);
-        when(taskService.updateTask(any(), any())).thenReturn(new TaskResponse());
+        when(taskService.updateTask(any(), any(), any())).thenReturn(new TaskResponse());
 
         mockMvc.perform(put("/api/tasks/{uid}", TASK_UID).with(as(UserRole.USER))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))

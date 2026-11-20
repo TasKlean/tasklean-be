@@ -20,4 +20,8 @@ public class TaskCreateRequest extends TaskUpdateRequest {
     @NotBlank
     @Size(min = 1, max = FieldLimits.UID)
     private String groupUid;
+
+    /** An uploaded picture of what "done" looks like, signed for this task's household. */
+    @Size(max = FieldLimits.UID)
+    private String photoUid;
 }

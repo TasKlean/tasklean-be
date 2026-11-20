@@ -9,6 +9,7 @@ import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.category.Category;
 import com.tasklean.api.domain.category.CategoryRepository;
 import com.tasklean.api.domain.group.Group;
@@ -62,6 +63,7 @@ public class TaskService {
     private final TaskBoardFilter taskBoardFilter;
     private final RecurrenceSchedule recurrenceSchedule;
     private final AuditLogService auditLogService;
+    private final UploadService uploadService;
     private final Clock clock;
 
     /**
@@ -150,6 +152,10 @@ public class TaskService {
                 .category(categoryIn(group, request.getCategoryId()))
                 .build();
 
+        // Before the insert: the attach needs the household the photo was signed against and the
+        // photo the task currently has, neither of which waits on an id.
+        task.setPhotoUid(uploadService.attachTaskPhoto(request.getPhotoUid(), task, callerUserId));
+
         Task saved = taskRepository.save(task);
         syncTags(saved, List.of(), tags);
         log.info("Task created: uid={} groupUid={}", saved.getUid(), group.getUid());
@@ -162,16 +168,18 @@ public class TaskService {
      * Updates a task's details. Its household and its author are not editable, and neither is its
      * status.
      *
-     * @param uid     the task's public UID
-     * @param request the new details
+     * @param uid          the task's public UID
+     * @param request      the new details
+     * @param callerUserId the id of the authenticated caller, who must own any photo they attach
      * @return the updated task
      * @throws ResourceNotFoundException if no active task has that UID, or the assignee or category
      *                                   is not part of its household
-     * @throws InvalidRequestException   if a recurring task arrives without a due date, or declares
-     *                                   a recurrence that cannot be scheduled
+     * @throws InvalidRequestException   if a recurring task arrives without a due date, declares
+     *                                   a recurrence that cannot be scheduled, or names a photo
+     *                                   that is not this caller's pending upload for its household
      */
     @Transactional
-    public TaskResponse updateTask(String uid, TaskUpdateRequest request) {
+    public TaskResponse updateTask(String uid, TaskUpdateRequest request, Long callerUserId) {
         Task task = taskRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         Group group = task.getGroup();
@@ -207,7 +215,11 @@ public class TaskService {
                 .track("categoryId", idOf(task.getCategory()), request.getCategoryId())
                 // Names only: a tag is text a member wrote, and a group's trail is kept for
                 // good and read by every one of them.
-                .track("tagNames", tagIds(current), tagIds(tags));
+                .track("tagNames", tagIds(current), tagIds(tags))
+                // Names only, like a group's and an account's: the uid is a pointer, and what it
+                // points at says nothing a trail reader can use.
+                .set("photoUid", task::getPhotoUid, task::setPhotoUid,
+                        uploadService.attachTaskPhoto(request.getPhotoUid(), task, callerUserId));
 
         task.setAssignedTo(assignee);
         task.setCategory(category);
@@ -319,6 +331,9 @@ public class TaskService {
         Task task = taskRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         task.setIsActive(false);
+        // Nothing reads a deleted task's photo again, so release it rather than leave the object
+        // paid for and unreachable.
+        uploadService.releaseTaskPhoto(task);
         taskRepository.save(task);
         log.info("Task soft-deleted: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.TASK, task.getIdTask(), AuditAction.DELETE,

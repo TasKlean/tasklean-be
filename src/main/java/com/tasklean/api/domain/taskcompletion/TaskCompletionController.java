@@ -1,13 +1,11 @@
 package com.tasklean.api.domain.taskcompletion;
 
-import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -43,15 +41,13 @@ public class TaskCompletionController {
      * Takes an entry back, putting the chore's schedule where it was before it. Whoever the entry
      * is attributed to may, as may the household's admin; only the newest entry can be undone.
      *
-     * @param id        the entry's id
-     * @param principal the caller, from the JWT
+     * @param id the entry's id
      * @return {@code 200 OK} with the entry and the chore's restored state
      */
     @PreAuthorize("@taskCompletionSecurity.canUndo(#id)")
     @DeleteMapping("/{id}")
     public ResponseEntity<ApiResponse<TaskCompletionResponse>> undoCompletion(
-            @PathVariable Long id, @AuthenticationPrincipal AuthPrincipal principal) {
-        return ResponseEntity.ok(ApiResponse.success(
-                taskCompletionService.undo(id, principal.userId())));
+            @PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(taskCompletionService.undo(id)));
     }
 }

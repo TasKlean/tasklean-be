@@ -25,4 +25,11 @@ public class CompleteTaskRequest {
     @Min(1)
     @Max(FieldLimits.TASK_MINUTES)
     private Integer minutes;
+
+    /**
+     * Proof the round was done, signed for this task. Required when the chore asks for proof,
+     * and refused as a 409 otherwise - a flag nothing enforces is not a rule.
+     */
+    @Size(max = FieldLimits.UID)
+    private String photoUid;
 }

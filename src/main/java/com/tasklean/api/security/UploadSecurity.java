@@ -14,6 +14,9 @@ import org.springframework.stereotype.Component;
  * Authorization for uploaded images, referenced as {@code @uploadSecurity} from
  * {@code @PreAuthorize}. An image is never its own authorization boundary — the thing it belongs
  * to is — so every check here resolves that target and asks {@link GroupSecurity} about it.
+ *
+ * <p>An upload carries its target as plain ids, so nothing here loads another row or walks an
+ * association - which matters because a resolver runs before the call, with no session open.
  */
 @Component("uploadSecurity")
 @RequiredArgsConstructor
@@ -21,6 +24,7 @@ public class UploadSecurity {
 
     private final UploadRepository uploadRepository;
     private final GroupSecurity groupSecurity;
+    private final TaskSecurity taskSecurity;
 
     /**
      * Whether the caller may ask for this upload. Signing is refused unless the caller could
@@ -38,6 +42,12 @@ public class UploadSecurity {
             case GROUP_PHOTO -> groupSecurity.isAdmin(request.getTargetUid());
             // Nobody uploads a picture onto somebody else's profile, whatever their group role.
             case USER_PHOTO -> request.getTargetUid().equals(currentUserUid());
+            // Any member may add a chore, so any member may sign a picture for one. Whether they
+            // may put it on a *particular* task is settled at attach time, by the right to edit it.
+            case TASK_PHOTO -> groupSecurity.isMember(request.getTargetUid());
+            // The target is the task, so this is membership of its household. That the caller is
+            // the one who may record the round is settled at attach time, as the assignee rule.
+            case COMPLETION_PHOTO -> taskSecurity.canView(request.getTargetUid());
         };
     }
 
@@ -60,22 +70,24 @@ public class UploadSecurity {
     // purpose, so a new one has to answer here rather than inherit somebody else's audience.
     private boolean visibleWhereItHangs(Upload upload) {
         return switch (upload.getPurpose()) {
-            case GROUP_PHOTO -> sharesGroup(upload);
+            case GROUP_PHOTO, TASK_PHOTO, COMPLETION_PHOTO -> sharesGroup(upload);
             // An avatar is rendered on rosters, member pickers and the trail, so it is readable by
             // the household rather than by its owner alone - but by nobody further out.
             case USER_PHOTO -> isRequester(upload)
-                    || groupSecurity.sharesAnyGroupWith(upload.getUser().getIdUser());
+                    || groupSecurity.sharesAnyGroupWith(upload.getUserId());
         };
     }
 
     private boolean isRequester(Upload upload) {
         Long userId = currentUserId();
-        return userId != null && userId.equals(upload.getUser().getIdUser());
+        return userId != null && userId.equals(upload.getUserId());
     }
 
     private boolean sharesGroup(Upload upload) {
-        return upload.getGroup() != null
-                && groupSecurity.isMemberOfGroup(upload.getGroup().getIdGroup());
+        // Null-checked first, always: an upload whose household is gone has to be readable by
+        // nobody rather than by anybody holding its uid.
+        return upload.getGroupId() != null
+                && groupSecurity.isMemberOfGroup(upload.getGroupId());
     }
 
     private String currentUserUid() {

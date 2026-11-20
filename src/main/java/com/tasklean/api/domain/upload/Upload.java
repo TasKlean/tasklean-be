@@ -1,8 +1,6 @@
 package com.tasklean.api.domain.upload;
 
 import com.tasklean.api.common.BaseEntity;
-import com.tasklean.api.domain.group.Group;
-import com.tasklean.api.domain.user.User;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -47,14 +45,20 @@ public class Upload extends BaseEntity {
     @Column(name = "status", nullable = false, length = 20)
     private UploadStatus status;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    // Who asked for it. A plain id rather than an association, like the two below: an upload's
+    // target is provenance - what was signed, once - so it carries no foreign key (V35).
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
-    // The group the upload is for, which is also the boundary its authorization is checked against.
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "group_id")
-    private Group group;
+    // The household the image is scoped to, and the boundary its read rule is checked against.
+    // Null only for a user photo, whose audience comes from its uploader instead.
+    @Column(name = "group_id")
+    private Long groupId;
+
+    // Set for a completion photo and null otherwise: that one is signed against a chore that
+    // already exists, so an attach can prove the proof was signed for this one.
+    @Column(name = "task_id")
+    private Long taskId;
 
     @Column(name = "date_attached")
     private LocalDateTime dateAttached;

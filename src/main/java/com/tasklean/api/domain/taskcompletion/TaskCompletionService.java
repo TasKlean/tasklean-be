@@ -9,6 +9,7 @@ import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
 import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.task.RecurrenceSchedule;
@@ -49,6 +50,7 @@ public class TaskCompletionService {
     private final RecurrenceSchedule recurrenceSchedule;
     private final KeysetCursor keysetCursor;
     private final AuditLogService auditLogService;
+    private final UploadService uploadService;
     private final Clock clock;
 
     /**
@@ -66,7 +68,8 @@ public class TaskCompletionService {
      */
     @Transactional
     public TaskCompletionResponse complete(String taskUid, CompleteTaskRequest request, Long callerUserId) {
-        return record(taskUid, TaskOutcome.DONE, request.getNote(), request.getMinutes(), callerUserId);
+        return record(taskUid, TaskOutcome.DONE, request.getNote(), request.getMinutes(),
+                request.getPhotoUid(), callerUserId);
     }
 
     /**
@@ -83,7 +86,7 @@ public class TaskCompletionService {
      */
     @Transactional
     public TaskCompletionResponse skip(String taskUid, SkipTaskRequest request, Long callerUserId) {
-        return record(taskUid, TaskOutcome.SKIPPED, request.getNote(), null, callerUserId);
+        return record(taskUid, TaskOutcome.SKIPPED, request.getNote(), null, null, callerUserId);
     }
 
     /**
@@ -137,14 +140,13 @@ public class TaskCompletionService {
      * <p>The stored {@code dueDate} is what makes this exact rather than a guess, and the unique
      * index being partial on {@code is_active} is what lets the freed instance be recorded again.
      *
-     * @param id           the instance's id
-     * @param callerUserId the acting user, from the JWT
+     * @param id the instance's id
      * @return the task's state after the undo, carried on the instance that was taken back
      * @throws ResourceNotFoundException if there is no such active instance
      * @throws BusinessRuleException     if a later instance has been recorded since
      */
     @Transactional
-    public TaskCompletionResponse undo(Long id, Long callerUserId) {
+    public TaskCompletionResponse undo(Long id) {
         TaskCompletion completion = active(id);
         // Locked before the latest-instance check, or a completion landing in between would make
         // this undo the second-newest and move the anchor backwards past it.
@@ -161,6 +163,8 @@ public class TaskCompletionService {
         }
 
         completion.setIsActive(false);
+        // An undone round is unreachable, so its proof should not stay a paid-for object.
+        uploadService.releaseCompletionPhoto(completion.getCompletionPhotoUid());
         taskCompletionRepository.save(completion);
 
         // Put the schedule back to the instance being taken back. A one-off was closed by the
@@ -177,7 +181,7 @@ public class TaskCompletionService {
     }
 
     private TaskCompletionResponse record(String taskUid, TaskOutcome outcome, String note,
-                                          Integer minutes, Long callerUserId) {
+                                          Integer minutes, String photoUid, Long callerUserId) {
         Task task = taskRepository.findForUpdateByUid(taskUid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         if (task.getStatus() == TaskStatus.ARCHIVED) {
@@ -191,6 +195,14 @@ public class TaskCompletionService {
             // Somebody else's chore. Not a 404: the caller can see it on the board, so pretending
             // it is not there would be a worse answer than saying it is not theirs.
             throw new AccessDeniedException(ErrorMessages.ACCESS_DENIED);
+        }
+
+        // Only a chore being done needs proof of it. A skip asserts the work did not happen, so
+        // demanding a picture of it would be incoherent.
+        if (outcome == TaskOutcome.DONE
+                && Boolean.TRUE.equals(task.getRequiresPhotoProof()) && photoUid == null) {
+            throw new BusinessRuleException("This chore needs a photo to be marked done",
+                    ErrorCodes.TASK_PHOTO_PROOF_REQUIRED);
         }
 
         LocalDateTime dueDate = task.getNextDueDate();
@@ -226,6 +238,8 @@ public class TaskCompletionService {
                 .minutes(outcome == TaskOutcome.DONE
                         ? (minutes != null ? minutes : task.getEstimatedTimeMinutes())
                         : null)
+                .completionPhotoUid(
+                        uploadService.attachCompletionPhoto(photoUid, task, callerUserId))
                 .completionNote(note)
                 .dateCompleted(LocalDateTime.now(clock))
                 .build());

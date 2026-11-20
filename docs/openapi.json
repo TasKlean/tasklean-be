@@ -4993,6 +4993,12 @@
             "type" : "string",
             "maxLength" : 1000,
             "minLength" : 0
+          },
+          "photoUid" : {
+            "type" : "string",
+            "description" : "Proof the round was done, signed for this task. Required when the chore asks for proof,\n and refused as a 409 otherwise - a flag nothing enforces is not a rule.",
+            "maxLength" : 100,
+            "minLength" : 0
           }
         }
       },
@@ -5810,6 +5816,12 @@
             "format" : "date-time",
             "description" : "When the task is next due. Required for a recurring task, since it is the schedule's only\n anchor — a weekly chore recurs on whichever day this falls on. Carries an offset so the\n stored UTC instant is the one the caller meant."
           },
+          "photoUid" : {
+            "type" : "string",
+            "description" : "An uploaded picture of what \"done\" looks like, signed for this task's household.",
+            "maxLength" : 100,
+            "minLength" : 0
+          },
           "priority" : {
             "type" : "string",
             "enum" : [ "HIGH", "MEDIUM", "LOW" ]
@@ -5905,6 +5917,9 @@
             "type" : "boolean",
             "description" : "Derived, never stored: a stored flag is wrong from the due moment until something writes."
           },
+          "photoUid" : {
+            "type" : "string"
+          },
           "priority" : {
             "type" : "string",
             "enum" : [ "HIGH", "MEDIUM", "LOW" ]
@@ -5965,6 +5980,12 @@
             "type" : "string",
             "format" : "date-time",
             "description" : "When the task is next due. Required for a recurring task, since it is the schedule's only\n anchor — a weekly chore recurs on whichever day this falls on. Carries an offset so the\n stored UTC instant is the one the caller meant."
+          },
+          "photoUid" : {
+            "type" : "string",
+            "description" : "An uploaded picture of what \"done\" looks like, signed for this task's household.",
+            "maxLength" : 100,
+            "minLength" : 0
           },
           "priority" : {
             "type" : "string",
@@ -6121,7 +6142,7 @@
           "purpose" : {
             "type" : "string",
             "description" : "What the image is for; it decides who may ask for the upload.",
-            "enum" : [ "GROUP_PHOTO", "USER_PHOTO" ]
+            "enum" : [ "GROUP_PHOTO", "USER_PHOTO", "TASK_PHOTO", "COMPLETION_PHOTO" ]
           },
           "sizeBytes" : {
             "type" : "integer",

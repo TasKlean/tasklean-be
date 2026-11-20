@@ -24,6 +24,7 @@ import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -76,6 +77,8 @@ class TaskServiceTest {
     private RecurrenceSchedule recurrenceSchedule = new RecurrenceSchedule();
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private UploadService uploadService;
     @Spy
     private Clock clock = Clock.systemUTC();
     @InjectMocks
@@ -429,7 +432,7 @@ class TaskServiceTest {
                 Category.builder().idCategory(3L).isActive(true).group(group()).build()));
         savesWhatItIsGiven();
 
-        taskService.updateTask("tsk-1", r);
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
 
         // Every field this endpoint can change, in the order it applies them. The household, the
         // author and the status are absent because an edit cannot touch any of them, and the
@@ -451,7 +454,7 @@ class TaskServiceTest {
         when(groupMemberRepository.findByUid("gm-6")).thenReturn(Optional.of(member(6L)));
         savesWhatItIsGiven();
 
-        taskService.updateTask("tsk-1", r);
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
 
         // The tokens and the number carry their values; the text a person typed and the
         // membership's internal id do not.
@@ -472,7 +475,7 @@ class TaskServiceTest {
         when(groupMemberRepository.findByUid("gm-6"))
                 .thenReturn(Optional.of(member(6L, Group.builder().idGroup(77L).build())));
 
-        assertThatThrownBy(() -> taskService.updateTask("tsk-1", r))
+        assertThatThrownBy(() -> taskService.updateTask("tsk-1", r, CALLER_USER_ID))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         // Resolved before the tracked sets for exactly this reason: a refused reference must not
@@ -489,7 +492,7 @@ class TaskServiceTest {
         when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
         savesWhatItIsGiven();
 
-        taskService.updateTask("tsk-1", r);
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
 
         assertThat(savedTask().getRecurrencePattern()).containsExactly(Map.entry("dayOfMonth", 31));
     }
@@ -501,7 +504,7 @@ class TaskServiceTest {
         when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(existing));
         savesWhatItIsGiven();
 
-        taskService.updateTask("tsk-1", updateRequest());
+        taskService.updateTask("tsk-1", updateRequest(), CALLER_USER_ID);
 
         assertThat(savedTask().getAssignedTo()).isNull();
     }
@@ -510,7 +513,7 @@ class TaskServiceTest {
     void updateTask_deleted_isNotFound() {
         when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> taskService.updateTask("tsk-1", updateRequest()))
+        assertThatThrownBy(() -> taskService.updateTask("tsk-1", updateRequest(), CALLER_USER_ID))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -600,7 +603,7 @@ class TaskServiceTest {
         taskAlreadyCarries(tag(7L, "Kitchen"));
         resolvesTo(tag(7L, "Kitchen"), tag(8L, "Weekly"));
 
-        taskService.updateTask("tsk-1", updateRequest());
+        taskService.updateTask("tsk-1", updateRequest(), CALLER_USER_ID);
 
         // The row for Kitchen is left exactly as it was: its date_created is the only record
         // of when the task was tagged.
@@ -615,7 +618,7 @@ class TaskServiceTest {
         taskAlreadyCarries(tag(7L, "Kitchen"), tag(8L, "Weekly"));
         resolvesTo(tag(7L, "Kitchen"));
 
-        taskService.updateTask("tsk-1", updateRequest());
+        taskService.updateTask("tsk-1", updateRequest(), CALLER_USER_ID);
 
         verify(taskTagRepository).deleteByTaskIdTaskAndTagIdTag(1L, 8L);
         verify(taskTagRepository, never()).save(any());
@@ -627,7 +630,7 @@ class TaskServiceTest {
         savesWhatItIsGiven();
         taskAlreadyCarries(tag(7L, "Kitchen"));
 
-        taskService.updateTask("tsk-1", updateRequest());
+        taskService.updateTask("tsk-1", updateRequest(), CALLER_USER_ID);
 
         // An absent field is the task having no tags, the same way an absent assignee hands it
         // back to the pool - this request is the whole state, not a patch of it.
@@ -642,7 +645,7 @@ class TaskServiceTest {
         taskAlreadyCarries(tag(7L, "Kitchen"), tag(8L, "Weekly"));
         resolvesTo(tag(8L, "Weekly"), tag(7L, "Kitchen"));
 
-        taskService.updateTask("tsk-1", updateRequest());
+        taskService.updateTask("tsk-1", updateRequest(), CALLER_USER_ID);
 
         assertThat(capturedChanges().fields()).doesNotContain("tagNames");
         verify(taskTagRepository, never()).save(any());
@@ -655,7 +658,7 @@ class TaskServiceTest {
         savesWhatItIsGiven();
         resolvesTo(tag(7L, "Kitchen"));
 
-        taskService.updateTask("tsk-1", updateRequest());
+        taskService.updateTask("tsk-1", updateRequest(), CALLER_USER_ID);
 
         // A tag is text a member typed, and a household trail is kept for good.
         assertThat(capturedChanges().entries()).contains(AuditFieldChange.withheld("tagNames"));
@@ -774,5 +777,32 @@ class TaskServiceTest {
 
         assertThatThrownBy(() -> taskService.assignTask("tsk-1", assignTo("gm-5")))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+    @Test
+    void deleteTask_always_releasesItsReferencePhoto() {
+        Task task = task();
+        task.setPhotoUid("upl-1");
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task));
+
+        taskService.deleteTask("tsk-1");
+
+        // Nothing reads a deleted chore's picture again, so the object should not stay paid for.
+        verify(uploadService).releaseTaskPhoto(task);
+    }
+
+    @Test
+    void createTask_always_attachesItsPhotoBeforeTheInsert() {
+        TaskCreateRequest request = createRequest();
+        request.setPhotoUid("upl-1");
+        callerIsAMember();
+        savesWhatItIsGiven();
+        when(uploadService.attachTaskPhoto(eq("upl-1"), any(Task.class), eq(CALLER_USER_ID)))
+                .thenReturn("upl-1");
+
+        taskService.createTask(request, CALLER_USER_ID);
+
+        // One insert, not two: the attach needs the household and the current photo, neither of
+        // which waits on an id.
+        verify(taskRepository, times(1)).save(any(Task.class));
     }
 }

@@ -20,6 +20,7 @@ import com.tasklean.api.domain.taskcompletion.dto.SkipTaskRequest;
 import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionResponse;
 import com.tasklean.api.domain.taskcompletion.dto.TaskHistoryPage;
 import com.tasklean.api.domain.taskcompletion.dto.TaskHistoryQueryRequest;
+import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -65,6 +66,8 @@ class TaskCompletionServiceTest {
     private KeysetCursor keysetCursor;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private UploadService uploadService;
     @Spy
     private Clock clock = Clock.systemUTC();
     @InjectMocks
@@ -456,7 +459,7 @@ class TaskCompletionServiceTest {
         when(taskCompletionRepository.findLatestByTask(TASK_ID)).thenReturn(Optional.of(entry));
         when(taskCompletionRepository.save(entry)).thenReturn(entry);
 
-        TaskCompletionResponse response = taskCompletionService.undo(99L, CALLER_USER_ID);
+        TaskCompletionResponse response = taskCompletionService.undo(99L);
 
         // The stored due date is what makes this exact rather than a guess.
         assertThat(entry.getIsActive()).isFalse();
@@ -476,7 +479,7 @@ class TaskCompletionServiceTest {
 
         // Putting the anchor back to an earlier round would leave the schedule behind rounds that
         // already happened.
-        assertThatThrownBy(() -> taskCompletionService.undo(50L, CALLER_USER_ID))
+        assertThatThrownBy(() -> taskCompletionService.undo(50L))
                 .isInstanceOf(BusinessRuleException.class);
         verify(taskRepository, never()).save(any());
     }
@@ -489,7 +492,7 @@ class TaskCompletionServiceTest {
         when(taskCompletionRepository.findLatestByTask(TASK_ID)).thenReturn(Optional.of(entry));
         when(taskCompletionRepository.save(entry)).thenReturn(entry);
 
-        taskCompletionService.undo(99L, CALLER_USER_ID);
+        taskCompletionService.undo(99L);
 
         // A completion landing in between would otherwise make this one the second-newest and move
         // the anchor backwards past it.
@@ -502,7 +505,7 @@ class TaskCompletionServiceTest {
         entry.setIsActive(false);
         when(taskCompletionRepository.findDetailedByIdTaskCompletion(99L)).thenReturn(Optional.of(entry));
 
-        assertThatThrownBy(() -> taskCompletionService.undo(99L, CALLER_USER_ID))
+        assertThatThrownBy(() -> taskCompletionService.undo(99L))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -586,5 +589,65 @@ class TaskCompletionServiceTest {
         assertThatThrownBy(() -> taskCompletionService.skip(TASK_UID, new SkipTaskRequest(), CALLER_USER_ID))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("not due yet");
+    }
+    @Test
+    void complete_choreNeedingProofWithNoPhoto_isRefused() {
+        Task needsProof = task();
+        needsProof.setRequiresPhotoProof(true);
+        lockedWithoutSaving(needsProof);
+        callerIsMember();
+
+        assertThatThrownBy(() ->
+                taskCompletionService.complete(TASK_UID, completeRequest(null), CALLER_USER_ID))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("needs a photo");
+        verify(taskCompletionRepository, never()).save(any());
+    }
+
+    @Test
+    void complete_choreNeedingProofWithAPhoto_isRecorded() {
+        Task needsProof = task();
+        needsProof.setRequiresPhotoProof(true);
+        locked(needsProof);
+        callerIsMember();
+        completionSaves();
+        CompleteTaskRequest request = completeRequest(null);
+        request.setPhotoUid("upl-1");
+        when(uploadService.attachCompletionPhoto("upl-1", needsProof, CALLER_USER_ID))
+                .thenReturn("upl-1");
+
+        taskCompletionService.complete(TASK_UID, request, CALLER_USER_ID);
+
+        assertThat(saved().getCompletionPhotoUid()).isEqualTo("upl-1");
+    }
+
+    @Test
+    void skip_choreNeedingProof_isAllowedWithoutOne() {
+        Task needsProof = task();
+        needsProof.setRequiresPhotoProof(true);
+        locked(needsProof);
+        callerIsMember();
+        completionSaves();
+
+        taskCompletionService.skip(TASK_UID, new SkipTaskRequest(), CALLER_USER_ID);
+
+        // A skip asserts the work did not happen, so demanding a picture of it is incoherent.
+        assertThat(saved().getOutcome()).isEqualTo(TaskOutcome.SKIPPED);
+    }
+
+    @Test
+    void undo_always_releasesTheProofBehindTheRound() {
+        TaskCompletion newest = entry(7L, DUE);
+        newest.setCompletionPhotoUid("upl-1");
+        when(taskCompletionRepository.findDetailedByIdTaskCompletion(7L))
+                .thenReturn(Optional.of(newest));
+        when(taskRepository.findForUpdateByUid(TASK_UID)).thenReturn(Optional.of(task()));
+        when(taskRepository.save(any(Task.class))).thenAnswer(i -> i.getArgument(0));
+        when(taskCompletionRepository.findLatestByTask(TASK_ID)).thenReturn(Optional.of(newest));
+
+        taskCompletionService.undo(7L);
+
+        // An undone round is unreachable, so its proof must not stay a paid-for object.
+        verify(uploadService).releaseCompletionPhoto("upl-1");
     }
 }

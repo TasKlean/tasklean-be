@@ -7,12 +7,15 @@ import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
+import com.tasklean.api.domain.task.Task;
+import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.upload.dto.SignedUrlResponse;
 import com.tasklean.api.domain.upload.dto.UploadResponse;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
 import com.tasklean.api.security.GroupSecurity;
 import com.tasklean.api.security.MethodSecuritySliceConfig;
+import com.tasklean.api.security.TaskSecurity;
 import com.tasklean.api.security.UploadSecurity;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,7 +45,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * repositories mocked to place the caller.
  */
 @WebMvcTest(UploadController.class)
-@Import({MethodSecuritySliceConfig.class, UploadSecurity.class, GroupSecurity.class})
+@Import({MethodSecuritySliceConfig.class, UploadSecurity.class, GroupSecurity.class,
+        TaskSecurity.class})
 class UploadControllerSecurityTest {
 
     @Autowired
@@ -62,6 +66,10 @@ class UploadControllerSecurityTest {
 
     @MockitoBean
     private UploadRepository uploadRepository;
+
+    // A completion photo is signed against a task, so the upload rules now reach TaskSecurity.
+    @MockitoBean
+    private TaskRepository taskRepository;
 
     private static final String GROUP_UID = "grp-1";
     private static final String UPLOAD_UID = "upl-1";
@@ -94,8 +102,8 @@ class UploadControllerSecurityTest {
     private void uploadExists(UploadStatus status, Long requesterId) {
         when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(Upload.builder()
                 .uid(UPLOAD_UID).status(status).purpose(UploadPurpose.GROUP_PHOTO)
-                .user(User.builder().idUser(requesterId).build())
-                .group(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build())
+                .userId(requesterId)
+                .groupId(GROUP_ID)
                 .build()));
     }
 
@@ -104,7 +112,7 @@ class UploadControllerSecurityTest {
     private void userPhotoExists(UploadStatus status, Long ownerId) {
         when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(Upload.builder()
                 .uid(UPLOAD_UID).status(status).purpose(UploadPurpose.USER_PHOTO)
-                .user(User.builder().idUser(ownerId).build())
+                .userId(ownerId)
                 .build()));
     }
 
@@ -306,5 +314,116 @@ class UploadControllerSecurityTest {
 
         mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());
+    }
+    // --- createUpload: a chore's picture, and proof of one of its rounds ---
+
+    private static final Long TASK_ID = 44L;
+    private static final String TASK_UID = "tsk-1";
+
+    private static final String TASK_PHOTO_BODY = """
+            {"purpose":"TASK_PHOTO","targetUid":"grp-1","contentType":"image/png","sizeBytes":1024}""";
+
+    private static final String COMPLETION_PHOTO_BODY = """
+            {"purpose":"COMPLETION_PHOTO","targetUid":"tsk-1","contentType":"image/png","sizeBytes":1024}""";
+
+    // The chore the completion photo is signed against, in the household above.
+    private void taskExistsInTheHousehold() {
+        when(taskRepository.findByUid(TASK_UID)).thenReturn(Optional.of(Task.builder()
+                .idTask(TASK_ID).uid(TASK_UID)
+                .group(Group.builder().idGroup(GROUP_ID).uid(GROUP_UID).build())
+                .build()));
+    }
+
+    @Test
+    void createUpload_taskPhotoByAPlainMember_created() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        serviceAnswers();
+
+        // Any member may add a chore, so any member may sign a picture for one - unlike the
+        // household's own photo, which is an admin act.
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(TASK_PHOTO_BODY))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void createUpload_taskPhotoForAnotherHousehold_forbidden() throws Exception {
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(TASK_PHOTO_BODY))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createUpload_completionPhotoByAMemberOfThatChoresHousehold_created() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        taskExistsInTheHousehold();
+        serviceAnswers();
+
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(COMPLETION_PHOTO_BODY))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void createUpload_completionPhotoForAChoreInAnotherHousehold_forbidden() throws Exception {
+        taskExistsInTheHousehold();
+
+        // The target is the task, so the rule is membership of the task's household - resolved
+        // through the chore rather than from the request.
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(COMPLETION_PHOTO_BODY))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void createUpload_completionPhotoForAChoreThatDoesNotExist_forbidden() throws Exception {
+        when(taskRepository.findByUid(TASK_UID)).thenReturn(Optional.empty());
+
+        mockMvc.perform(post("/api/uploads").with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(COMPLETION_PHOTO_BODY))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void downloadUrl_attachedTaskPhoto_readableByTheHousehold() throws Exception {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(Upload.builder()
+                .uid(UPLOAD_UID).status(UploadStatus.ATTACHED).purpose(UploadPurpose.TASK_PHOTO)
+                .userId(999L)
+                .groupId(GROUP_ID)
+                .build()));
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        serviceAnswers();
+
+        mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void downloadUrl_attachedCompletionPhoto_readableByTheChoresHousehold() throws Exception {
+        completionPhotoExists();
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        serviceAnswers();
+
+        // Proof is as visible as the chore it belongs to, which is the household its row names -
+        // the same rule a task photo and a household photo answer.
+        mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void downloadUrl_attachedCompletionPhoto_refusedToAnOutsider() throws Exception {
+        completionPhotoExists();
+
+        mockMvc.perform(get("/api/uploads/{uid}", UPLOAD_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    private void completionPhotoExists() {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(Upload.builder()
+                .uid(UPLOAD_UID).status(UploadStatus.ATTACHED)
+                .purpose(UploadPurpose.COMPLETION_PHOTO)
+                .userId(999L)
+                .groupId(GROUP_ID).taskId(TASK_ID)
+                .build()));
     }
 }

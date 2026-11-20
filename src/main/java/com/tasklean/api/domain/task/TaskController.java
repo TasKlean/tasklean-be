@@ -68,15 +68,18 @@ public class TaskController {
     /**
      * Updates a task's details.
      *
-     * @param uid     the task's public UID
-     * @param request the new details
+     * @param uid       the task's public UID
+     * @param request   the new details
+     * @param principal the authenticated caller
      * @return {@code 200 OK} with the updated task
      */
     @PreAuthorize("@taskSecurity.canEdit(#uid)")
     @PutMapping("/{uid}")
     public ResponseEntity<ApiResponse<TaskResponse>> updateTask(
-            @PathVariable String uid, @Valid @RequestBody TaskUpdateRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(taskService.updateTask(uid, request)));
+            @PathVariable String uid, @Valid @RequestBody TaskUpdateRequest request,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                taskService.updateTask(uid, request, principal.userId())));
     }
 
     /**
