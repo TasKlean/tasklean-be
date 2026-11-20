@@ -18,19 +18,27 @@ import com.tasklean.api.domain.tag.TagRepository;
 import com.tasklean.api.domain.tag.TagResolver;
 import com.tasklean.api.domain.tag.TaskTag;
 import com.tasklean.api.domain.tag.TaskTagRepository;
+import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
+import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import com.tasklean.api.domain.user.User;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,11 +66,15 @@ class TaskServiceTest {
     private TaskTagRepository taskTagRepository;
     @Mock
     private TagResolver tagResolver;
+    @Mock
+    private TaskBoardFilter taskBoardFilter;
     // The real one: the anchor it derives is part of what these tests are checking.
     @Spy
     private RecurrenceSchedule recurrenceSchedule = new RecurrenceSchedule();
     @Mock
     private AuditLogService auditLogService;
+    @Spy
+    private Clock clock = Clock.systemUTC();
     @InjectMocks
     private TaskService taskService;
 
@@ -143,6 +155,92 @@ class TaskServiceTest {
         verify(auditLogService).recordEvent(eq(AuditEntityType.TASK), eq(1L), eq(AuditAction.UPDATE),
                 any(), any(), changes.capture());
         return changes.getValue();
+    }
+
+    private TaskBoardPage board(Task... tasks) {
+        when(taskRepository.findAll(ArgumentMatchers.<Specification<Task>>any(), any(PageRequest.class)))
+                .thenReturn(new PageImpl<>(List.of(tasks), PageRequest.of(0, 20), tasks.length));
+        when(taskBoardFilter.pageFor(any())).thenReturn(PageRequest.of(0, 20));
+        return taskService.getBoard("grp-1", new TaskBoardFilterRequest());
+    }
+
+    private void householdExists() {
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(group()));
+    }
+
+    @Test
+    void getBoard_matchingTasks_carriesThePageTotals() {
+        householdExists();
+
+        TaskBoardPage page = board(task());
+
+        // The totals are the whole point of page numbers: without them a client cannot render
+        // a pager at all.
+        assertThat(page.getItems()).hasSize(1);
+        assertThat(page.getPage()).isZero();
+        assertThat(page.getSize()).isEqualTo(20);
+        assertThat(page.getTotalPages()).isEqualTo(1);
+        assertThat(page.getTotalTasks()).isEqualTo(1);
+    }
+
+    @Test
+    void getBoard_aPageOfTasks_loadsEveryTagInOneQuery() {
+        householdExists();
+        Task second = task();
+        second.setIdTask(2L);
+        when(taskTagRepository.findActiveByTasks(List.of(1L, 2L))).thenReturn(List.of());
+
+        board(task(), second);
+
+        // One query for the page rather than one per task, which is why a task carries no tag
+        // collection of its own.
+        verify(taskTagRepository).findActiveByTasks(List.of(1L, 2L));
+        verify(tagRepository, never()).findActiveByTask(any());
+    }
+
+    @Test
+    void getBoard_emptyPage_asksForNoTagsAtAll() {
+        householdExists();
+
+        assertThat(board().getItems()).isEmpty();
+        verifyNoInteractions(taskTagRepository);
+    }
+
+    @Test
+    void getBoard_pastDueAndStillOpen_readsAsOverdue() {
+        householdExists();
+        Task late = task();
+        late.setNextDueDate(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
+
+        assertThat(board(late).getItems().getFirst().getOverdue()).isTrue();
+    }
+
+    @Test
+    void getBoard_pastDueButAlreadyDone_doesNotReadAsOverdue() {
+        householdExists();
+        Task done = task();
+        done.setNextDueDate(LocalDateTime.now(ZoneOffset.UTC).minusDays(1));
+        done.setStatus(TaskStatus.COMPLETED);
+
+        // A chore completed late is history, not an outstanding job.
+        assertThat(board(done).getItems().getFirst().getOverdue()).isFalse();
+    }
+
+    @Test
+    void getBoard_undatedTask_doesNotReadAsOverdue() {
+        householdExists();
+
+        assertThat(board(task()).getItems().getFirst().getOverdue()).isFalse();
+    }
+
+    @Test
+    void getBoard_deletedHousehold_isNotFound() {
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taskService.getBoard("grp-1", new TaskBoardFilterRequest()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(taskRepository, never())
+                .findAll(ArgumentMatchers.<Specification<Task>>any(), any(PageRequest.class));
     }
 
     @Test

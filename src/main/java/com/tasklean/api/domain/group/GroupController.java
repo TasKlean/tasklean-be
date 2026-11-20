@@ -13,6 +13,9 @@ import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.tag.TagService;
 import com.tasklean.api.domain.tag.dto.TagQueryRequest;
 import com.tasklean.api.domain.tag.dto.TagResponse;
+import com.tasklean.api.domain.task.TaskService;
+import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
+import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberQueryRequest;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -43,6 +46,7 @@ public class GroupController {
     private final GroupMemberService groupMemberService;
     private final CategoryService categoryService;
     private final TagService tagService;
+    private final TaskService taskService;
 
     /**
      * Creates a group. Any authenticated user; the creator becomes the group's first admin.
@@ -196,6 +200,21 @@ public class GroupController {
     public ResponseEntity<ApiResponse<List<TagResponse>>> getTags(
             @PathVariable String uid, @Valid @ParameterObject TagQueryRequest query) {
         return ResponseEntity.ok(ApiResponse.success(tagService.searchTags(uid, query.getQ())));
+    }
+
+    /**
+     * Returns one page of a household's task board - its chores, narrowed and ordered by the
+     * query, with the totals a client needs to render page controls.
+     *
+     * @param uid   the group's public UID
+     * @param query which tasks to return, in what order, and which page of them
+     * @return {@code 200 OK} with the matching page
+     */
+    @PreAuthorize("@groupSecurity.isMember(#uid)")
+    @GetMapping("/{uid}/tasks")
+    public ResponseEntity<ApiResponse<TaskBoardPage>> getTasks(
+            @PathVariable String uid, @Valid @ParameterObject TaskBoardFilterRequest query) {
+        return ResponseEntity.ok(ApiResponse.success(taskService.getBoard(uid, query)));
     }
 
     /**

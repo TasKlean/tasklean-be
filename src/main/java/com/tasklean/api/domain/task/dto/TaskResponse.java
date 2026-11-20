@@ -44,7 +44,10 @@ public class TaskResponse {
     private Long categoryId;
     private List<TagResponse> tags;
 
-    public static TaskResponse from(Task task, List<Tag> tags) {
+    /** Derived, never stored: a stored flag is wrong from the due moment until something writes. */
+    private Boolean overdue;
+
+    public static TaskResponse from(Task task, List<Tag> tags, LocalDateTime now) {
         return TaskResponse.builder()
                 .uid(task.getUid())
                 .name(task.getName())
@@ -64,10 +67,19 @@ public class TaskResponse {
                 .assignedTo(person(task.getAssignedTo()))
                 .categoryId(task.getCategory() != null ? task.getCategory().getIdCategory() : null)
                 .tags(tags.stream().map(TagResponse::from).toList())
+                .overdue(overdue(task, now))
                 .build();
     }
 
     private static UserSummaryResponse person(GroupMember membership) {
         return membership == null ? null : UserSummaryResponse.from(membership.getUser());
+    }
+
+    // One definition of late, shared with the board's filter: only a chore still waiting to be
+    // done can be late, and an undated one has nothing to be late for.
+    private static boolean overdue(Task task, LocalDateTime now) {
+        return task.getNextDueDate() != null
+                && task.getNextDueDate().isBefore(now)
+                && TaskStatus.OPEN.contains(task.getStatus());
     }
 }

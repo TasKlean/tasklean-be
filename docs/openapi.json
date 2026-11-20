@@ -2374,6 +2374,157 @@
         "tags" : [ "Groups" ]
       }
     },
+    "/api/groups/{uid}/tasks" : {
+      "get" : {
+        "description" : "Returns one page of a household's task board - its chores, narrowed and ordered by the\n query, with the totals a client needs to render page controls.",
+        "operationId" : "getTasks",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "Which page to return, counting from zero.",
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "minimum" : 0
+          }
+        }, {
+          "description" : "How many tasks per page.",
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1
+          }
+        }, {
+          "description" : "The states to keep, repeatable. Naming none is the open ones — the board is a to-do list.",
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "enum" : [ "TODO", "IN_PROGRESS", "COMPLETED", "ARCHIVED" ]
+            }
+          }
+        }, {
+          "description" : "The membership uid of whoever the chores are for. Refused together with <code>unassigned</code>.",
+          "in" : "query",
+          "name" : "assignedToUid",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "True for the household pool — the chores nobody has taken.",
+          "in" : "query",
+          "name" : "unassigned",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "categoryId",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "description" : "Keeps the tasks carrying this tag. A deleted tag matches nothing.",
+          "in" : "query",
+          "name" : "tagId",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int64"
+          }
+        }, {
+          "description" : "The priorities to keep, repeatable. Naming none keeps them all.",
+          "in" : "query",
+          "name" : "priority",
+          "required" : false,
+          "schema" : {
+            "type" : "array",
+            "items" : {
+              "type" : "string",
+              "enum" : [ "HIGH", "MEDIUM", "LOW" ]
+            }
+          }
+        }, {
+          "description" : "True for the chores past their due date, false for the ones that are not.",
+          "in" : "query",
+          "name" : "overdue",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean"
+          }
+        }, {
+          "description" : "Matched case-insensitively against a task's name.",
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        }, {
+          "description" : "The ordering to apply. Omitted, the soonest due comes first.",
+          "in" : "query",
+          "name" : "sort",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "enum" : [ "DUE_ASC", "DUE_DESC", "PRIORITY_HIGH_FIRST", "CREATED_DESC", "NAME_ASC" ]
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskBoardPage"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the matching page"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns one page of a household's task board - its chores, narrowed and ordered by the\n query, with the totals a client needs to render page controls.",
+        "tags" : [ "Groups" ]
+      }
+    },
     "/api/notification-settings" : {
       "get" : {
         "description" : "Lists the caller's settings for every notification type, using the defaults for any type\n they have never saved.",
@@ -4199,6 +4350,24 @@
           }
         }
       },
+      "ApiResponseTaskBoardPage" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TaskBoardPage"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseTaskCompletionResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -5252,6 +5421,39 @@
         },
         "required" : [ "name" ]
       },
+      "TaskBoardPage" : {
+        "type" : "object",
+        "description" : "One page of a household's task board. Its own shape rather than Spring's <code>Page</code>, whose JSON\n carries a dozen fields a client never reads and changes between Spring versions.",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "description" : "The tasks on this page, in the order asked for.",
+            "items" : {
+              "$ref" : "#/components/schemas/TaskResponse"
+            }
+          },
+          "page" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "Which page this is, counting from zero."
+          },
+          "size" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "How many tasks a full page holds."
+          },
+          "totalPages" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "How many pages the filter yields in total. Zero when nothing matched."
+          },
+          "totalTasks" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "How many tasks match the filter across every page."
+          }
+        }
+      },
       "TaskCompletionRequest" : {
         "type" : "object",
         "properties" : {
@@ -5411,6 +5613,10 @@
           "nextDueDate" : {
             "type" : "string",
             "format" : "date-time"
+          },
+          "overdue" : {
+            "type" : "boolean",
+            "description" : "Derived, never stored: a stored flag is wrong from the due moment until something writes."
           },
           "priority" : {
             "type" : "string",

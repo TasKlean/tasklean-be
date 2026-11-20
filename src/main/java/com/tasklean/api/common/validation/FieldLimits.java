@@ -99,10 +99,14 @@ public final class FieldLimits {
     public static final int CURSOR = 128;
 
     /**
-     * The largest page a cursor-paged list endpoint will return. One cap for every such endpoint:
-     * a @Max on the request makes an absurd page a 400 rather than a query that reads a table.
+     * The largest page any list endpoint will return, cursor-paged or offset-paged alike. One cap
+     * for every such endpoint: a @Max on the request makes an absurd page a 400 rather than a
+     * query that reads a table.
      */
     public static final int PAGE_SIZE = 100;
+
+    /** How many tasks a board page holds when the caller names no size. */
+    public static final int TASK_PAGE_SIZE = 20;
 
     private FieldLimits() {
     }

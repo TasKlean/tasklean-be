@@ -18,14 +18,18 @@ import com.tasklean.api.domain.tag.TagRepository;
 import com.tasklean.api.domain.tag.TagResolver;
 import com.tasklean.api.domain.tag.TaskTag;
 import com.tasklean.api.domain.tag.TaskTagRepository;
+import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
+import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskResponse;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -51,8 +55,39 @@ public class TaskService {
     private final TagRepository tagRepository;
     private final TaskTagRepository taskTagRepository;
     private final TagResolver tagResolver;
+    private final TaskBoardFilter taskBoardFilter;
     private final RecurrenceSchedule recurrenceSchedule;
     private final AuditLogService auditLogService;
+    private final Clock clock;
+
+    /**
+     * Returns one page of a household's task board, narrowed and ordered by the request.
+     *
+     * @param groupUid the household's public UID
+     * @param query    what the caller asked for
+     * @return the matching page, with the totals the caller needs to render page controls
+     * @throws ResourceNotFoundException if no active group has that UID
+     * @throws InvalidRequestException   if the filters contradict each other
+     */
+    public TaskBoardPage getBoard(String groupUid, TaskBoardFilterRequest query) {
+        Group group = groupRepository.findByUidAndIsActiveTrue(groupUid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
+        Page<Task> page = taskRepository.findAll(
+                taskBoardFilter.narrow(group.getIdGroup(), query), taskBoardFilter.pageFor(query));
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        Map<Long, List<Tag>> tags = tagsFor(page.getContent());
+        return TaskBoardPage.builder()
+                .items(page.getContent().stream()
+                        .map(task -> TaskResponse.from(
+                                task, tags.getOrDefault(task.getIdTask(), List.of()), now))
+                        .toList())
+                .page(page.getNumber())
+                .size(page.getSize())
+                .totalPages(page.getTotalPages())
+                .totalTasks(page.getTotalElements())
+                .build();
+    }
 
     /**
      * Returns a task by its public UID.
@@ -64,7 +99,7 @@ public class TaskService {
     public TaskResponse getTaskByUid(String uid) {
         Task task = taskRepository.findDetailedByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
-        return TaskResponse.from(task, tagsOf(task));
+        return TaskResponse.from(task, tagsOf(task), LocalDateTime.now(clock));
     }
 
     /**
@@ -116,7 +151,7 @@ public class TaskService {
         log.info("Task created: uid={} groupUid={}", saved.getUid(), group.getUid());
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.CREATE,
                 auditMessage(saved.getName(), "created"), group);
-        return TaskResponse.from(saved, tags);
+        return TaskResponse.from(saved, tags, LocalDateTime.now(clock));
     }
 
     /**
@@ -180,7 +215,7 @@ public class TaskService {
         syncTags(saved, current, tags);
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), group, changes);
-        return TaskResponse.from(saved, tags);
+        return TaskResponse.from(saved, tags, LocalDateTime.now(clock));
     }
 
     /**
@@ -201,7 +236,7 @@ public class TaskService {
         log.info("Task archived: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "archived"), saved.getGroup(), changes);
-        return TaskResponse.from(saved, tagsOf(saved));
+        return TaskResponse.from(saved, tagsOf(saved), LocalDateTime.now(clock));
     }
 
     /**
@@ -256,6 +291,20 @@ public class TaskService {
 
     private List<Tag> tagsOf(Task task) {
         return tagRepository.findActiveByTask(task.getIdTask());
+    }
+
+    /**
+     * The live tags of a whole board page, by task id. One query for the page rather than one
+     * per task, which is why a task entity carries no tag collection of its own.
+     */
+    private Map<Long, List<Tag>> tagsFor(List<Task> tasks) {
+        if (tasks.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> ids = tasks.stream().map(Task::getIdTask).toList();
+        return taskTagRepository.findActiveByTasks(ids).stream().collect(Collectors.groupingBy(
+                link -> link.getTask().getIdTask(),
+                Collectors.mapping(TaskTag::getTag, Collectors.toList())));
     }
 
     private static Set<Long> ids(List<Tag> tags) {

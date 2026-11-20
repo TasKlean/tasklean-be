@@ -10,6 +10,8 @@ import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.tag.TagService;
+import com.tasklean.api.domain.task.TaskService;
+import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
 import com.tasklean.api.security.GroupSecurity;
@@ -65,6 +67,9 @@ class GroupControllerSecurityTest {
 
     @MockitoBean
     private TagService tagService;
+
+    @MockitoBean
+    private TaskService taskService;
 
     @MockitoBean
     private GroupRepository groupRepository;
@@ -224,6 +229,47 @@ class GroupControllerSecurityTest {
     void getTags_nonMember_forbidden() throws Exception {
         mockMvc.perform(get("/api/groups/{uid}/tags", GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTasks_plainMember_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        when(taskService.getBoard(eq(GROUP_UID), any())).thenReturn(new TaskBoardPage());
+
+        mockMvc.perform(get("/api/groups/{uid}/tasks", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getTasks_nonMember_forbidden() throws Exception {
+        mockMvc.perform(get("/api/groups/{uid}/tasks", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTasks_platformAdminOutsideTheHousehold_forbidden() throws Exception {
+        mockMvc.perform(get("/api/groups/{uid}/tasks", GROUP_UID).with(as(UserRole.ADMIN)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTasks_absurdPageSize_isBadRequest() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+
+        // The parameter object is what makes this a 400: a @Max on a bare @RequestParam throws
+        // ConstraintViolationException, which has no handler and so is a 500.
+        mockMvc.perform(get("/api/groups/{uid}/tasks", GROUP_UID).param("size", "5000")
+                        .with(as(UserRole.USER)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getTasks_unknownSort_isBadRequest() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+
+        mockMvc.perform(get("/api/groups/{uid}/tasks", GROUP_UID).param("sort", "SIDEWAYS")
+                        .with(as(UserRole.USER)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
