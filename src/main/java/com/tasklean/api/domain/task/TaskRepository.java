@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.task;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Limit;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
@@ -8,6 +9,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -91,4 +93,29 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
               and t.isActive = true and t.status in :statuses
             """)
     List<Task> findOpenAssignedTo(Long membershipId, Collection<TaskStatus> statuses);
+    /**
+     * The uids of chores whose current round is already past, oldest first — the missed-round
+     * sweep's work list.
+     *
+     * <p>Only recurring chores: a one-off has no rounds to miss, it is simply overdue, which the
+     * board already says. Archived and soft-deleted ones are out, and {@link TaskStatus#OPEN} is
+     * what "still waiting to be done" means everywhere else too.
+     *
+     * <p>Returns uids rather than rows because each one is then loaded and locked in its own
+     * transaction; holding a lock across the whole batch would block the members doing the chores.
+     *
+     * @param cutoff the first instant that is not yet written off
+     * @param limit  how many to return
+     * @return the uids, oldest round first
+     */
+    @Query("""
+            select t.uid from Task t
+            where t.isActive = true
+              and t.recurrenceType is not null
+              and t.nextDueDate is not null
+              and t.nextDueDate < :cutoff
+              and t.status in :open
+            order by t.nextDueDate, t.idTask
+            """)
+    List<String> findUidsWithRoundPast(LocalDateTime cutoff, Collection<TaskStatus> open, Limit limit);
 }

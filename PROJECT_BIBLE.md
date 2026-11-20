@@ -200,6 +200,45 @@ Seven decisions worth keeping:
 A uid naming nobody, or somebody in another household, is an **empty board** rather than a 404, matching `AuditLogFilter`: a board is a filter, and a filter that matched nothing is not a missing resource. No migration was needed - `idx_task_group_status_due` on `(group_id, status, next_due_date)` came with V32 for this query.
 
 <a id="recording-a-round-of-a-chore"></a>
+### Writing off a round nobody did
+
+A neglected chore used to sit on a stale anchor for ever: nothing recorded that its round had come
+and gone, so its history had a hole and `next_due_date` stayed in the past. `TaskMissSweeper` closes
+that hourly, in `UploadSweeper`'s shape - a work list of uids, then each chore **locked and committed
+on its own**, so one chore that cannot be swept costs that chore and not the run. It is its own
+component for the same reason: the work is per-task rather than one statement.
+
+What it writes is a `TaskCompletion` with `outcome = MISSED`, attributed to whoever was on the hook
+and to **nobody** when the chore was unassigned (a miss then belongs to no one in particular), with
+**no minutes** - the work did not happen - and then rolls the anchor on and leaves the chore `TODO`.
+
+- **One row per missed round**, not one row and a jump. Four days of neglect must not read as one
+  missed day. `maxRoundsPerTask` bounds it, so a chore neglected for months catches up over
+  successive runs rather than writing an unbounded number of rows in one transaction.
+- **One-offs are skipped.** A one-off has no *rounds* to miss - it is simply overdue, which the
+  board already says, and writing it off would need a second answer about its status. Archived,
+  soft-deleted and undated chores are out too, and `TaskStatus.OPEN` is what "still waiting" means
+  here as everywhere else.
+- **`isPast` compares by date**, exactly as `requireRoundIsDue` does. A chore is recordable for the
+  whole of its due date, so comparing instants would write off one still due that evening. The two
+  have to agree, or a round ends up neither recordable nor written off.
+- **The grace period is the sharp edge.** A miss takes the round's slot in `uq_tc_task_due`, so a
+  round written off **cannot be recorded at all** - somebody doing yesterday's chore this morning
+  gets a 409. `tasks.sweep.graceDays` is how long that is held off; it defaults to **0**, meaning a
+  round is recordable for its own day and no longer.
+- **Transactions come from a `TransactionTemplate`, not `@Transactional`.** Calling an annotated
+  method on the same bean bypasses the proxy, which would have run every sweep in no transaction at
+  all - a silent failure, since the writes would still work.
+
+Two guards it keeps from the recording path: the chore is **locked** before anything is written, so
+a member recording the very round being written off cannot be overtaken, and the `exists` check on
+`(task_id, due_date)` steps past a round already recorded rather than breaching the unique index and
+costing the whole chore's sweep.
+
+**It does not change the share.** A missed round carries no minutes and the share counts `DONE`
+only, so the numbers there are unmoved; what the sweep buys is a truthful history, an anchor that
+advances, and "missed" as a recorded fact for notifications and later reporting to read.
+
 ### Reading the share
 
 `GET /api/groups/{uid}/task-stats` answers who did how much over a window. Members only
@@ -1223,6 +1262,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 | `UploadServiceTest` | 45 | createUpload (the row is `PENDING` and its key is derived from the uid the API publishes, one opaque identifier rather than two; the signature is for the exact type and size asked for; jpeg and webp get their own extensions; the response reports the TTL; an unknown group is not found and nothing is signed; a `USER_PHOTO` records no group and its own key prefix without touching the group repository, and an unknown or deactivated target is not found); downloadUrl (signs the stored key, unknown uid not found); attachGroupPhoto — the happy path stamps `ATTACHED` + `date_attached`, clearing and replacing both supersede the old row, re-sending the current photo touches nothing, and each refusal is its own case: unknown uid, someone else's upload (checked before the bucket is even asked), an upload for another group, one already spent, an object that never arrived, a different size, a different type, and bytes that are not the declared image; attachUserPhoto — the same shape for an avatar (attach, clear, replace, re-send), plus the refusals that are its own: a group photo offered as an avatar, an upload aimed at somebody else's account, someone else's upload, one already spent, and bytes that are not the declared image. Each refusal also asserts the bucket was **never asked**, since an unstubbed one throws on its own and would let the test pass without the check it names; releaseUserPhoto supersedes the current photo. The two chore purposes: a task photo attached, cleared, replaced and re-sent, refused when signed for another household; proof attached only when signed for **that chore** - another chore in the same household is refused, which is the whole point of recording the id - refused when it is somebody else's or already spent, and released on an undo; and signing records what each purpose is scoped to, a completion photo carrying **both** its chore and its household |
 | `ImageSignatureTest` | 10 | Each allowlisted type is accepted only on its own magic number: PNG bytes called a JPEG, a RIFF container that is WAV rather than WebP, script bytes called a PNG, a type outside the allowlist, nothing read at all and a prefix shorter than the signature are all refused |
 | `UploadSweeperTest` | 6 | Deletes the object **before** marking the row; the cutoffs come from the two grace periods and the page size from `sweep-batch`; nothing collectable leaves the bucket untouched; one unreachable object still lets the rest be collected, and its own row keeps its status for the next run |
+| `TaskMissSweeperTest` | 12 | Writing off: a passed round recorded as `MISSED` with no minutes, attributed to whoever was on the hook and to nobody when unassigned, the anchor rolled past it, one row per neglected day, and the per-task cap leaving the rest for later runs. What it leaves alone: a round due today (the date comparison, not the instant), one still inside the grace, a chore recorded between the work list and the lock, an anchor sitting on a round already recorded, a chore that vanished, and an empty work list reading nothing further. Plus one chore failing without stopping the rest |
 | `UploadControllerSecurityTest` | 28 | `@WebMvcTest` slice with both security beans real — POST allows the target group's admin and SUPER_ADMIN, denies a plain member of that group, a caller outside it and a platform ADMIN (read-only); a `USER_PHOTO` is allowed for the caller's own uid and refused for anybody else's, **including to an admin of a group they share**; an SVG, an oversize body and a missing target are 400 before any signature exists; GET allows a member of the upload's group, a platform ADMIN and the requester of a still-pending upload, and denies a caller outside the group, someone else's pending upload and an unknown uid; an attached avatar is readable by its owner and by someone sharing an active group, and refused to a reader who shares none. The chore purposes: a task photo may be signed by any member of the household and refused outside it, proof only by a member of that chore's household and refused for a chore that does not exist; and both are readable by that household and refused to an outsider |
 | `GroupSecurityTest` | 19 | `isAdminOfGroup`/`isMemberOfGroup` (active admin / plain member / inactive / not-a-member / anonymous); `isAdmin`/`isMember` by uid (incl. group-not-found); by membership uid — `canManageMember` (caller admin of that group / only a plain member), `canViewMember` (shares the group / unknown membership / caller outside that group), `isSelfMember` (own / someone else's / anonymous); `sharesAnyGroupWith` (a common active group / none / an anonymous caller, which asks the repository nothing) |
 | `GroupServiceTest` | 30 | createGroup (creator → GROUP_ADMIN); get/getAll/update/delete + not-found (and that the lookup never falls back to the unfiltered `findByUid`, which is what let a deleted group stay editable; delete ends every membership, releases the photo and clears `photo_uid`); getGroupByUid invite-code visibility (admin vs plain member); getMyGroups (role mapping, soft-deleted group skipped, invite-code visibility, the filter it is handed narrows the list, and `MEMBERS_DESC` orders by counts that landed before the sort); joinByInviteCode (new member, case-insensitive code, unknown code, soft-deleted group, already a member, rejoin reactivates the same row without restoring admin); rotateInviteCode (replaces code + audits, not-found) |
@@ -1271,7 +1311,7 @@ Tests live in `src/test/java`, mirroring the main source structure. No Spring co
 
 `AuthServiceTest` also asserts the audit security boundary: `LOGIN_FAILED` on every login rejection where the user is known, `LOGIN`/`REGISTER` on success, and no entry for an unknown email.
 
-Total: **1115 tests** across 80 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
+Total: **1127 tests** across 81 test classes. Controller authorization is covered by `@WebMvcTest` security slices (no DB; caller injected per-request, method security behind a permissive filter chain — see `MethodSecuritySliceConfig`).
 
 ### What's NOT in the codebase yet
 
