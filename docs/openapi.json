@@ -1227,49 +1227,6 @@
       }
     },
     "/api/categories" : {
-      "get" : {
-        "description" : "Lists a household's categories, ordered by name.",
-        "operationId" : "getCategories",
-        "parameters" : [ {
-          "in" : "query",
-          "name" : "groupUid",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "maxLength" : 100,
-            "minLength" : 1
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListCategoryResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the categories"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Lists a household's categories, ordered by name.",
-        "tags" : [ "Categories" ]
-      },
       "post" : {
         "description" : "Creates a category in a household the caller administers.",
         "operationId" : "createCategory",
@@ -2222,6 +2179,50 @@
         "tags" : [ "Groups" ]
       }
     },
+    "/api/groups/{uid}/categories" : {
+      "get" : {
+        "description" : "Lists a household's categories, ordered by name.",
+        "operationId" : "getCategories",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListCategoryResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the household's categories"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a household's categories, ordered by name.",
+        "tags" : [ "Groups" ]
+      }
+    },
     "/api/groups/{uid}/invite-code" : {
       "post" : {
         "description" : "Issues a new invite code for a group, invalidating the previous one. Not idempotent — each\n call produces a different code.",
@@ -2316,6 +2317,60 @@
           }
         },
         "summary" : "Lists a group's members, each with the user behind the membership.",
+        "tags" : [ "Groups" ]
+      }
+    },
+    "/api/groups/{uid}/tags" : {
+      "get" : {
+        "description" : "Lists a household's tags, ordered by name and optionally narrowed by a search - this is\n what the frontend suggests from as a member types a label.",
+        "operationId" : "getTags",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "Matched case-insensitively anywhere in a tag's name. Omitted, the whole list comes back.",
+          "in" : "query",
+          "name" : "q",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 100,
+            "minLength" : 0
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseListTagResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the matching tags"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Lists a household's tags, ordered by name and optionally narrowed by a search - this is\n what the frontend suggests from as a member types a label.",
         "tags" : [ "Groups" ]
       }
     },
@@ -2634,59 +2689,6 @@
       }
     },
     "/api/tags" : {
-      "get" : {
-        "description" : "Lists a household's tags, ordered by name and optionally narrowed by a search — this is\n what the frontend suggests from as a member types a label.",
-        "operationId" : "getTags",
-        "parameters" : [ {
-          "in" : "query",
-          "name" : "groupUid",
-          "required" : true,
-          "schema" : {
-            "type" : "string",
-            "maxLength" : 100,
-            "minLength" : 1
-          }
-        }, {
-          "description" : "Matched case-insensitively anywhere in a tag's name. Omitted, the whole list comes back.",
-          "in" : "query",
-          "name" : "q",
-          "required" : false,
-          "schema" : {
-            "type" : "string",
-            "maxLength" : 100,
-            "minLength" : 0
-          }
-        } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListTagResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the matching tags"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Lists a household's tags, ordered by name and optionally narrowed by a search — this is\n what the frontend suggests from as a member types a label.",
-        "tags" : [ "Tags" ]
-      },
       "post" : {
         "description" : "Creates a tag in a household the caller belongs to, or brings back the deleted one that\n already holds the name.",
         "operationId" : "createTag",
@@ -2820,7 +2822,7 @@
         "tags" : [ "Tags" ]
       },
       "put" : {
-        "description" : "Updates a tag.",
+        "description" : "Updates a tag - its color for any member of the household, its name for the admin.",
         "operationId" : "updateTag",
         "parameters" : [ {
           "description" : "the tag id",
@@ -2870,7 +2872,7 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Updates a tag.",
+        "summary" : "Updates a tag - its color for any member of the household, its name for the admin.",
         "tags" : [ "Tags" ]
       }
     },
@@ -5352,13 +5354,24 @@
           },
           "requiresPhotoProof" : {
             "type" : "boolean"
+          },
+          "tagNames" : {
+            "type" : "array",
+            "description" : "The labels on the task, as a member types them. A name the household does not have yet\n becomes a new tag; one it already has is matched regardless of case, so the same label is\n never added twice. Absent, the task carries no tags — like every other field here, this is\n the task's whole state, not a change to part of it.",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 100,
+              "minLength" : 1
+            },
+            "maxItems" : 5,
+            "minItems" : 0
           }
         },
         "required" : [ "groupUid", "name", "priority" ]
       },
       "TaskResponse" : {
         "type" : "object",
-        "description" : "A task as returned by the API. Carries the people behind its author and assignee rather than\n ids, so a client can render it without a second call.",
+        "description" : "A task as returned by the API. Carries the people behind its author and assignee rather than\n ids, so a client can render it without a second call. Its tags are passed in rather than read\n off the task: they live in their own join table, which a task entity deliberately knows\n nothing about.",
         "properties" : {
           "assignedTo" : {
             "$ref" : "#/components/schemas/UserSummaryResponse"
@@ -5414,6 +5427,12 @@
             "type" : "string",
             "enum" : [ "TODO", "IN_PROGRESS", "COMPLETED", "ARCHIVED" ]
           },
+          "tags" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/TagResponse"
+            }
+          },
           "uid" : {
             "type" : "string"
           }
@@ -5465,6 +5484,17 @@
           },
           "requiresPhotoProof" : {
             "type" : "boolean"
+          },
+          "tagNames" : {
+            "type" : "array",
+            "description" : "The labels on the task, as a member types them. A name the household does not have yet\n becomes a new tag; one it already has is matched regardless of case, so the same label is\n never added twice. Absent, the task carries no tags — like every other field here, this is\n the task's whole state, not a change to part of it.",
+            "items" : {
+              "type" : "string",
+              "maxLength" : 100,
+              "minLength" : 1
+            },
+            "maxItems" : 5,
+            "minItems" : 0
           }
         },
         "required" : [ "name", "priority" ]

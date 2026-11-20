@@ -6,9 +6,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "tag", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"group_id", "name"})
-})
+@Table(name = "tag")
 @Getter
 @Setter
 @NoArgsConstructor

@@ -12,6 +12,7 @@ import lombok.*;
 import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 /**
  * The editable state of a task. Carries neither its group nor its author, because an edit can
@@ -55,4 +56,13 @@ public class TaskUpdateRequest {
     private String assignedToUid;
 
     private Long categoryId;
+
+    /**
+     * The labels on the task, as a member types them. A name the household does not have yet
+     * becomes a new tag; one it already has is matched regardless of case, so the same label is
+     * never added twice. Absent, the task carries no tags — like every other field here, this is
+     * the task's whole state, not a change to part of it.
+     */
+    @Size(max = FieldLimits.TASK_TAGS)
+    private List<@NotBlank @Size(min = 1, max = FieldLimits.LABEL_NAME) String> tagNames;
 }

@@ -59,6 +59,15 @@ class LazyFetchContractTest {
     }
 
     @Test
+    void taskTagFinders_fetchTheHousehold() throws Exception {
+        // Both feed TagResponse inside a task's own response, and getTaskByUid is not
+        // transactional - a proxy here is a 500 on reading one task.
+        assertThat(pathsOf(TagRepository.class, "findActiveByTask", Long.class)).contains("group");
+        assertThat(pathsOf(TagRepository.class, "findByGroupAndName", Long.class, String.class))
+                .contains("group");
+    }
+
+    @Test
     void taskAuthorizationFinder_staysLean() throws Exception {
         // TaskSecurity reads the group id and the author's membership id, both served by proxies.
         Method method = TaskRepository.class.getMethod("findByUid", String.class);

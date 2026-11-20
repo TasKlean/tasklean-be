@@ -13,6 +13,11 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.tag.Tag;
+import com.tasklean.api.domain.tag.TagRepository;
+import com.tasklean.api.domain.tag.TagResolver;
+import com.tasklean.api.domain.tag.TaskTag;
+import com.tasklean.api.domain.tag.TaskTagRepository;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import com.tasklean.api.domain.user.User;
@@ -26,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -46,6 +52,12 @@ class TaskServiceTest {
     private GroupMemberRepository groupMemberRepository;
     @Mock
     private CategoryRepository categoryRepository;
+    @Mock
+    private TagRepository tagRepository;
+    @Mock
+    private TaskTagRepository taskTagRepository;
+    @Mock
+    private TagResolver tagResolver;
     // The real one: the anchor it derives is part of what these tests are checking.
     @Spy
     private RecurrenceSchedule recurrenceSchedule = new RecurrenceSchedule();
@@ -75,6 +87,24 @@ class TaskServiceTest {
         return Task.builder().idTask(1L).uid("tsk-1").name("Clean").priority(TaskPriority.LOW)
                 .status(TaskStatus.TODO).requiresPhotoProof(false).isActive(true)
                 .group(group()).createdBy(member(AUTHOR_ID)).build();
+    }
+
+    private Tag tag(Long id, String name) {
+        return Tag.builder().idTag(id).name(name).isActive(true).group(group()).build();
+    }
+
+    private void resolvesTo(Tag... tags) {
+        when(tagResolver.resolve(any(), any())).thenReturn(List.of(tags));
+    }
+
+    private void taskAlreadyCarries(Tag... tags) {
+        when(tagRepository.findActiveByTask(1L)).thenReturn(List.of(tags));
+    }
+
+    private TaskTag savedLink() {
+        ArgumentCaptor<TaskTag> saved = ArgumentCaptor.forClass(TaskTag.class);
+        verify(taskTagRepository).save(saved.capture());
+        return saved.getValue();
     }
 
     private TaskCreateRequest createRequest() {
@@ -290,8 +320,10 @@ class TaskServiceTest {
         r.setEstimatedTimeMinutes(20);
         r.setAssignedToUid("gm-6");
         r.setCategoryId(3L);
+        r.setTagNames(List.of("Kitchen"));
         when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
         when(groupMemberRepository.findByUid("gm-6")).thenReturn(Optional.of(member(6L)));
+        resolvesTo(tag(7L, "Kitchen"));
         when(categoryRepository.findById(3L)).thenReturn(Optional.of(
                 Category.builder().idCategory(3L).isActive(true).group(group()).build()));
         savesWhatItIsGiven();
@@ -303,7 +335,8 @@ class TaskServiceTest {
         // recurrence pattern because it is re-derived rather than tracked.
         assertThat(capturedChanges().fields()).containsExactly(
                 "name", "description", "priority", "recurrenceType", "nextDueDate",
-                "requiresPhotoProof", "estimatedTimeMinutes", "assignedToUid", "categoryId");
+                "requiresPhotoProof", "estimatedTimeMinutes", "assignedToUid", "categoryId",
+                "tagNames");
     }
 
     @Test
@@ -432,5 +465,98 @@ class TaskServiceTest {
 
         assertThatThrownBy(() -> taskService.deleteTask("tsk-1"))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void getTaskByUid_carriesItsTags() {
+        when(taskRepository.findDetailedByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        taskAlreadyCarries(tag(7L, "Kitchen"));
+
+        // The finder answers with live tags only, which is what keeps a deleted label off the
+        // tasks that still have its join rows.
+        assertThat(taskService.getTaskByUid("tsk-1").getTags())
+                .extracting("name").containsExactly("Kitchen");
+    }
+
+    @Test
+    void createTask_withTags_attachesEachOne() {
+        callerIsAMember();
+        savesWhatItIsGiven();
+        TaskCreateRequest r = createRequest();
+        r.setTagNames(List.of("Kitchen"));
+        resolvesTo(tag(7L, "Kitchen"));
+
+        taskService.createTask(r, CALLER_USER_ID);
+
+        assertThat(savedLink().getTag().getIdTag()).isEqualTo(7L);
+        assertThat(savedLink().getTask()).isSameAs(savedTask());
+    }
+
+    @Test
+    void updateTask_tagAdded_insertsOnlyTheNewJoinRow() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        savesWhatItIsGiven();
+        taskAlreadyCarries(tag(7L, "Kitchen"));
+        resolvesTo(tag(7L, "Kitchen"), tag(8L, "Weekly"));
+
+        taskService.updateTask("tsk-1", updateRequest());
+
+        // The row for Kitchen is left exactly as it was: its date_created is the only record
+        // of when the task was tagged.
+        assertThat(savedLink().getTag().getIdTag()).isEqualTo(8L);
+        verify(taskTagRepository, never()).deleteByTaskIdTaskAndTagIdTag(any(), any());
+    }
+
+    @Test
+    void updateTask_tagRemoved_deletesOnlyThatJoinRow() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        savesWhatItIsGiven();
+        taskAlreadyCarries(tag(7L, "Kitchen"), tag(8L, "Weekly"));
+        resolvesTo(tag(7L, "Kitchen"));
+
+        taskService.updateTask("tsk-1", updateRequest());
+
+        verify(taskTagRepository).deleteByTaskIdTaskAndTagIdTag(1L, 8L);
+        verify(taskTagRepository, never()).save(any());
+    }
+
+    @Test
+    void updateTask_tagsOmitted_takesThemAllOff() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        savesWhatItIsGiven();
+        taskAlreadyCarries(tag(7L, "Kitchen"));
+
+        taskService.updateTask("tsk-1", updateRequest());
+
+        // An absent field is the task having no tags, the same way an absent assignee hands it
+        // back to the pool - this request is the whole state, not a patch of it.
+        verify(taskTagRepository).deleteByTaskIdTaskAndTagIdTag(1L, 7L);
+        assertThat(capturedChanges().fields()).contains("tagNames");
+    }
+
+    @Test
+    void updateTask_sameTagsInAnotherOrder_writesNoChange() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        savesWhatItIsGiven();
+        taskAlreadyCarries(tag(7L, "Kitchen"), tag(8L, "Weekly"));
+        resolvesTo(tag(8L, "Weekly"), tag(7L, "Kitchen"));
+
+        taskService.updateTask("tsk-1", updateRequest());
+
+        assertThat(capturedChanges().fields()).doesNotContain("tagNames");
+        verify(taskTagRepository, never()).save(any());
+        verify(taskTagRepository, never()).deleteByTaskIdTaskAndTagIdTag(any(), any());
+    }
+
+    @Test
+    void updateTask_tagsChanged_doesNotKeepWhichOnes() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        savesWhatItIsGiven();
+        resolvesTo(tag(7L, "Kitchen"));
+
+        taskService.updateTask("tsk-1", updateRequest());
+
+        // A tag is text a member typed, and a household trail is kept for good.
+        assertThat(capturedChanges().entries()).contains(AuditFieldChange.withheld("tagNames"));
     }
 }

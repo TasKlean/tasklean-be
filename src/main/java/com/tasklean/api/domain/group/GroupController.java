@@ -2,12 +2,17 @@ package com.tasklean.api.domain.group;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
+import com.tasklean.api.domain.category.CategoryService;
+import com.tasklean.api.domain.category.dto.CategoryResponse;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.JoinGroupRequest;
 import com.tasklean.api.domain.group.dto.MyGroupFilterRequest;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMemberService;
+import com.tasklean.api.domain.tag.TagService;
+import com.tasklean.api.domain.tag.dto.TagQueryRequest;
+import com.tasklean.api.domain.tag.dto.TagResponse;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberQueryRequest;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,6 +41,8 @@ public class GroupController {
     // A group's members are part of the group resource; the individual membership is managed
     // through its own /api/group-members endpoints.
     private final GroupMemberService groupMemberService;
+    private final CategoryService categoryService;
+    private final TagService tagService;
 
     /**
      * Creates a group. Any authenticated user; the creator becomes the group's first admin.
@@ -159,6 +166,36 @@ public class GroupController {
             @PathVariable String uid,
             @Valid @ParameterObject GroupMemberQueryRequest query) {
         return ResponseEntity.ok(ApiResponse.success(groupMemberService.getMembers(uid, query.getStatus())));
+    }
+
+    /**
+     * Lists a household's categories, ordered by name.
+     *
+     * @param uid the group's public UID
+     * @return {@code 200 OK} with the household's categories
+     */
+    // Member-only, platform admins included, matching the item endpoints: a household's
+    // filing system says what it does and when, which is the household's business.
+    @PreAuthorize("@groupSecurity.isMember(#uid)")
+    @GetMapping("/{uid}/categories")
+    public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategories(
+            @PathVariable String uid) {
+        return ResponseEntity.ok(ApiResponse.success(categoryService.getCategoriesByGroup(uid)));
+    }
+
+    /**
+     * Lists a household's tags, ordered by name and optionally narrowed by a search - this is
+     * what the frontend suggests from as a member types a label.
+     *
+     * @param uid   the group's public UID
+     * @param query the text to match, if any
+     * @return {@code 200 OK} with the matching tags
+     */
+    @PreAuthorize("@groupSecurity.isMember(#uid)")
+    @GetMapping("/{uid}/tags")
+    public ResponseEntity<ApiResponse<List<TagResponse>>> getTags(
+            @PathVariable String uid, @Valid @ParameterObject TagQueryRequest query) {
+        return ResponseEntity.ok(ApiResponse.success(tagService.searchTags(uid, query.getQ())));
     }
 
     /**

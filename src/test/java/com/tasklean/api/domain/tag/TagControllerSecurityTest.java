@@ -35,7 +35,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Verifies the @PreAuthorize wiring on {@link TagController}. The split that matters: any member
- * may create a tag, but only a household admin may rename or delete one.
+ * may create a tag and set its color, while deleting one is the household admin's. A rename is
+ * admitted here and refused by {@code TagService}, because it depends on the body - the rule
+ * itself is proven in {@code TagServiceTest}.
  */
 @WebMvcTest(TagController.class)
 @Import({MethodSecuritySliceConfig.class, TagSecurity.class, GroupSecurity.class})
@@ -134,44 +136,25 @@ class TagControllerSecurityTest {
     }
 
     @Test
-    void getTags_plainMember_ok() throws Exception {
-        householdNamedInTheBodyExists();
-        callerIs(GroupRole.GROUP_MEMBER);
-        when(tagService.searchTags(any())).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/tags").param("groupUid", GROUP_UID).param("q", "qui")
-                        .with(as(UserRole.USER)))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void getTags_callerNotInThatHousehold_forbidden() throws Exception {
-        householdNamedInTheBodyExists();
-
-        mockMvc.perform(get("/api/tags").param("groupUid", GROUP_UID).with(as(UserRole.USER)))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void updateTag_plainMember_forbidden() throws Exception {
-        // Creating is open; renaming is not, because it changes every task already carrying it.
+    void updateTag_plainMember_ok() throws Exception {
+        // Admitted on membership alone: the color is theirs to set, and a rename in the same
+        // body is what the service refuses.
         tagExists();
         callerIs(GroupRole.GROUP_MEMBER);
-
-        mockMvc.perform(put("/api/tags/{id}", 5L).with(as(UserRole.USER))
-                        .contentType(MediaType.APPLICATION_JSON).content(BODY))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
-    void updateTag_householdAdmin_ok() throws Exception {
-        tagExists();
-        callerIs(GroupRole.GROUP_ADMIN);
-        when(tagService.updateTag(any(), any())).thenReturn(new TagResponse());
+        when(tagService.updateTag(any(), any(), any())).thenReturn(new TagResponse());
 
         mockMvc.perform(put("/api/tags/{id}", 5L).with(as(UserRole.USER))
                         .contentType(MediaType.APPLICATION_JSON).content(BODY))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void updateTag_outsider_forbidden() throws Exception {
+        tagExists();
+
+        mockMvc.perform(put("/api/tags/{id}", 5L).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY))
+                .andExpect(status().isForbidden());
     }
 
     @Test

@@ -2,19 +2,15 @@ package com.tasklean.api.domain.category;
 
 import com.tasklean.api.common.ApiResponse;
 import com.tasklean.api.domain.category.dto.CategoryCreateRequest;
-import com.tasklean.api.domain.category.dto.CategoryQueryRequest;
 import com.tasklean.api.domain.category.dto.CategoryResponse;
 import com.tasklean.api.domain.category.dto.CategoryUpdateRequest;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 /**
  * REST endpoints for a household's task categories. Every member reads them; only a group admin
@@ -53,20 +49,6 @@ public class CategoryController {
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<CategoryResponse>> getCategory(@PathVariable Long id) {
         return ResponseEntity.ok(ApiResponse.success(categoryService.getCategoryById(id)));
-    }
-
-    /**
-     * Lists a household's categories, ordered by name.
-     *
-     * @param query the household to list
-     * @return {@code 200 OK} with the categories
-     */
-    @PreAuthorize("@groupSecurity.isMember(#query.groupUid)")
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategories(
-            @Valid @ParameterObject CategoryQueryRequest query) {
-        return ResponseEntity.ok(
-                ApiResponse.success(categoryService.getCategoriesByGroup(query.getGroupUid())));
     }
 
     /**

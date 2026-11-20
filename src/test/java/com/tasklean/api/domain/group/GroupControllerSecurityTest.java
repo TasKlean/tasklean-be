@@ -2,12 +2,14 @@ package com.tasklean.api.domain.group;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.auth.jwt.JwtService;
+import com.tasklean.api.domain.category.CategoryService;
 import com.tasklean.api.domain.group.dto.GroupResponse;
 import com.tasklean.api.domain.group.dto.MyGroupResponse;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.groupmember.GroupRole;
+import com.tasklean.api.domain.tag.TagService;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
 import com.tasklean.api.security.GroupSecurity;
@@ -53,9 +55,16 @@ class GroupControllerSecurityTest {
     @MockitoBean
     private JwtService jwtService;
 
-    // GroupController serves the group's own member collection, so the slice needs this too.
+    // GroupController serves the group's own member, category and tag collections, so the
+    // slice needs all three services too.
     @MockitoBean
     private GroupMemberService groupMemberService;
+
+    @MockitoBean
+    private CategoryService categoryService;
+
+    @MockitoBean
+    private TagService tagService;
 
     @MockitoBean
     private GroupRepository groupRepository;
@@ -174,6 +183,47 @@ class GroupControllerSecurityTest {
 
         mockMvc.perform(get("/api/groups/{uid}/members", GROUP_UID).with(as(UserRole.ADMIN)))
                 .andExpect(status().isOk());
+    }
+
+    // --- the group's label collections: members only, unlike the roster above ---
+
+    @Test
+    void getCategories_plainMember_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        when(categoryService.getCategoriesByGroup(GROUP_UID)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/groups/{uid}/categories", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getCategories_nonMember_forbidden() throws Exception {
+        mockMvc.perform(get("/api/groups/{uid}/categories", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getCategories_platformAdminOutsideTheHousehold_forbidden() throws Exception {
+        // Deliberately unlike the roster, and the same as the item endpoints: what a household
+        // files its chores under is nobody's business but theirs.
+        mockMvc.perform(get("/api/groups/{uid}/categories", GROUP_UID).with(as(UserRole.ADMIN)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTags_plainMember_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        when(tagService.searchTags(eq(GROUP_UID), any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/groups/{uid}/tags", GROUP_UID).param("q", "qui")
+                        .with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getTags_nonMember_forbidden() throws Exception {
+        mockMvc.perform(get("/api/groups/{uid}/tags", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
     }
 
     @Test

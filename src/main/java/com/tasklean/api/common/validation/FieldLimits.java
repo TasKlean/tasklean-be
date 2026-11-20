@@ -52,6 +52,12 @@ public final class FieldLimits {
     /** The name column on "category" and on "tag" — a group-scoped label. */
     public static final int LABEL_NAME = 100;
 
+    /**
+     * How many tags one task may carry. Ours, not a column's: past a handful of labels on a single
+     * chore the tags have stopped helping anybody find it.
+     */
+    public static final int TASK_TAGS = 5;
+
     /** The color columns, which hold a `#RRGGBB` hex code and nothing else. */
     public static final int COLOR = 7;
 

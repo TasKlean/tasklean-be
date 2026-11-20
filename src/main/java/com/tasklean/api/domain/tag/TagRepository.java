@@ -51,6 +51,27 @@ public interface TagRepository extends JpaRepository<Tag, Long> {
      * @param name    the name to match
      * @return the tag, if the household has ever had one by that name
      */
+    // Fetched because what this returns is answered with, not just counted: a tag resolved from a
+    // name typed onto a task is mapped straight into that response, which names the household.
+    @EntityGraph(attributePaths = "group")
     @Query("select t from Tag t where t.group.idGroup = :groupId and lower(t.name) = lower(:name)")
     Optional<Tag> findByGroupAndName(Long groupId, String name);
+
+    /**
+     * The live tags carried by a task, ordered by name. Deleted ones are filtered out here rather
+     * than having their join rows removed: a deleted tag keeps those rows so reviving the name
+     * brings the label back onto everything it was on, so the task simply stops showing it.
+     *
+     * @param taskId the task id
+     * @return the task's tags
+     */
+    @Query("""
+            select t
+            from Tag t
+            join TaskTag tt on tt.tag = t
+            where tt.task.idTask = :taskId and t.isActive = true
+            order by t.name
+            """)
+    @EntityGraph(attributePaths = "group")
+    List<Tag> findActiveByTask(Long taskId);
 }

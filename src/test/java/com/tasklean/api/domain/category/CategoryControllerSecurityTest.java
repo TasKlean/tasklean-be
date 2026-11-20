@@ -145,24 +145,6 @@ class CategoryControllerSecurityTest {
     }
 
     @Test
-    void getCategories_plainMember_ok() throws Exception {
-        householdNamedInTheBodyExists();
-        callerIs(GroupRole.GROUP_MEMBER);
-        when(categoryService.getCategoriesByGroup(GROUP_UID)).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/categories").param("groupUid", GROUP_UID).with(as(UserRole.USER)))
-                .andExpect(status().isOk());
-    }
-
-    @Test
-    void getCategories_callerNotInThatHousehold_forbidden() throws Exception {
-        householdNamedInTheBodyExists();
-
-        mockMvc.perform(get("/api/categories").param("groupUid", GROUP_UID).with(as(UserRole.USER)))
-                .andExpect(status().isForbidden());
-    }
-
-    @Test
     void updateCategory_plainMember_forbidden() throws Exception {
         categoryExists();
         callerIs(GroupRole.GROUP_MEMBER);

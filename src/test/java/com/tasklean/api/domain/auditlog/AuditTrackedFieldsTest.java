@@ -41,9 +41,9 @@ class AuditTrackedFieldsTest {
                 // Fixed tokens, a flag, a number and a date - nothing a person wrote.
                 Set.of("priority", "recurrenceType", "nextDueDate", "requiresPhotoProof",
                         "estimatedTimeMinutes"),
-                // Free text, and two associations whose values are a membership uid and a
-                // category id - neither says anything on its own.
-                Set.of("name", "description", "assignedToUid", "categoryId"),
+                // Free text, two associations whose values are a membership uid and a category id
+                // - neither says anything on its own - and the tags, which are text as well.
+                Set.of("name", "description", "assignedToUid", "categoryId", "tagNames"),
                 Set.of());
     }
 

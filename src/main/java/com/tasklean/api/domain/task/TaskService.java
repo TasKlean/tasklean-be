@@ -13,6 +13,11 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.tag.Tag;
+import com.tasklean.api.domain.tag.TagRepository;
+import com.tasklean.api.domain.tag.TagResolver;
+import com.tasklean.api.domain.tag.TaskTag;
+import com.tasklean.api.domain.tag.TaskTagRepository;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskResponse;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
@@ -24,8 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Manages the tasks of a household — creating one, editing it, retiring it and ending it. The
@@ -40,6 +48,9 @@ public class TaskService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final CategoryRepository categoryRepository;
+    private final TagRepository tagRepository;
+    private final TaskTagRepository taskTagRepository;
+    private final TagResolver tagResolver;
     private final RecurrenceSchedule recurrenceSchedule;
     private final AuditLogService auditLogService;
 
@@ -51,8 +62,9 @@ public class TaskService {
      * @throws ResourceNotFoundException if no active task has that UID
      */
     public TaskResponse getTaskByUid(String uid) {
-        return TaskResponse.from(taskRepository.findDetailedByUidAndIsActiveTrue(uid)
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND)));
+        Task task = taskRepository.findDetailedByUidAndIsActiveTrue(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
+        return TaskResponse.from(task, tagsOf(task));
     }
 
     /**
@@ -78,6 +90,7 @@ public class TaskService {
 
         LocalDateTime nextDueDate = utc(request.getNextDueDate());
         requireDueDateForRecurrence(request.getRecurrenceType(), nextDueDate);
+        List<Tag> tags = tagResolver.resolve(group, request.getTagNames());
 
         Task task = Task.builder()
                 .uid(UUID.randomUUID().toString())
@@ -99,10 +112,11 @@ public class TaskService {
                 .build();
 
         Task saved = taskRepository.save(task);
+        syncTags(saved, List.of(), tags);
         log.info("Task created: uid={} groupUid={}", saved.getUid(), group.getUid());
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.CREATE,
                 auditMessage(saved.getName(), "created"), group);
-        return TaskResponse.from(saved);
+        return TaskResponse.from(saved, tags);
     }
 
     /**
@@ -129,6 +143,11 @@ public class TaskService {
         // refused before any of this task's own fields have moved.
         GroupMember assignee = assigneeIn(group, request.getAssignedToUid());
         Category category = categoryIn(group, request.getCategoryId());
+        // Resolved before the task's own tags are read, because resolving may revive a deleted
+        // tag that is already on this task - read first, its join row would look missing and be
+        // inserted a second time.
+        List<Tag> tags = tagResolver.resolve(group, request.getTagNames());
+        List<Tag> current = tagsOf(task);
 
         AuditChanges changes = AuditChanges.create()
                 .set("name", task::getName, task::setName, request.getName())
@@ -146,7 +165,10 @@ public class TaskService {
                 // Compared by id: two loads of one row are not the same object, so comparing the
                 // entities would call every reassignment a change.
                 .track("assignedToUid", idOf(task.getAssignedTo()), idOf(assignee))
-                .track("categoryId", idOf(task.getCategory()), request.getCategoryId());
+                .track("categoryId", idOf(task.getCategory()), request.getCategoryId())
+                // Names only: a tag is text a member wrote, and a group's trail is kept for
+                // good and read by every one of them.
+                .track("tagNames", tagIds(current), tagIds(tags));
 
         task.setAssignedTo(assignee);
         task.setCategory(category);
@@ -155,9 +177,10 @@ public class TaskService {
         task.setRecurrencePattern(anchorFor(task.getRecurrenceType(), task.getNextDueDate()));
 
         Task saved = taskRepository.save(task);
+        syncTags(saved, current, tags);
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), group, changes);
-        return TaskResponse.from(saved);
+        return TaskResponse.from(saved, tags);
     }
 
     /**
@@ -178,7 +201,7 @@ public class TaskService {
         log.info("Task archived: uid={}", uid);
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "archived"), saved.getGroup(), changes);
-        return TaskResponse.from(saved);
+        return TaskResponse.from(saved, tagsOf(saved));
     }
 
     /**
@@ -205,6 +228,44 @@ public class TaskService {
         if (type != null && nextDueDate == null) {
             throw new InvalidRequestException("A recurring task needs a due date to recur from");
         }
+    }
+
+    /**
+     * Brings a task's join rows in line with the tags it should carry, writing only the
+     * difference. Reinserting every row on each save would reset {@code date_created} on rows
+     * nothing touched, which is the only record of when a task was tagged.
+     *
+     * <p>Rows pointing at a <em>deleted</em> tag are not in {@code current} and so are left
+     * alone. The caller cannot see those labels, so an edit of theirs is no reason to drop
+     * them - and dropping them would stop reviving the tag from bringing it back here.
+     */
+    private void syncTags(Task task, List<Tag> current, List<Tag> wanted) {
+        Set<Long> currentIds = ids(current);
+        Set<Long> wantedIds = ids(wanted);
+        // Hard-deleted, unlike everything else here: a join row holds no state of its own, so
+        // there is nothing left to keep once the label comes off the task.
+        current.stream()
+                .filter(tag -> !wantedIds.contains(tag.getIdTag()))
+                .forEach(tag -> taskTagRepository
+                        .deleteByTaskIdTaskAndTagIdTag(task.getIdTask(), tag.getIdTag()));
+        wanted.stream()
+                .filter(tag -> !currentIds.contains(tag.getIdTag()))
+                .forEach(tag -> taskTagRepository
+                        .save(TaskTag.builder().task(task).tag(tag).build()));
+    }
+
+    private List<Tag> tagsOf(Task task) {
+        return tagRepository.findActiveByTask(task.getIdTask());
+    }
+
+    private static Set<Long> ids(List<Tag> tags) {
+        return tags.stream().map(Tag::getIdTag).collect(Collectors.toSet());
+    }
+
+    // Sorted, so the comparison is about which tags the task carries rather than what order
+    // they arrived in. The ids never leave this method: track() keeps neither value.
+    private static List<Long> tagIds(List<Tag> tags) {
+        return tags.stream().map(Tag::getIdTag).sorted().toList();
     }
 
     private Map<String, Object> anchorFor(RecurrenceType type, LocalDateTime nextDueDate) {

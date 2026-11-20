@@ -1,19 +1,17 @@
 package com.tasklean.api.domain.tag;
 
 import com.tasklean.api.common.ApiResponse;
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.domain.tag.dto.TagCreateRequest;
-import com.tasklean.api.domain.tag.dto.TagQueryRequest;
 import com.tasklean.api.domain.tag.dto.TagResponse;
 import com.tasklean.api.domain.tag.dto.TagUpdateRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
 
 /**
  * REST endpoints for a household's tags. Any member may add one — a tag is a label somebody found
@@ -56,31 +54,22 @@ public class TagController {
     }
 
     /**
-     * Lists a household's tags, ordered by name and optionally narrowed by a search — this is
-     * what the frontend suggests from as a member types a label.
+     * Updates a tag - its color for any member of the household, its name for the admin.
      *
-     * @param query the household and the text to match
-     * @return {@code 200 OK} with the matching tags
-     */
-    @PreAuthorize("@groupSecurity.isMember(#query.groupUid)")
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<TagResponse>>> getTags(
-            @Valid @ParameterObject TagQueryRequest query) {
-        return ResponseEntity.ok(ApiResponse.success(tagService.searchTags(query)));
-    }
-
-    /**
-     * Updates a tag.
-     *
-     * @param id      the tag id
-     * @param request the new details
+     * @param id        the tag id
+     * @param request   the new details
+     * @param principal the authenticated caller
      * @return {@code 200 OK} with the updated tag
      */
-    @PreAuthorize("@tagSecurity.canManage(#id)")
+    // Membership is the coarse right, which is all an expression can state: whether the name
+    // may change depends on the body, so TagService refuses a rename by a plain member.
+    @PreAuthorize("@tagSecurity.canView(#id)")
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<TagResponse>> updateTag(
-            @PathVariable Long id, @Valid @RequestBody TagUpdateRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(tagService.updateTag(id, request)));
+            @PathVariable Long id, @Valid @RequestBody TagUpdateRequest request,
+            @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                tagService.updateTag(id, request, principal.userId())));
     }
 
     /**

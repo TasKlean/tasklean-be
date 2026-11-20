@@ -1,6 +1,8 @@
 package com.tasklean.api.domain.task.dto;
 
 import com.tasklean.api.domain.groupmember.GroupMember;
+import com.tasklean.api.domain.tag.Tag;
+import com.tasklean.api.domain.tag.dto.TagResponse;
 import com.tasklean.api.domain.task.RecurrenceType;
 import com.tasklean.api.domain.task.Task;
 import com.tasklean.api.domain.task.TaskPriority;
@@ -9,10 +11,13 @@ import com.tasklean.api.domain.user.dto.UserSummaryResponse;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * A task as returned by the API. Carries the people behind its author and assignee rather than
- * ids, so a client can render it without a second call.
+ * ids, so a client can render it without a second call. Its tags are passed in rather than read
+ * off the task: they live in their own join table, which a task entity deliberately knows
+ * nothing about.
  */
 @Getter
 @Setter
@@ -37,8 +42,9 @@ public class TaskResponse {
     private UserSummaryResponse createdBy;
     private UserSummaryResponse assignedTo;
     private Long categoryId;
+    private List<TagResponse> tags;
 
-    public static TaskResponse from(Task task) {
+    public static TaskResponse from(Task task, List<Tag> tags) {
         return TaskResponse.builder()
                 .uid(task.getUid())
                 .name(task.getName())
@@ -57,6 +63,7 @@ public class TaskResponse {
                 .createdBy(person(task.getCreatedBy()))
                 .assignedTo(person(task.getAssignedTo()))
                 .categoryId(task.getCategory() != null ? task.getCategory().getIdCategory() : null)
+                .tags(tags.stream().map(TagResponse::from).toList())
                 .build();
     }
 

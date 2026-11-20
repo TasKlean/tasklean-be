@@ -19,7 +19,9 @@ public class TagSecurity {
     private final GroupSecurity groupSecurity;
 
     /**
-     * Whether the caller may read this tag — i.e. is a member of its household.
+     * Whether the caller shares this tag's household. It gates reading one and also editing one,
+     * because setting a color is any member's — a rename inside the same body is refused by
+     * {@code TagService}, which is where a rule about one field has to live.
      *
      * @param id the tag id
      * @return {@code true} if the caller shares the household
@@ -29,9 +31,9 @@ public class TagSecurity {
     }
 
     /**
-     * Whether the caller may rename or delete this tag. Creating one is open to any member, but
-     * renaming or removing it changes what every other member sees on their own tasks, so that
-     * much is a group-admin act.
+     * Whether the caller may delete this tag. Creating one is open to any member, but removing it
+     * takes the label off every task already carrying it, so that much is a group-admin act — as
+     * is renaming one, which {@code TagService} enforces for the same reason.
      *
      * @param id the tag id
      * @return {@code true} if the caller administers its household

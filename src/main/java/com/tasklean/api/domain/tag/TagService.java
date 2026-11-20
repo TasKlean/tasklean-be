@@ -10,12 +10,14 @@ import com.tasklean.api.domain.auditlog.AuditEntityType;
 import com.tasklean.api.domain.auditlog.AuditLogService;
 import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.group.GroupRepository;
+import com.tasklean.api.domain.groupmember.GroupMemberRepository;
+import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.tag.dto.TagCreateRequest;
-import com.tasklean.api.domain.tag.dto.TagQueryRequest;
 import com.tasklean.api.domain.tag.dto.TagResponse;
 import com.tasklean.api.domain.tag.dto.TagUpdateRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,9 @@ import java.util.List;
  * Manages a household's tags. Same naming rule as categories — unique per household regardless of
  * case, and a deleted name stays reserved so re-creating one revives the original tag. Deleting a
  * tag is allowed while tasks still carry it: the label simply stops being offered or shown.
+ *
+ * <p>Unlike a category, a tag is a member's label: any member adds one and may give it a color,
+ * while renaming or removing one needs the household admin.
  */
 @Slf4j
 @Service
@@ -35,6 +40,7 @@ public class TagService {
 
     private final TagRepository tagRepository;
     private final GroupRepository groupRepository;
+    private final GroupMemberRepository groupMemberRepository;
     private final AuditLogService auditLogService;
 
     /**
@@ -52,13 +58,14 @@ public class TagService {
      * Returns a household's tags, ordered by name and optionally narrowed by a search — which is
      * what the frontend suggests from as a member types a label.
      *
-     * @param query the household and the text to match
+     * @param groupUid the household's public UID
+     * @param q        the text to match anywhere in the name, or null for the whole list
      * @return the matching tags
      * @throws ResourceNotFoundException if no active group has that UID
      */
-    public List<TagResponse> searchTags(TagQueryRequest query) {
-        String q = query.getQ() == null ? "" : query.getQ().trim();
-        return tagRepository.searchActive(group(query.getGroupUid()).getIdGroup(), q).stream()
+    public List<TagResponse> searchTags(String groupUid, String q) {
+        String search = q == null ? "" : q.trim();
+        return tagRepository.searchActive(group(groupUid).getIdGroup(), search).stream()
                 .map(TagResponse::from)
                 .toList();
     }
@@ -97,19 +104,22 @@ public class TagService {
     }
 
     /**
-     * Updates a tag's name and color.
+     * Updates a tag's color, and its name when the caller is the household admin.
      *
-     * @param id      the tag id
-     * @param request the new details
+     * @param id           the tag id
+     * @param request      the new details
+     * @param callerUserId the id of the authenticated caller
      * @return the updated tag
      * @throws ResourceNotFoundException  if no live tag has that id
+     * @throws AccessDeniedException      if a plain member sent a different name
      * @throws DuplicateResourceException if the new name belongs to another tag of the same
      *                                    household
      */
     @Transactional
-    public TagResponse updateTag(Long id, TagUpdateRequest request) {
+    public TagResponse updateTag(Long id, TagUpdateRequest request, Long callerUserId) {
         Tag tag = live(id);
         String name = LabelNames.normalise(request.getName());
+        requireAdminToRename(tag, name, callerUserId);
         requireNameIsFree(tag, name);
 
         AuditChanges changes = AuditChanges.create()
@@ -152,6 +162,32 @@ public class TagService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_NOT_FOUND));
     }
 
+    private static String auditMessage(String name, String verb) {
+        return "Tag \"" + name + "\" " + verb;
+    }
+
+    /**
+     * Lets the name through only for the household admin, and only when it is actually
+     * changing. A color is presentational, so whoever added the tag may pick one; the name is
+     * what every other member reads off their own tasks, so renaming it stays with the admin.
+     *
+     * <p>A rule about one field of the body cannot be a {@code @PreAuthorize}, which is one
+     * boolean evaluated before the call - the same reason {@code UserService} checks
+     * {@code photoUid} itself. The endpoint gates on membership and this narrows it.
+     */
+    private void requireAdminToRename(Tag tag, String name, Long callerUserId) {
+        // Compared exactly: the stored spelling is the one the household sees, so changing
+        // only its case is still a rename.
+        if (name.equals(tag.getName())) {
+            return;
+        }
+        groupMemberRepository
+                .findByUserIdUserAndGroupIdGroup(callerUserId, tag.getGroup().getIdGroup())
+                .filter(member -> Boolean.TRUE.equals(member.getIsActive()))
+                .filter(member -> member.getRole() == GroupRole.GROUP_ADMIN)
+                .orElseThrow(() -> new AccessDeniedException(ErrorMessages.ACCESS_DENIED));
+    }
+
     // The name may collide with a deleted tag too: the unique index covers those rows, so letting
     // the rename through would surface as a constraint violation rather than a 409.
     private void requireNameIsFree(Tag tag, String name) {
@@ -160,9 +196,5 @@ public class TagService {
                 .ifPresent(other -> {
                     throw new DuplicateResourceException(NAME_TAKEN);
                 });
-    }
-
-    private static String auditMessage(String name, String verb) {
-        return "Tag \"" + name + "\" " + verb;
     }
 }
