@@ -14,6 +14,9 @@ import com.tasklean.api.domain.tag.TagService;
 import com.tasklean.api.domain.tag.dto.TagQueryRequest;
 import com.tasklean.api.domain.tag.dto.TagResponse;
 import com.tasklean.api.domain.task.TaskService;
+import com.tasklean.api.domain.taskstats.TaskStatsService;
+import com.tasklean.api.domain.taskstats.dto.TaskStatsQueryRequest;
+import com.tasklean.api.domain.taskstats.dto.TaskStatsResponse;
 import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.groupmember.dto.GroupMemberQueryRequest;
@@ -47,6 +50,7 @@ public class GroupController {
     private final CategoryService categoryService;
     private final TagService tagService;
     private final TaskService taskService;
+    private final TaskStatsService taskStatsService;
 
     /**
      * Creates a group. Any authenticated user; the creator becomes the group's first admin.
@@ -215,6 +219,21 @@ public class GroupController {
     public ResponseEntity<ApiResponse<TaskBoardPage>> getTasks(
             @PathVariable String uid, @Valid @ParameterObject TaskBoardFilterRequest query) {
         return ResponseEntity.ok(ApiResponse.success(taskService.getBoard(uid, query)));
+    }
+
+    /**
+     * Returns who did how much of the housework over a window - the share. Lists the active roster,
+     * so a member who did nothing appears at zero rather than dropping off.
+     *
+     * @param uid   the group's public UID
+     * @param query the window, or empty for the current UTC week
+     * @return {@code 200 OK} with one row per member and the window that was used
+     */
+    @PreAuthorize("@groupSecurity.isMember(#uid)")
+    @GetMapping("/{uid}/task-stats")
+    public ResponseEntity<ApiResponse<TaskStatsResponse>> getTaskStats(
+            @PathVariable String uid, @Valid @ParameterObject TaskStatsQueryRequest query) {
+        return ResponseEntity.ok(ApiResponse.success(taskStatsService.getStats(uid, query)));
     }
 
     /**

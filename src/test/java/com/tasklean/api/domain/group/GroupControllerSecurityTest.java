@@ -11,6 +11,8 @@ import com.tasklean.api.domain.groupmember.GroupMemberService;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.tag.TagService;
 import com.tasklean.api.domain.task.TaskService;
+import com.tasklean.api.domain.taskstats.TaskStatsService;
+import com.tasklean.api.domain.taskstats.dto.TaskStatsResponse;
 import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
@@ -70,6 +72,9 @@ class GroupControllerSecurityTest {
 
     @MockitoBean
     private TaskService taskService;
+
+    @MockitoBean
+    private TaskStatsService taskStatsService;
 
     @MockitoBean
     private GroupRepository groupRepository;
@@ -244,6 +249,41 @@ class GroupControllerSecurityTest {
     void getTasks_nonMember_forbidden() throws Exception {
         mockMvc.perform(get("/api/groups/{uid}/tasks", GROUP_UID).with(as(UserRole.USER)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTaskStats_plainMember_ok() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+        when(taskStatsService.getStats(eq(GROUP_UID), any()))
+                .thenReturn(TaskStatsResponse.builder().build());
+
+        mockMvc.perform(get("/api/groups/{uid}/task-stats", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getTaskStats_nonMember_forbidden() throws Exception {
+        mockMvc.perform(get("/api/groups/{uid}/task-stats", GROUP_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTaskStats_platformAdminOutsideTheHousehold_forbidden() throws Exception {
+        // Who did their share is the household's own business, like its labels and its board -
+        // deliberately unlike the roster, which a platform ADMIN may read.
+        mockMvc.perform(get("/api/groups/{uid}/task-stats", GROUP_UID).with(as(UserRole.ADMIN)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTaskStats_naiveDateWithNoOffset_isBadRequest() throws Exception {
+        callerIsMemberWithRole(GroupRole.GROUP_MEMBER);
+
+        // A local time with no offset would shift the window by the caller's own offset and
+        // report nothing wrong, so it has to be refused rather than guessed at.
+        mockMvc.perform(get("/api/groups/{uid}/task-stats", GROUP_UID)
+                        .param("dateFrom", "2026-11-16T00:00:00").with(as(UserRole.USER)))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -2374,6 +2374,68 @@
         "tags" : [ "Groups" ]
       }
     },
+    "/api/groups/{uid}/task-stats" : {
+      "get" : {
+        "description" : "Returns who did how much of the housework over a window - the share. Lists the active roster,\n so a member who did nothing appears at zero rather than dropping off.",
+        "operationId" : "getTaskStats",
+        "parameters" : [ {
+          "description" : "the group's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "Counts only rounds done from this instant, inclusive. Needs a zone offset\n (<code>2026-11-01T00:00:00+01:00</code>): rounds are stored in UTC, so a bare local time would\n shift the window by the caller's own offset without failing.\n\n <p>Omitted together with <code>dateTo</code>, the window is the current UTC week.",
+          "in" : "query",
+          "name" : "dateFrom",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        }, {
+          "description" : "Counts only rounds done before this instant, exclusive - to cover a whole day, name the start\n of the next one. Same format as <code>dateFrom</code>.",
+          "in" : "query",
+          "name" : "dateTo",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "format" : "date-time"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskStatsResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with one row per member and the window that was used"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns who did how much of the housework over a window - the share.",
+        "tags" : [ "Groups" ]
+      }
+    },
     "/api/groups/{uid}/tasks" : {
       "get" : {
         "description" : "Returns one page of a household's task board - its chores, narrowed and ordered by the\n query, with the totals a client needs to render page controls.",
@@ -4628,6 +4690,24 @@
           }
         }
       },
+      "ApiResponseTaskStatsResponse" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TaskStatsResponse"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseTwoFactorEnableResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -5304,6 +5384,31 @@
         },
         "required" : [ "email", "password" ]
       },
+      "MemberShareResponse" : {
+        "type" : "object",
+        "properties" : {
+          "former" : {
+            "type" : "boolean",
+            "description" : "Whether the membership has ended. A former member appears only when they did work in the\n window, so the rows still sum to the total; they are never listed at zero."
+          },
+          "memberUid" : {
+            "type" : "string"
+          },
+          "minutes" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "Minutes of work done in the window. Zero for a member who did none."
+          },
+          "roundsDone" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "How many rounds they completed in the window."
+          },
+          "user" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
+          }
+        }
+      },
       "MyDeviceResponse" : {
         "type" : "object",
         "properties" : {
@@ -5943,6 +6048,39 @@
           },
           "uid" : {
             "type" : "string"
+          }
+        }
+      },
+      "TaskStatsResponse" : {
+        "type" : "object",
+        "properties" : {
+          "from" : {
+            "type" : "string",
+            "format" : "date-time",
+            "description" : "The window actually used, in UTC - the caller's range, or the current week by default."
+          },
+          "groupUid" : {
+            "type" : "string"
+          },
+          "members" : {
+            "type" : "array",
+            "description" : "Every active member, plus any former one with work in the window. Busiest first.",
+            "items" : {
+              "$ref" : "#/components/schemas/MemberShareResponse"
+            }
+          },
+          "to" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "totalMinutes" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "The sum of the rows, so a share of the total needs no second call."
+          },
+          "totalRounds" : {
+            "type" : "integer",
+            "format" : "int64"
           }
         }
       },

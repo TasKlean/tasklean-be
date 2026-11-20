@@ -127,4 +127,45 @@ public interface TaskCompletionRepository extends JpaRepository<TaskCompletion, 
      * @return {@code true} if that instance is already recorded
      */
     boolean existsByTaskIdTaskAndDueDateAndIsActiveTrue(Long taskId, LocalDateTime dueDate);
+    /**
+     * Minutes and rounds each member completed in a household over a window, for the share.
+     *
+     * <p>Only {@code DONE} counts: a skip asserts the work did not happen and a miss means nobody
+     * did it, so neither is anybody's contribution. The window is on {@code date_completed} - when
+     * the work was actually done, not which round it was - and is half-open, so adjacent windows
+     * cannot both claim a round on the boundary. {@code minutes} falls back to the task's current
+     * estimate for a round recorded before the snapshot existed, and to zero when neither is set.
+     *
+     * <p>Members who did nothing are absent from the result rather than present at zero; the
+     * roster is what supplies those, so a quiet member still appears on the share.
+     *
+     * @param groupId the household
+     * @param from    start of the window, inclusive
+     * @param to      end of the window, exclusive
+     * @return one row per member who did something, in no particular order
+     */
+    @Query("""
+            select tc.attributedTo.idGroupMember as memberId,
+                   sum(coalesce(tc.minutes, tc.task.estimatedTimeMinutes, 0)) as minutes,
+                   count(tc) as rounds
+            from TaskCompletion tc
+            where tc.task.group.idGroup = :groupId
+              and tc.isActive = true
+              and tc.outcome = com.tasklean.api.domain.taskcompletion.TaskOutcome.DONE
+              and tc.attributedTo is not null
+              and tc.dateCompleted >= :from
+              and tc.dateCompleted < :to
+            group by tc.attributedTo.idGroupMember
+            """)
+    List<MemberMinutes> sumMinutesPerMember(Long groupId, LocalDateTime from, LocalDateTime to);
+
+    /** One member's totals over a window, as the share's aggregate returns them. */
+    interface MemberMinutes {
+
+        Long getMemberId();
+
+        long getMinutes();
+
+        long getRounds();
+    }
 }
