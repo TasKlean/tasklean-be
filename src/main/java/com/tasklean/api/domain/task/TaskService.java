@@ -1,6 +1,8 @@
 package com.tasklean.api.domain.task;
 
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.ErrorCodes;
+import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
@@ -18,6 +20,7 @@ import com.tasklean.api.domain.tag.TagRepository;
 import com.tasklean.api.domain.tag.TagResolver;
 import com.tasklean.api.domain.tag.TaskTag;
 import com.tasklean.api.domain.tag.TaskTagRepository;
+import com.tasklean.api.domain.task.dto.AssignTaskRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
@@ -26,6 +29,7 @@ import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -219,6 +223,70 @@ public class TaskService {
     }
 
     /**
+     * Takes an unassigned chore. Its own endpoint rather than a plain assignment, because taking
+     * one needs no right over the task beyond membership - whereas handing a chore to somebody
+     * else does.
+     *
+     * @param uid          the task's public UID
+     * @param callerUserId the acting user, from the JWT
+     * @return the task, now the caller's
+     * @throws ResourceNotFoundException if no active task has that UID
+     * @throws AccessDeniedException     if the caller is not an active member of the household
+     * @throws BusinessRuleException     if somebody already has the chore
+     */
+    @Transactional
+    public TaskResponse claimTask(String uid, Long callerUserId) {
+        Task task = taskRepository.findForUpdateByUid(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
+        GroupMember caller = callersMembership(task, callerUserId);
+        if (task.getAssignedTo() != null) {
+            // Taken, whether by the caller or by anybody else. Handing a chore on is a different
+            // act with a different right behind it, so claiming must not quietly do it.
+            throw new BusinessRuleException("Somebody already has this chore",
+                    ErrorCodes.TASK_ALREADY_ASSIGNED);
+        }
+
+        AuditChanges changes = AuditChanges.create()
+                .track("assignedToUid", null, caller.getIdGroupMember());
+        task.setAssignedTo(caller);
+        Task saved = taskRepository.save(task);
+
+        log.info("Task claimed: uid={}", uid);
+        auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.TASK_CLAIMED,
+                auditMessage(saved.getName(), "claimed"), saved.getGroup(), changes);
+        return TaskResponse.from(saved, tagsOf(saved), LocalDateTime.now(clock));
+    }
+
+    /**
+     * Hands a chore to a member of its household, or releases it back to the pool when no member is
+     * named. Gated on the right to change the task rather than on membership: deciding who does a
+     * chore is not the same as doing it.
+     *
+     * @param uid     the task's public UID
+     * @param request who to assign it to, or nothing to release it
+     * @return the task, with its new assignee
+     * @throws ResourceNotFoundException if no active task has that UID, or the member named is not
+     *                                   an active member of its household
+     */
+    @Transactional
+    public TaskResponse assignTask(String uid, AssignTaskRequest request) {
+        Task task = taskRepository.findByUidAndIsActiveTrue(uid)
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
+        GroupMember assignee = assigneeIn(task.getGroup(), request.getMemberUid());
+
+        AuditChanges changes = AuditChanges.create()
+                .track("assignedToUid", idOf(task.getAssignedTo()), idOf(assignee));
+        task.setAssignedTo(assignee);
+        Task saved = taskRepository.save(task);
+
+        log.info("Task assignee set: uid={} assigned={}", uid, assignee != null);
+        auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.TASK_ASSIGNED,
+                auditMessage(saved.getName(), assignee != null ? "assigned" : "released"),
+                saved.getGroup(), changes);
+        return TaskResponse.from(saved, tagsOf(saved), LocalDateTime.now(clock));
+    }
+
+    /**
      * Retires a task the household has stopped doing. It leaves every board but keeps its history,
      * which is what separates this from deleting it.
      *
@@ -328,6 +396,18 @@ public class TaskService {
      * <p>A membership of another household answers "not found" rather than "not allowed": a 403
      * would confirm the uid belongs to somebody, somewhere.
      */
+    // The caller as a member of this task's household. Resolved here rather than trusted from
+    // the expression layer, which answers only whether they may call at all.
+    private GroupMember callersMembership(Task task, Long callerUserId) {
+        if (callerUserId == null) {
+            throw new AccessDeniedException(ErrorMessages.ACCESS_DENIED);
+        }
+        return groupMemberRepository
+                .findByUserIdUserAndGroupIdGroup(callerUserId, task.getGroup().getIdGroup())
+                .filter(member -> Boolean.TRUE.equals(member.getIsActive()))
+                .orElseThrow(() -> new AccessDeniedException(ErrorMessages.ACCESS_DENIED));
+    }
+
     private GroupMember assigneeIn(Group group, String memberUid) {
         if (memberUid == null) {
             return null;

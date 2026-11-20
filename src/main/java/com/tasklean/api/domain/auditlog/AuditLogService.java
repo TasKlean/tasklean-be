@@ -2,6 +2,7 @@ package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ErrorMessages;
+import com.tasklean.api.common.KeysetCursor;
 import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.dto.AuditLogPage;
@@ -38,7 +39,7 @@ public class AuditLogService {
     private final AuditEntityRefs auditEntityRefs;
     private final AuditLogVisibility auditLogVisibility;
     private final AuditLogFilter auditLogFilter;
-    private final AuditLogCursor auditLogCursor;
+    private final KeysetCursor keysetCursor;
     private final GroupRepository groupRepository;
 
     /**
@@ -172,9 +173,9 @@ public class AuditLogService {
     // total skips the cursor predicate, being the size of the feed rather than of what is left.
     private AuditLogPage page(Specification<AuditLog> feed, AuditLogQueryRequest query, Long ipVisibleTo) {
         int limit = pageSize(query);
-        AuditLogCursor.Position after = auditLogCursor.decode(query.getCursor());
+        KeysetCursor.Position after = keysetCursor.decode(query.getCursor());
         Specification<AuditLog> onePage = after == null
-                ? feed : feed.and(AuditLogSpecs.after(after.dateCreated(), after.id()));
+                ? feed : feed.and(AuditLogSpecs.after(after.timestamp(), after.id()));
 
         List<AuditLog> read = auditLogRepository.findBy(onePage.and(AuditLogSpecs.withActorFetched()),
                 q -> q.sortBy(NEWEST_FIRST).limit(limit + 1).all());
@@ -182,7 +183,10 @@ public class AuditLogService {
 
         return AuditLogPage.builder()
                 .items(toResponses(entries, ipVisibleTo))
-                .nextCursor(read.size() > limit ? auditLogCursor.encode(entries.getLast()) : null)
+                .nextCursor(read.size() > limit
+                        ? keysetCursor.encode(entries.getLast().getDateCreated(),
+                                entries.getLast().getIdAuditLog())
+                        : null)
                 .total(auditLogRepository.count(feed))
                 .build();
     }

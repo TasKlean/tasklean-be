@@ -32,6 +32,21 @@ public final class ErrorCodes {
     /** The page cursor was not one we handed out; ask for the list again without one. */
     public static final String PAGE_CURSOR_INVALID = "PAGE_CURSOR_INVALID";
 
+    /** The round is not due yet; nothing to record until it comes round. */
+    public static final String TASK_ROUND_NOT_DUE = "TASK_ROUND_NOT_DUE";
+
+    /** Somebody already has the chore; hand it on instead of claiming it. */
+    public static final String TASK_ALREADY_ASSIGNED = "TASK_ALREADY_ASSIGNED";
+
+    /** The chore is archived; nothing can be recorded against it until it is brought back. */
+    public static final String TASK_ARCHIVED = "TASK_ARCHIVED";
+
+    /** This round of the chore is already in its history; re-read the task before acting. */
+    public static final String TASK_INSTANCE_ALREADY_RECORDED = "TASK_INSTANCE_ALREADY_RECORDED";
+
+    /** Only the newest entry in a chore's history can be undone, and this one is not it. */
+    public static final String TASK_COMPLETION_NOT_LATEST = "TASK_COMPLETION_NOT_LATEST";
+
     private ErrorCodes() {
     }
 }

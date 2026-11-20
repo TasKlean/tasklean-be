@@ -67,7 +67,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessRuleException.class)
     public ResponseEntity<ApiResponse<Void>> handleBusinessRule(BusinessRuleException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiResponse.error(ex.getMessage()));
+                .body(ex.getCode() == null
+                        ? ApiResponse.error(ex.getMessage())
+                        : ApiResponse.error(ex.getMessage(), ex.getCode()));
     }
 
     /**

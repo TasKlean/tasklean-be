@@ -24,6 +24,7 @@ public final class ErrorMessages {
     public static final String PHOTO_NEEDS_AN_EXISTING_GROUP =
             "A group photo can only be set once the group exists";
     public static final String TASK_NOT_FOUND = "Task not found";
+    public static final String TASK_COMPLETION_NOT_FOUND = "Task history entry not found";
     public static final String CATEGORY_NOT_FOUND = "Category not found";
     public static final String TAG_NOT_FOUND = "Tag not found";
     public static final String DEVICE_NOT_FOUND = "Device not found";

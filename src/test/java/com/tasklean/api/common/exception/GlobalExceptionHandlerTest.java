@@ -78,6 +78,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    void handleBusinessRule_withACode_returns409CarryingIt() {
+        ResponseEntity<ApiResponse<Void>> response = handler.handleBusinessRule(
+                new BusinessRuleException("This round of the chore is already recorded",
+                        ErrorCodes.TASK_INSTANCE_ALREADY_RECORDED));
+
+        // A client re-reads the chore on this one and shows the message on an uncoded conflict,
+        // so the code has to survive the handler rather than the message being matched.
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody())
+                .isNotNull()
+                .extracting(ApiResponse::getCode)
+                .isEqualTo(ErrorCodes.TASK_INSTANCE_ALREADY_RECORDED);
+    }
+
+    @Test
     void handleBusinessRule_returns409WithMessage() {
         ResponseEntity<ApiResponse<Void>> response =
                 handler.handleBusinessRule(new BusinessRuleException("A group must have at least one admin"));

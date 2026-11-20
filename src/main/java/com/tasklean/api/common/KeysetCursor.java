@@ -1,6 +1,5 @@
-package com.tasklean.api.domain.auditlog;
+package com.tasklean.api.common;
 
-import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.exception.InvalidRequestException;
 import org.springframework.stereotype.Component;
 
@@ -9,23 +8,26 @@ import java.time.format.DateTimeParseException;
 import java.util.Base64;
 
 /**
- * Encodes and decodes the opaque cursor an audit feed pages by. The cursor carries the sort key of
- * the last entry handed out - its timestamp and its row id - so the next page resumes from there
- * instead of counting rows, which is what keeps paging stable while the trail grows at the top.
+ * Encodes and decodes the opaque cursor a keyset-paged list pages by. The cursor carries the sort
+ * key of the last row handed out - a timestamp and a row id - so the next page resumes from there
+ * instead of counting rows, which is what keeps paging stable while the table grows at the end it
+ * would otherwise count from.
  */
 @Component
-class AuditLogCursor {
+public class KeysetCursor {
 
     private static final String SEPARATOR = "|";
 
     /**
-     * Encodes an entry's sort key as a cursor.
+     * Encodes a row's sort key as a cursor. Which timestamp that is belongs to the caller: the
+     * audit feed pages by when an entry was written, a task's history by when its instance was due.
      *
-     * @param entry the last entry on the page just produced
+     * @param timestamp the leading sort key of the last row on the page just produced
+     * @param id        that row's id, the tiebreak
      * @return the cursor the caller passes to resume after it
      */
-    public String encode(AuditLog entry) {
-        String raw = entry.getDateCreated() + SEPARATOR + entry.getIdAuditLog();
+    public String encode(LocalDateTime timestamp, Long id) {
+        String raw = timestamp + SEPARATOR + id;
         return Base64.getUrlEncoder().withoutPadding().encodeToString(raw.getBytes());
     }
 
@@ -33,7 +35,7 @@ class AuditLogCursor {
      * Decodes a cursor back into the position to resume after.
      *
      * @param cursor the cursor from a previous page, or {@code null}/blank for the first page
-     * @return the position to read after, or {@code null} to start at the newest entry
+     * @return the position to read after, or {@code null} to start at the first row
      * @throws InvalidRequestException if the cursor is not one we handed out
      */
     public Position decode(String cursor) {
@@ -53,7 +55,7 @@ class AuditLogCursor {
         }
     }
 
-    /** Where a page resumes from: the sort key of the last entry the caller already has. */
-    public record Position(LocalDateTime dateCreated, Long id) {
+    /** Where a page resumes from: the sort key of the last row the caller already has. */
+    public record Position(LocalDateTime timestamp, Long id) {
     }
 }

@@ -1,21 +1,25 @@
 package com.tasklean.api.domain.taskcompletion;
 
+import com.tasklean.api.auth.jwt.AuthPrincipal;
 import com.tasklean.api.common.ApiResponse;
-import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionRequest;
 import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 /**
- * REST endpoints for task completions — record a completion and list completions by task or member.
+ * One entry in a chore's history, addressed by its own id. Recording an entry is an action on the
+ * chore and lives on {@code /api/tasks/{uid}}; this controller owns only what is done to an entry
+ * once it exists - reading it, and taking it back.
  */
-@Tag(name = "Task completions", description = "Immutable records of a task being completed, with optional photo proof.")
+@Tag(name = "Task history", description = "Individual entries in a chore's history")
 @RestController
 @RequestMapping("/api/task-completions")
 @RequiredArgsConstructor
@@ -24,38 +28,30 @@ public class TaskCompletionController {
     private final TaskCompletionService taskCompletionService;
 
     /**
-     * Records a task completion.
+     * Returns one entry from a chore's history. Any member of the household may read it.
      *
-     * @param request the completion details (task, member, optional photo/note)
-     * @return {@code 201 Created} with the recorded completion
+     * @param id the entry's id
+     * @return {@code 200 OK} with the entry
      */
-    @PostMapping
-    public ResponseEntity<ApiResponse<TaskCompletionResponse>> createCompletion(
-            @Valid @RequestBody TaskCompletionRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(taskCompletionService.createCompletion(request)));
+    @PreAuthorize("@taskCompletionSecurity.canView(#id)")
+    @GetMapping("/{id}")
+    public ResponseEntity<ApiResponse<TaskCompletionResponse>> getCompletion(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(taskCompletionService.getCompletion(id)));
     }
 
     /**
-     * Lists a task's completion history, newest first.
+     * Takes an entry back, putting the chore's schedule where it was before it. Whoever the entry
+     * is attributed to may, as may the household's admin; only the newest entry can be undone.
      *
-     * @param taskId the task id
-     * @return {@code 200 OK} with the completions
+     * @param id        the entry's id
+     * @param principal the caller, from the JWT
+     * @return {@code 200 OK} with the entry and the chore's restored state
      */
-    @GetMapping
-    public ResponseEntity<ApiResponse<List<TaskCompletionResponse>>> getCompletionsByTask(@RequestParam Long taskId) {
-        return ResponseEntity.ok(ApiResponse.success(taskCompletionService.getCompletionsByTask(taskId)));
-    }
-
-    /**
-     * Lists the completions recorded by a group member, newest first.
-     *
-     * @param groupMemberId the group member id
-     * @return {@code 200 OK} with the completions
-     */
-    @GetMapping("/member/{groupMemberId}")
-    public ResponseEntity<ApiResponse<List<TaskCompletionResponse>>> getCompletionsByMember(
-            @PathVariable Long groupMemberId) {
-        return ResponseEntity.ok(ApiResponse.success(taskCompletionService.getCompletionsByMember(groupMemberId)));
+    @PreAuthorize("@taskCompletionSecurity.canUndo(#id)")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<TaskCompletionResponse>> undoCompletion(
+            @PathVariable Long id, @AuthenticationPrincipal AuthPrincipal principal) {
+        return ResponseEntity.ok(ApiResponse.success(
+                taskCompletionService.undo(id, principal.userId())));
     }
 }

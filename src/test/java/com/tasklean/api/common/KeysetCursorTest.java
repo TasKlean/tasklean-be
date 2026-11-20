@@ -1,6 +1,5 @@
-package com.tasklean.api.domain.auditlog;
+package com.tasklean.api.common;
 
-import com.tasklean.api.common.ErrorCodes;
 import com.tasklean.api.common.exception.InvalidRequestException;
 import org.junit.jupiter.api.Test;
 
@@ -13,43 +12,39 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The opaque page cursor. Depends on nothing, so every case is provable without a mock - which is
- * the point of it being its own component rather than a pair of helpers on the service.
+ * the point of it being its own component rather than a pair of helpers on whichever service pages.
  */
-class AuditLogCursorTest {
+class KeysetCursorTest {
 
-    private final AuditLogCursor auditLogCursor = new AuditLogCursor();
-
-    private AuditLog entry(LocalDateTime dateCreated, Long id) {
-        return AuditLog.builder().dateCreated(dateCreated).idAuditLog(id).build();
-    }
+    private final KeysetCursor keysetCursor = new KeysetCursor();
 
     @Test
     void decode_aCursorThisComponentEncoded_returnsTheSamePosition() {
         LocalDateTime when = LocalDateTime.now(ZoneOffset.UTC);
 
-        AuditLogCursor.Position position = auditLogCursor.decode(auditLogCursor.encode(entry(when, 42L)));
+        KeysetCursor.Position position = keysetCursor.decode(keysetCursor.encode(when, 42L));
 
-        assertThat(position.dateCreated()).isEqualTo(when);
+        assertThat(position.timestamp()).isEqualTo(when);
         assertThat(position.id()).isEqualTo(42L);
     }
 
     @Test
     void encode_always_hidesTheSortKeyItCarries() {
         // It is handed to a client, so it must not read as a row id to tamper with.
-        String cursor = auditLogCursor.encode(entry(LocalDateTime.of(2026, 11, 6, 12, 0), 42L));
+        String cursor = keysetCursor.encode(LocalDateTime.of(2026, 11, 6, 12, 0), 42L);
 
         assertThat(cursor).doesNotContain("42").doesNotContain("2026");
     }
 
     @Test
-    void decode_noCursor_startsAtTheNewestEntry() {
-        assertThat(auditLogCursor.decode(null)).isNull();
-        assertThat(auditLogCursor.decode("  ")).isNull();
+    void decode_noCursor_startsAtTheFirstRow() {
+        assertThat(keysetCursor.decode(null)).isNull();
+        assertThat(keysetCursor.decode("  ")).isNull();
     }
 
     @Test
     void decode_cursorThatIsNotBase64_isRefused() {
-        assertThatThrownBy(() -> auditLogCursor.decode("not a cursor!!"))
+        assertThatThrownBy(() -> keysetCursor.decode("not a cursor!!"))
                 .isInstanceOf(InvalidRequestException.class)
                 .extracting(e -> ((InvalidRequestException) e).getCode())
                 .isEqualTo(ErrorCodes.PAGE_CURSOR_INVALID);
@@ -61,7 +56,7 @@ class AuditLogCursorTest {
         String tampered = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString("2026-11-06T12:00|not-a-number".getBytes());
 
-        assertThatThrownBy(() -> auditLogCursor.decode(tampered))
+        assertThatThrownBy(() -> keysetCursor.decode(tampered))
                 .isInstanceOf(InvalidRequestException.class);
     }
 
@@ -70,7 +65,7 @@ class AuditLogCursorTest {
         String halfACursor = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString("2026-11-06T12:00".getBytes());
 
-        assertThatThrownBy(() -> auditLogCursor.decode(halfACursor))
+        assertThatThrownBy(() -> keysetCursor.decode(halfACursor))
                 .isInstanceOf(InvalidRequestException.class);
     }
 }

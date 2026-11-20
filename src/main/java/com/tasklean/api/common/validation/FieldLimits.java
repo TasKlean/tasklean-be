@@ -108,6 +108,13 @@ public final class FieldLimits {
     /** How many tasks a board page holds when the caller names no size. */
     public static final int TASK_PAGE_SIZE = 20;
 
+    /**
+     * What somebody wrote about one instance of a chore - "the hoover bag needs changing".
+     * A TEXT column, so this bound is a judgement rather than the column's: a note is a remark
+     * on a single occurrence, and anything longer belongs in the task's description.
+     */
+    public static final int COMPLETION_NOTE = 1000;
+
     private FieldLimits() {
     }
 }

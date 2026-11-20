@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.task;
 
 import com.tasklean.api.common.exception.InvalidRequestException;
+import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.AuditAction;
 import com.tasklean.api.domain.auditlog.AuditChanges;
@@ -18,6 +19,7 @@ import com.tasklean.api.domain.tag.TagRepository;
 import com.tasklean.api.domain.tag.TagResolver;
 import com.tasklean.api.domain.tag.TaskTag;
 import com.tasklean.api.domain.tag.TaskTagRepository;
+import com.tasklean.api.domain.task.dto.AssignTaskRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardPage;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
@@ -34,6 +36,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -656,5 +659,120 @@ class TaskServiceTest {
 
         // A tag is text a member typed, and a household trail is kept for good.
         assertThat(capturedChanges().entries()).contains(AuditFieldChange.withheld("tagNames"));
+    }
+
+    // ---------------------------------------------------------------- claiming and handing on
+
+    private void choreIsLocked(Task task) {
+        when(taskRepository.findForUpdateByUid("tsk-1")).thenReturn(Optional.of(task));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(CALLER_USER_ID, GROUP_ID))
+                .thenReturn(Optional.of(member(AUTHOR_ID)));
+    }
+
+    private AssignTaskRequest assignTo(String memberUid) {
+        AssignTaskRequest request = new AssignTaskRequest();
+        request.setMemberUid(memberUid);
+        return request;
+    }
+
+    @Test
+    void claimTask_unassignedChore_becomesTheCallers() {
+        choreIsLocked(task());
+        savesWhatItIsGiven();
+
+        taskService.claimTask("tsk-1", CALLER_USER_ID);
+
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(AUTHOR_ID);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.TASK), any(), eq(AuditAction.TASK_CLAIMED),
+                any(), any(), any());
+    }
+
+    @Test
+    void claimTask_choreSomebodyAlreadyHas_isRefused() {
+        Task task = task();
+        task.setAssignedTo(member(77L));
+        choreIsLocked(task);
+
+        // Handing a chore on is a different act with a different right behind it, so claiming must
+        // not quietly do it.
+        assertThatThrownBy(() -> taskService.claimTask("tsk-1", CALLER_USER_ID))
+                .isInstanceOf(BusinessRuleException.class);
+        verify(taskRepository, never()).save(any());
+    }
+
+    @Test
+    void claimTask_callerFromAnotherHousehold_isRefused() {
+        when(taskRepository.findForUpdateByUid("tsk-1")).thenReturn(Optional.of(task()));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(CALLER_USER_ID, GROUP_ID))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taskService.claimTask("tsk-1", CALLER_USER_ID))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    void claimTask_always_locksTheRowFirst() {
+        choreIsLocked(task());
+        savesWhatItIsGiven();
+
+        taskService.claimTask("tsk-1", CALLER_USER_ID);
+
+        // Two people claiming at once would otherwise both read it as unassigned.
+        verify(taskRepository).findForUpdateByUid("tsk-1");
+        verify(taskRepository, never()).findByUidAndIsActiveTrue(any());
+    }
+
+    @Test
+    void claimTask_deletedTask_isNotFound() {
+        when(taskRepository.findForUpdateByUid("tsk-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taskService.claimTask("tsk-1", CALLER_USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void assignTask_aMemberOfTheHousehold_getsTheChore() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        when(groupMemberRepository.findByUid("gm-5")).thenReturn(Optional.of(member(AUTHOR_ID)));
+        savesWhatItIsGiven();
+
+        taskService.assignTask("tsk-1", assignTo("gm-5"));
+
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(AUTHOR_ID);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.TASK), any(), eq(AuditAction.TASK_ASSIGNED),
+                any(), any(), any());
+    }
+
+    @Test
+    void assignTask_noMemberNamed_releasesItBackToThePool() {
+        Task task = task();
+        task.setAssignedTo(member(AUTHOR_ID));
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task));
+        savesWhatItIsGiven();
+
+        taskService.assignTask("tsk-1", assignTo(null));
+
+        // The only way to put a chore down without giving it to somebody else.
+        assertThat(savedTask().getAssignedTo()).isNull();
+    }
+
+    @Test
+    void assignTask_memberOfAnotherHousehold_isNotFound() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        when(groupMemberRepository.findByUid("gm-outside")).thenReturn(Optional.of(
+                member(77L, Group.builder().idGroup(999L).build())));
+
+        // A reference into another household is as absent as one that never existed.
+        assertThatThrownBy(() -> taskService.assignTask("tsk-1", assignTo("gm-outside")))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(taskRepository, never()).save(any());
+    }
+
+    @Test
+    void assignTask_deletedTask_isNotFound() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> taskService.assignTask("tsk-1", assignTo("gm-5")))
+                .isInstanceOf(ResourceNotFoundException.class);
     }
 }

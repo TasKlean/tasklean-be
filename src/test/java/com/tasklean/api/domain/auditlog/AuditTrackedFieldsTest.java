@@ -5,6 +5,7 @@ import com.tasklean.api.domain.category.dto.CategoryUpdateRequest;
 import com.tasklean.api.domain.group.dto.GroupRequest;
 import com.tasklean.api.domain.tag.dto.TagCreateRequest;
 import com.tasklean.api.domain.tag.dto.TagUpdateRequest;
+import com.tasklean.api.domain.task.dto.AssignTaskRequest;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import com.tasklean.api.domain.user.dto.UserRequest;
@@ -52,6 +53,17 @@ class AuditTrackedFieldsTest {
         // Everything editable is inherited from the update request above; a create adds only the
         // household, which no edit can change and so no entry ever reports.
         assertEveryFieldClassified(TaskCreateRequest.class, Set.of(), Set.of(), Set.of("groupUid"));
+    }
+
+    @Test
+    void assignTaskRequest_everyField_isClassified() {
+        // Recorded, value withheld - a membership uid says nothing on its own. The entry names it
+        // "assignedToUid", as an edit of the task does: one field must not read as two in the trail
+        // just because two endpoints can move it.
+        assertEveryFieldClassified(AssignTaskRequest.class,
+                Set.of(),
+                Set.of("memberUid"),
+                Set.of());
     }
 
     @Test

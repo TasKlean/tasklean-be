@@ -1,8 +1,10 @@
 package com.tasklean.api.domain.task;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
@@ -46,6 +48,22 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
      * @return the task, or empty if no active task has that UID
      */
     Optional<Task> findByUidAndIsActiveTrue(String uid);
+
+    /**
+     * One active task by uid, with its row locked until the transaction ends. Recording an
+     * instance reads the schedule and then writes it forward, so two callers completing the same
+     * chore at once would otherwise both read the same due date - one of them then losing to the
+     * unique index as a 500 instead of being told the chore is already done.
+     *
+     * <p>Deliberately graph-free: {@code FOR UPDATE} cannot be applied to the nullable side of an
+     * outer join, which is what fetching an optional assignee would make it.
+     *
+     * @param uid the task's public UID
+     * @return the task, or empty if no active task has that uid
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select t from Task t where t.uid = :uid and t.isActive = true")
+    Optional<Task> findForUpdateByUid(String uid);
 
     /**
      * How many live tasks are classified under a category. Archived and completed ones count:

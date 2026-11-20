@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.auditlog;
 
 import com.tasklean.api.auth.jwt.AuthPrincipal;
+import com.tasklean.api.common.KeysetCursor;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
 import com.tasklean.api.domain.auditlog.dto.AuditLogPage;
 import com.tasklean.api.domain.auditlog.dto.AuditLogQueryRequest;
@@ -61,7 +62,7 @@ class AuditLogServiceTest {
     private AuditLogFilter auditLogFilter;
 
     @Mock
-    private AuditLogCursor auditLogCursor;
+    private KeysetCursor keysetCursor;
 
     @Mock
     private GroupRepository groupRepository;
@@ -360,7 +361,7 @@ class AuditLogServiceTest {
         // The read asks for one row beyond the page, so the extra one is what proves there is more.
         groupExists();
         whenFeedHolds(List.of(entryWithKey(3L), entryWithKey(2L), entryWithKey(1L)));
-        when(auditLogCursor.encode(any())).thenReturn("next-cursor");
+        when(keysetCursor.encode(any(), any())).thenReturn("next-cursor");
 
         AuditLogPage page = auditLogService.getGroupLogs(GROUP_UID, caller(), query(2));
 
@@ -430,7 +431,7 @@ class AuditLogServiceTest {
         groupExists();
         Specification<AuditLog> feed = Specification.unrestricted();
         when(auditLogFilter.narrow(any(), any(), any())).thenReturn(feed);
-        when(auditLogCursor.decode("page-2")).thenReturn(new AuditLogCursor.Position(NOW, 9L));
+        when(keysetCursor.decode("page-2")).thenReturn(new KeysetCursor.Position(NOW, 9L));
         whenFeedHolds(List.of());
 
         AuditLogQueryRequest request = query(20);

@@ -8,6 +8,9 @@ import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import com.tasklean.api.domain.task.dto.TaskResponse;
+import com.tasklean.api.domain.taskcompletion.TaskCompletionService;
+import com.tasklean.api.domain.taskcompletion.dto.TaskCompletionResponse;
+import com.tasklean.api.domain.taskcompletion.dto.TaskHistoryPage;
 import com.tasklean.api.domain.user.User;
 import com.tasklean.api.domain.user.UserRole;
 import com.tasklean.api.security.GroupSecurity;
@@ -47,6 +50,9 @@ class TaskControllerSecurityTest {
 
     @MockitoBean
     private TaskService taskService;
+
+    @MockitoBean
+    private TaskCompletionService taskCompletionService;
 
     @MockitoBean
     private JwtService jwtService;
@@ -216,5 +222,145 @@ class TaskControllerSecurityTest {
         // A task belongs to a household, so no platform role reaches it from outside one.
         mockMvc.perform(delete("/api/tasks/{uid}", TASK_UID).with(as(UserRole.SUPER_ADMIN)))
                 .andExpect(status().isForbidden());
+    }
+
+    // --- doing it: any member of the household; whose chore it is, the service decides ---
+
+    @Test
+    void completeTask_plainMemberOfThatHousehold_created() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+        when(taskCompletionService.complete(any(), any(), any())).thenReturn(new TaskCompletionResponse());
+
+        // Membership is the coarse right, which is all an expression can state. A chore assigned to
+        // somebody else is refused by TaskCompletionService, not here.
+        mockMvc.perform(post("/api/tasks/{uid}/complete", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void completeTask_callerNotInThatHousehold_forbidden() throws Exception {
+        mockMvc.perform(post("/api/tasks/{uid}/complete", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void completeTask_platformAdminOutsideTheHousehold_forbidden() throws Exception {
+        mockMvc.perform(post("/api/tasks/{uid}/complete", TASK_UID).with(as(UserRole.SUPER_ADMIN))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void completeTask_overLongNote_isBadRequest() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+
+        mockMvc.perform(post("/api/tasks/{uid}/complete", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"note\":\"" + "x".repeat(1001) + "\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void completeTask_absurdMinutes_isBadRequest() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+
+        mockMvc.perform(post("/api/tasks/{uid}/complete", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"minutes\":99999}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void skipTask_plainMemberOfThatHousehold_created() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+        when(taskCompletionService.skip(any(), any(), any())).thenReturn(new TaskCompletionResponse());
+
+        mockMvc.perform(post("/api/tasks/{uid}/skip", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void skipTask_callerNotInThatHousehold_forbidden() throws Exception {
+        mockMvc.perform(post("/api/tasks/{uid}/skip", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    // --- claiming: any member, since volunteering needs no right over the task ---
+
+    @Test
+    void claimTask_plainMemberOfThatHousehold_ok() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+        when(taskService.claimTask(any(), any())).thenReturn(new TaskResponse());
+
+        mockMvc.perform(post("/api/tasks/{uid}/claim", TASK_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void claimTask_callerNotInThatHousehold_forbidden() throws Exception {
+        mockMvc.perform(post("/api/tasks/{uid}/claim", TASK_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    // --- handing it on: the author or a household admin, not any member ---
+
+    @Test
+    void assignTask_plainMemberWhoDidNotCreateIt_forbidden() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+
+        // Deciding who does a chore is not the same as doing it, which is why this one endpoint on
+        // the chore is gated harder than completing it.
+        mockMvc.perform(put("/api/tasks/{uid}/assignee", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void assignTask_itsAuthor_ok() throws Exception {
+        taskAuthoredBy(CALLER_MEMBERSHIP_ID, GroupRole.GROUP_MEMBER);
+        when(taskService.assignTask(any(), any())).thenReturn(new TaskResponse());
+
+        mockMvc.perform(put("/api/tasks/{uid}/assignee", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void assignTask_householdAdmin_ok() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_ADMIN);
+        when(taskService.assignTask(any(), any())).thenReturn(new TaskResponse());
+
+        mockMvc.perform(put("/api/tasks/{uid}/assignee", TASK_UID).with(as(UserRole.USER))
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk());
+    }
+
+    // --- history: any member of the household ---
+
+    @Test
+    void getTaskHistory_plainMemberOfThatHousehold_ok() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+        when(taskCompletionService.getHistory(any(), any())).thenReturn(new TaskHistoryPage());
+
+        mockMvc.perform(get("/api/tasks/{uid}/completions", TASK_UID).with(as(UserRole.USER)))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getTaskHistory_callerNotInThatHousehold_forbidden() throws Exception {
+        mockMvc.perform(get("/api/tasks/{uid}/completions", TASK_UID).with(as(UserRole.USER)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTaskHistory_absurdLimit_isBadRequest() throws Exception {
+        taskAuthoredBy(9L, GroupRole.GROUP_MEMBER);
+
+        mockMvc.perform(get("/api/tasks/{uid}/completions", TASK_UID).param("limit", "5000")
+                        .with(as(UserRole.USER)))
+                .andExpect(status().isBadRequest());
     }
 }

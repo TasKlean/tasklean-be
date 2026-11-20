@@ -16,9 +16,6 @@
     "description" : "The caller's own notification settings: which channels deliver which notification type.",
     "name" : "Notification settings"
   }, {
-    "description" : "Immutable records of a task being completed, with optional photo proof.",
-    "name" : "Task completions"
-  }, {
     "description" : "The caller's own account security: change/set password, connected accounts (Google), and deactivation.",
     "name" : "Account"
   }, {
@@ -45,6 +42,9 @@
   }, {
     "description" : "Group-scoped task categories.",
     "name" : "Categories"
+  }, {
+    "description" : "Individual entries in a chore's history",
+    "name" : "Task history"
   }, {
     "description" : "Chores within a household.",
     "name" : "Tasks"
@@ -3027,64 +3027,20 @@
         "tags" : [ "Tags" ]
       }
     },
-    "/api/task-completions" : {
-      "get" : {
-        "description" : "Lists a task's completion history, newest first.",
-        "operationId" : "getCompletionsByTask",
+    "/api/task-completions/{id}" : {
+      "delete" : {
+        "description" : "Takes an entry back, putting the chore's schedule where it was before it. Whoever the entry\n is attributed to may, as may the household's admin; only the newest entry can be undone.",
+        "operationId" : "undoCompletion",
         "parameters" : [ {
-          "description" : "the task id",
-          "in" : "query",
-          "name" : "taskId",
+          "description" : "the entry's id",
+          "in" : "path",
+          "name" : "id",
           "required" : true,
           "schema" : {
             "type" : "integer",
             "format" : "int64"
           }
         } ],
-        "responses" : {
-          "200" : {
-            "content" : {
-              "*/*" : {
-                "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListTaskCompletionResponse"
-                }
-              }
-            },
-            "description" : "<code>200 OK</code> with the completions"
-          },
-          "400" : {
-            "$ref" : "#/components/responses/BadRequest"
-          },
-          "401" : {
-            "$ref" : "#/components/responses/Unauthorized"
-          },
-          "403" : {
-            "$ref" : "#/components/responses/Forbidden"
-          },
-          "429" : {
-            "$ref" : "#/components/responses/TooManyRequests"
-          },
-          "500" : {
-            "$ref" : "#/components/responses/InternalServerError"
-          }
-        },
-        "summary" : "Lists a task's completion history, newest first.",
-        "tags" : [ "Task completions" ]
-      },
-      "post" : {
-        "description" : "Records a task completion.",
-        "operationId" : "createCompletion",
-        "requestBody" : {
-          "content" : {
-            "application/json" : {
-              "schema" : {
-                "$ref" : "#/components/schemas/TaskCompletionRequest"
-              }
-            }
-          },
-          "description" : "the completion details (task, member, optional photo/note)",
-          "required" : true
-        },
         "responses" : {
           "200" : {
             "content" : {
@@ -3094,7 +3050,7 @@
                 }
               }
             },
-            "description" : "<code>201 Created</code> with the recorded completion"
+            "description" : "<code>200 OK</code> with the entry and the chore's restored state"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -3112,18 +3068,16 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Records a task completion.",
-        "tags" : [ "Task completions" ]
-      }
-    },
-    "/api/task-completions/member/{groupMemberId}" : {
+        "summary" : "Takes an entry back, putting the chore's schedule where it was before it.",
+        "tags" : [ "Task history" ]
+      },
       "get" : {
-        "description" : "Lists the completions recorded by a group member, newest first.",
-        "operationId" : "getCompletionsByMember",
+        "description" : "Returns one entry from a chore's history. Any member of the household may read it.",
+        "operationId" : "getCompletion",
         "parameters" : [ {
-          "description" : "the group member id",
+          "description" : "the entry's id",
           "in" : "path",
-          "name" : "groupMemberId",
+          "name" : "id",
           "required" : true,
           "schema" : {
             "type" : "integer",
@@ -3135,11 +3089,11 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/ApiResponseListTaskCompletionResponse"
+                  "$ref" : "#/components/schemas/ApiResponseTaskCompletionResponse"
                 }
               }
             },
-            "description" : "<code>200 OK</code> with the completions"
+            "description" : "<code>200 OK</code> with the entry"
           },
           "400" : {
             "$ref" : "#/components/responses/BadRequest"
@@ -3157,8 +3111,8 @@
             "$ref" : "#/components/responses/InternalServerError"
           }
         },
-        "summary" : "Lists the completions recorded by a group member, newest first.",
-        "tags" : [ "Task completions" ]
+        "summary" : "Returns one entry from a chore's history.",
+        "tags" : [ "Task history" ]
       }
     },
     "/api/tasks" : {
@@ -3387,6 +3341,279 @@
           }
         },
         "summary" : "Retires a task the household has stopped doing, keeping its history.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/tasks/{uid}/assignee" : {
+      "put" : {
+        "description" : "Hands a chore to a member of its household, or releases it when no member is named. The\n author or a group admin, not any member: deciding who does a chore is not the same as doing\n it, and a PUT so that releasing it is the same call with nothing in it.",
+        "operationId" : "assignTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AssignTaskRequest"
+              }
+            }
+          },
+          "description" : "who to assign it to, or nothing to release it",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the task and its new assignee"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Hands a chore to a member of its household, or releases it when no member is named.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/tasks/{uid}/claim" : {
+      "post" : {
+        "description" : "Takes an unassigned chore. Any member may, since volunteering needs no right over the task.",
+        "operationId" : "claimTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskResponse"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the task, now the caller's"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Takes an unassigned chore.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/tasks/{uid}/complete" : {
+      "post" : {
+        "description" : "Records a chore as done. Membership is the coarse right, which is all an expression can\n state: whether this chore is the caller's to do depends on who it is assigned to, so\n <code>TaskCompletionService</code> refuses somebody else's. An unassigned one is claimed here.",
+        "operationId" : "completeTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CompleteTaskRequest"
+              }
+            }
+          },
+          "description" : "the note and, optionally, how long it really took",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskCompletionResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the entry recorded and the chore's new state"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Records a chore as done.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/tasks/{uid}/completions" : {
+      "get" : {
+        "description" : "Returns a page of a chore's history, most recently due first. Any member of the household.",
+        "operationId" : "getTaskHistory",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "Opaque, from the previous page's <code>nextCursor</code>. Absent for the first page.",
+          "in" : "query",
+          "name" : "cursor",
+          "required" : false,
+          "schema" : {
+            "type" : "string",
+            "maxLength" : 128,
+            "minLength" : 0
+          }
+        }, {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32",
+            "maximum" : 100,
+            "minimum" : 1
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskHistoryPage"
+                }
+              }
+            },
+            "description" : "<code>200 OK</code> with the page"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Returns a page of a chore's history, most recently due first.",
+        "tags" : [ "Tasks" ]
+      }
+    },
+    "/api/tasks/{uid}/skip" : {
+      "post" : {
+        "description" : "Records a chore as skipped - this round happened and nobody did it. Same rights as doing it.",
+        "operationId" : "skipTask",
+        "parameters" : [ {
+          "description" : "the task's public UID",
+          "in" : "path",
+          "name" : "uid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SkipTaskRequest"
+              }
+            }
+          },
+          "description" : "the note saying why",
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ApiResponseTaskCompletionResponse"
+                }
+              }
+            },
+            "description" : "<code>201 Created</code> with the entry recorded and the chore's new state"
+          },
+          "400" : {
+            "$ref" : "#/components/responses/BadRequest"
+          },
+          "401" : {
+            "$ref" : "#/components/responses/Unauthorized"
+          },
+          "403" : {
+            "$ref" : "#/components/responses/Forbidden"
+          },
+          "429" : {
+            "$ref" : "#/components/responses/TooManyRequests"
+          },
+          "500" : {
+            "$ref" : "#/components/responses/InternalServerError"
+          }
+        },
+        "summary" : "Records a chore as skipped - this round happened and nobody did it.",
         "tags" : [ "Tasks" ]
       }
     },
@@ -4163,27 +4390,6 @@
           }
         }
       },
-      "ApiResponseListTaskCompletionResponse" : {
-        "type" : "object",
-        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
-        "properties" : {
-          "code" : {
-            "type" : "string"
-          },
-          "data" : {
-            "type" : "array",
-            "items" : {
-              "$ref" : "#/components/schemas/TaskCompletionResponse"
-            }
-          },
-          "message" : {
-            "type" : "string"
-          },
-          "success" : {
-            "type" : "boolean"
-          }
-        }
-      },
       "ApiResponseListUserResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -4386,6 +4592,24 @@
           }
         }
       },
+      "ApiResponseTaskHistoryPage" : {
+        "type" : "object",
+        "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "data" : {
+            "$ref" : "#/components/schemas/TaskHistoryPage"
+          },
+          "message" : {
+            "type" : "string"
+          },
+          "success" : {
+            "type" : "boolean"
+          }
+        }
+      },
       "ApiResponseTaskResponse" : {
         "type" : "object",
         "description" : "Standard response envelope wrapping every API result with a <code>success</code> flag,\n an optional <code>message</code>, an optional machine-readable <code>code</code> (present only on\n selected errors), and the payload <code>data</code>. Construct via the static factory methods\n rather than the builder directly.",
@@ -4525,6 +4749,17 @@
           },
           "success" : {
             "type" : "boolean"
+          }
+        }
+      },
+      "AssignTaskRequest" : {
+        "type" : "object",
+        "properties" : {
+          "memberUid" : {
+            "type" : "string",
+            "description" : "Who the chore is for, by membership UID. Absent or null releases it back to the household\n pool, which is the only way to put a chore down without giving it to somebody else.",
+            "maxLength" : 100,
+            "minLength" : 0
           }
         }
       },
@@ -4743,6 +4978,23 @@
           }
         },
         "required" : [ "currentPassword" ]
+      },
+      "CompleteTaskRequest" : {
+        "type" : "object",
+        "properties" : {
+          "minutes" : {
+            "type" : "integer",
+            "format" : "int32",
+            "description" : "How long it actually took. Left out, the task's estimate is snapshotted instead, so the\n share is never silently zero for a chore nobody timed.",
+            "maximum" : 1440,
+            "minimum" : 1
+          },
+          "note" : {
+            "type" : "string",
+            "maxLength" : 1000,
+            "minLength" : 0
+          }
+        }
       },
       "ConnectedAccountsResponse" : {
         "type" : "object",
@@ -5352,6 +5604,16 @@
           }
         }
       },
+      "SkipTaskRequest" : {
+        "type" : "object",
+        "properties" : {
+          "note" : {
+            "type" : "string",
+            "maxLength" : 1000,
+            "minLength" : 0
+          }
+        }
+      },
       "TagCreateRequest" : {
         "type" : "object",
         "description" : "A new tag. Everything editable comes from {@link TagUpdateRequest TagUpdateRequest}; this adds the household it\n belongs to. Any member may create one — a tag is a label somebody found useful, not a setting.",
@@ -5454,29 +5716,12 @@
           }
         }
       },
-      "TaskCompletionRequest" : {
-        "type" : "object",
-        "properties" : {
-          "completionNote" : {
-            "type" : "string"
-          },
-          "completionPhotoUid" : {
-            "type" : "string"
-          },
-          "groupMemberId" : {
-            "type" : "integer",
-            "format" : "int64"
-          },
-          "taskId" : {
-            "type" : "integer",
-            "format" : "int64"
-          }
-        },
-        "required" : [ "groupMemberId", "taskId" ]
-      },
       "TaskCompletionResponse" : {
         "type" : "object",
         "properties" : {
+          "attributedTo" : {
+            "$ref" : "#/components/schemas/UserSummaryResponse"
+          },
           "completionNote" : {
             "type" : "string"
           },
@@ -5491,17 +5736,37 @@
             "type" : "string",
             "format" : "date-time"
           },
-          "groupMemberId" : {
-            "type" : "integer",
-            "format" : "int64"
+          "dueDate" : {
+            "type" : "string",
+            "format" : "date-time"
           },
           "id" : {
             "type" : "integer",
             "format" : "int64"
           },
-          "taskId" : {
+          "minutes" : {
             "type" : "integer",
-            "format" : "int64"
+            "format" : "int32"
+          },
+          "outcome" : {
+            "type" : "string",
+            "enum" : [ "DONE", "SKIPPED", "MISSED" ]
+          },
+          "taskName" : {
+            "type" : "string"
+          },
+          "taskNextDueDate" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "taskStatus" : {
+            "type" : "string",
+            "description" : "Where the task stands now that this instance is recorded. Carried on the action's own answer\n so a client need not re-read the task to redraw the card it just acted on.",
+            "enum" : [ "TODO", "IN_PROGRESS", "COMPLETED", "ARCHIVED" ]
+          },
+          "taskUid" : {
+            "type" : "string",
+            "description" : "The task by its uid, never its row id - an instance is addressed by id, its task is not."
           }
         }
       },
@@ -5570,6 +5835,28 @@
           }
         },
         "required" : [ "groupUid", "name", "priority" ]
+      },
+      "TaskHistoryPage" : {
+        "type" : "object",
+        "description" : "One page of a task's history. Cursor-paged rather than page-numbered, unlike the board: a daily\n chore accumulates a row a day, and nothing about a history needs a page count.",
+        "properties" : {
+          "items" : {
+            "type" : "array",
+            "description" : "The instances, most recently recorded first.",
+            "items" : {
+              "$ref" : "#/components/schemas/TaskCompletionResponse"
+            }
+          },
+          "nextCursor" : {
+            "type" : "string",
+            "description" : "Pass as <code>cursor</code> to get the next page. <code>null</code> means this page is the last."
+          },
+          "total" : {
+            "type" : "integer",
+            "format" : "int64",
+            "description" : "How many instances this task has recorded in total, pages included."
+          }
+        }
       },
       "TaskResponse" : {
         "type" : "object",
