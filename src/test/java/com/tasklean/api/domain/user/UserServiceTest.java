@@ -58,7 +58,7 @@ class UserServiceTest {
     @Test
     void updateUserRole_changesRoleAndAudits() {
         User user = User.builder().idUser(1L).uid("usr-x").role(UserRole.USER).build();
-        when(userRepository.findByUid("usr-x")).thenReturn(Optional.of(user));
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArgument(0));
 
         UserResponse response = userService.updateUserRole("usr-x", UserRole.ADMIN);
@@ -73,8 +73,19 @@ class UserServiceTest {
     }
 
     @Test
+    void updateUserRole_closedAccount_throwsNotFound() {
+        when(userRepository.findByUidAndIsActiveTrue("usr-x")).thenReturn(Optional.empty());
+
+        // Reads stay permissive so staff can still see a closed account, but granting one a
+        // platform role would hand privilege to something nobody can sign in to.
+        assertThatThrownBy(() -> userService.updateUserRole("usr-x", UserRole.ADMIN))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
     void updateUserRole_unknownUid_throwsNotFound() {
-        when(userRepository.findByUid("nope")).thenReturn(Optional.empty());
+        when(userRepository.findByUidAndIsActiveTrue("nope")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> userService.updateUserRole("nope", UserRole.ADMIN))
                 .isInstanceOf(ResourceNotFoundException.class);

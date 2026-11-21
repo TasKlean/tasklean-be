@@ -30,6 +30,8 @@ public class GroupMemberController {
     /**
      * Adds a user to a group directly. This is platform tooling: a household admin invites people
      * by sharing the group's invite code, which is the only route that asks for the joiner's consent.
+     * Somebody who previously left or was removed is readmitted on their original membership, with
+     * the role given here; only a current member is refused. A closed account cannot be added.
      *
      * @param request   the group, the user to add, and the role to give them
      * @param principal the authenticated caller

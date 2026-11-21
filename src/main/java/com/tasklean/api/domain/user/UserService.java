@@ -108,7 +108,10 @@ public class UserService {
      */
     @Transactional
     public UserResponse updateUserRole(String uid, UserRole role) {
-        User user = userRepository.findByUid(uid)
+        // Writes target a live account only, the same split the membership service keeps: reads
+        // stay permissive so staff can still see a closed account, but granting it a platform role
+        // would hand privilege to something nobody can sign in to.
+        User user = userRepository.findByUidAndIsActiveTrue(uid)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
 
         AuditChanges changes = AuditChanges.create()

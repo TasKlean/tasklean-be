@@ -23,6 +23,8 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Clock;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
@@ -200,7 +202,7 @@ class GroupMemberServiceTest {
         GroupMember acting = actor();
         stubActor(acting);
         when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
-        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.of(user()));
+        when(userRepository.findByUidAndIsActiveTrue(USER_UID)).thenReturn(Optional.of(user()));
         ArgumentCaptor<GroupMember> saved = ArgumentCaptor.forClass(GroupMember.class);
         when(groupMemberRepository.save(saved.capture())).thenAnswer(i -> i.getArgument(0));
 
@@ -216,7 +218,7 @@ class GroupMemberServiceTest {
         stubGroup();
         stubActor(null);
         when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
-        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.of(user()));
+        when(userRepository.findByUidAndIsActiveTrue(USER_UID)).thenReturn(Optional.of(user()));
         ArgumentCaptor<GroupMember> saved = ArgumentCaptor.forClass(GroupMember.class);
         when(groupMemberRepository.save(saved.capture())).thenAnswer(i -> i.getArgument(0));
 
@@ -385,13 +387,49 @@ class GroupMemberServiceTest {
     void addMember_newMembership_persistsWithRoleAndUid() {
         stubGroup();
         when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
-        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.of(user()));
+        when(userRepository.findByUidAndIsActiveTrue(USER_UID)).thenReturn(Optional.of(user()));
         when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
 
         var response = groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), USER_ID);
 
         assertThat(response.getRole()).isEqualTo(GroupRole.GROUP_MEMBER);
         assertThat(response.getUid()).isNotBlank();
+    }
+
+    @Test
+    void addMember_formerMember_isReadmittedOnTheirOriginalRow() {
+        stubGroup();
+        GroupMember left = member(GroupRole.GROUP_MEMBER, false);
+        left.setDateLeft(LocalDateTime.now(ZoneOffset.UTC));
+        when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID))
+                .thenReturn(Optional.of(left));
+        when(userRepository.findByUidAndIsActiveTrue(USER_UID)).thenReturn(Optional.of(user()));
+        when(groupMemberRepository.save(any(GroupMember.class))).thenAnswer(i -> i.getArgument(0));
+
+        groupMemberService.addMember(request(GroupRole.GROUP_ADMIN), USER_ID);
+
+        // The unique (user_id, group_id) pair rules a second row out, so refusing would leave a
+        // former member unaddable for good - the invite-code path revives the row for the same reason.
+        ArgumentCaptor<GroupMember> saved = ArgumentCaptor.forClass(GroupMember.class);
+        verify(groupMemberRepository).save(saved.capture());
+        assertThat(saved.getValue()).isSameAs(left);
+        assertThat(left.getIsActive()).isTrue();
+        assertThat(left.getDateLeft()).isNull();
+        // The role the admin asked for, not the one they held before leaving.
+        assertThat(left.getRole()).isEqualTo(GroupRole.GROUP_ADMIN);
+    }
+
+    @Test
+    void addMember_closedAccount_isNotFound() {
+        stubGroup();
+        when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByUidAndIsActiveTrue(USER_UID)).thenReturn(Optional.empty());
+
+        // Adding one back would undo what MembershipClosure did, leaving a household a member
+        // who can never answer and could inherit the last admin's seat.
+        assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(groupMemberRepository, never()).save(any());
     }
 
     @Test
@@ -418,7 +456,7 @@ class GroupMemberServiceTest {
     void addMember_unknownUser_throwsNotFound() {
         stubGroup();
         when(groupMemberRepository.findByUserUidAndGroupUid(USER_UID, GROUP_UID)).thenReturn(Optional.empty());
-        when(userRepository.findByUid(USER_UID)).thenReturn(Optional.empty());
+        when(userRepository.findByUidAndIsActiveTrue(USER_UID)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> groupMemberService.addMember(request(GroupRole.GROUP_MEMBER), USER_ID))
                 .isInstanceOf(ResourceNotFoundException.class);

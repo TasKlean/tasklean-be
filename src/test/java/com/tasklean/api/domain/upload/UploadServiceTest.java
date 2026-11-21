@@ -212,6 +212,18 @@ class UploadServiceTest {
     }
 
     @Test
+    void downloadUrl_sweptUpload_throwsNotFound() {
+        when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.of(Upload.builder()
+                .uid(UPLOAD_UID).storageKey("group-photo/x.png").status(UploadStatus.DELETED).build()));
+
+        // The sweeper deletes the object before marking the row, so signing for it would hand out
+        // a URL that only 404s at the bucket.
+        assertThatThrownBy(() -> uploadService.downloadUrl(UPLOAD_UID))
+                .isInstanceOf(ResourceNotFoundException.class);
+        verify(objectStorage, never()).presignDownload(anyString());
+    }
+
+    @Test
     void downloadUrl_unknownUid_throwsNotFound() {
         when(uploadRepository.findByUid(UPLOAD_UID)).thenReturn(Optional.empty());
 

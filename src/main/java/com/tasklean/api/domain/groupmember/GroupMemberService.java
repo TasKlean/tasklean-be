@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -77,34 +78,64 @@ public class GroupMemberService {
      * @param request      the group, the user to add, and the role to give them
      * @param callerUserId the id of the authenticated caller
      * @return the created membership
-     * @throws DuplicateResourceException if the user already has a membership of the group
-     * @throws ResourceNotFoundException  if the user does not exist, or the group does not or is deleted
+     * <p>Somebody who left or was removed is <em>readmitted</em> on their original row rather than
+     * refused, exactly as the invite-code path does.
+     *
+     * @throws DuplicateResourceException if the user is already an active member of the group
+     * @throws ResourceNotFoundException  if the user does not exist or has closed their account,
+     *                                    or the group does not exist or is deleted
      */
     @Transactional
     public GroupMemberResponse addMember(GroupMemberRequest request, Long callerUserId) {
         String groupUid = request.getGroupUid();
         Group group = requireGroup(groupUid);
-        if (groupMemberRepository.findByUserUidAndGroupUid(request.getUserUid(), groupUid).isPresent()) {
+        Optional<GroupMember> previous =
+                groupMemberRepository.findByUserUidAndGroupUid(request.getUserUid(), groupUid);
+        if (previous.filter(m -> Boolean.TRUE.equals(m.getIsActive())).isPresent()) {
             throw new DuplicateResourceException("User is already a member of this group");
         }
 
-        User user = userRepository.findByUid(request.getUserUid())
+        // Active accounts only, and on both branches: a closed one cannot act, so adding or
+        // readmitting it would undo what MembershipClosure did on closure and leave the household
+        // a member who can never answer - one who could then inherit the last admin's seat.
+        User user = userRepository.findByUidAndIsActiveTrue(request.getUserUid())
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.USER_NOT_FOUND));
 
-        GroupMember member = GroupMember.builder()
-                .uid(UUID.randomUUID().toString())
-                .user(user)
-                .group(group)
-                .role(request.getRole())
-                .isActive(true)
-                .dateJoined(LocalDateTime.now(clock))
-                .addedBy(actingMember(callerUserId, group.getIdGroup()))
-                .build();
+        GroupMember addedBy = actingMember(callerUserId, group.getIdGroup());
+        boolean readmitted = previous.isPresent();
+
+        GroupMember member = previous
+                .map(existing -> readmit(existing, request.getRole(), addedBy))
+                .orElseGet(() -> GroupMember.builder()
+                        .uid(UUID.randomUUID().toString())
+                        .user(user)
+                        .group(group)
+                        .role(request.getRole())
+                        .isActive(true)
+                        .dateJoined(LocalDateTime.now(clock))
+                        .addedBy(addedBy)
+                        .build());
+
         GroupMember saved = groupMemberRepository.save(member);
-        log.info("Group member added: memberUid={} groupUid={}", saved.getUid(), groupUid);
+        log.info("Group member added: memberUid={} groupUid={} readmitted={}",
+                saved.getUid(), groupUid, readmitted);
         auditLogService.recordEvent(AuditEntityType.GROUP_MEMBER, saved.getIdGroupMember(), AuditAction.MEMBER_ADDED,
-                "Member added with role " + saved.getRole(), group);
+                (readmitted ? "Member readmitted with role " : "Member added with role ") + saved.getRole(), group);
         return GroupMemberResponse.from(saved);
+    }
+
+    // Revives the row a former member left behind rather than twinning it - the unique
+    // (user_id, group_id) pair rules a second one out, so refusing would leave them unaddable for
+    // good. GroupService.rejoin is the self-service half of this; it forces GROUP_MEMBER, while an
+    // admin readmitting somebody gives the role they asked for.
+    private GroupMember readmit(GroupMember existing, GroupRole role, GroupMember addedBy) {
+        existing.setIsActive(true);
+        existing.setRole(role);
+        existing.setDateJoined(LocalDateTime.now(clock));
+        existing.setDateLeft(null);
+        existing.setRemovedBy(null);
+        existing.setAddedBy(addedBy);
+        return existing;
     }
 
     /**

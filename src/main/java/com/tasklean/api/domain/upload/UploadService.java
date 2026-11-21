@@ -96,6 +96,9 @@ public class UploadService {
      */
     public SignedUrlResponse downloadUrl(String uid) {
         Upload upload = uploadRepository.findByUid(uid)
+                // The sweeper deletes the object before marking the row, so a DELETED upload has
+                // nothing behind it: signing for it would hand out a URL that only 404s.
+                .filter(u -> u.getStatus() != UploadStatus.DELETED)
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.UPLOAD_NOT_FOUND));
         return SignedUrlResponse.builder()
                 .url(objectStorage.presignDownload(upload.getStorageKey()))
