@@ -196,7 +196,7 @@ class TaskMissSweeperTest {
 
     @Test
     void sweepMissedRounds_nothingDue_readsNothingFurther() {
-        when(taskRepository.findUidsWithRoundPast(any(), any(), any())).thenReturn(List.of());
+        when(taskRepository.findUidsWithRoundPast(any(), any(), any(), any())).thenReturn(List.of());
 
         sweeper.sweepMissedRounds();
 
@@ -205,7 +205,7 @@ class TaskMissSweeperTest {
 
     @Test
     void sweepMissedRounds_oneChoreFailing_doesNotStopTheRest() {
-        when(taskRepository.findUidsWithRoundPast(any(), any(), any()))
+        when(taskRepository.findUidsWithRoundPast(any(), any(), any(), any()))
                 .thenReturn(List.of("tsk-bad", TASK_UID));
         when(taskRepository.findForUpdateByUid("tsk-bad")).thenThrow(new IllegalStateException("boom"));
         locked(recurring(today().minusDays(1), member(7L)));
@@ -217,10 +217,65 @@ class TaskMissSweeperTest {
         assertThat(savedCompletion().getOutcome()).isEqualTo(TaskOutcome.MISSED);
     }
 
+    // ------------------------------------------------------------- the round stays recordable
+
+    @Test
+    void sweepMissedRounds_weeklyRoundWhoseSuccessorIsNotDueYet_isWrittenOffButKeepsTheAnchor() {
+        LocalDateTime due = today().minusDays(1);
+        workListIs(TASK_UID);
+        Task task = onCadence(RecurrenceType.WEEKLY, due, member(7L));
+        locked(task);
+
+        sweeper.sweepMissedRounds();
+
+        assertThat(savedCompletion().getOutcome()).isEqualTo(TaskOutcome.MISSED);
+        // Parked, so the round is still what a completion lands on: rolling to next week would
+        // make the chore "not due yet" for six days and lose the work of whoever does it late.
+        assertThat(task.getNextDueDate()).isEqualTo(due);
+    }
+
+    @Test
+    void sweepMissedRounds_weeklyRoundWhoseSuccessorHasArrived_rollsOnAtLast() {
+        workListIs(TASK_UID);
+        Task task = onCadence(RecurrenceType.WEEKLY, today().minusDays(7), member(7L));
+        locked(task);
+
+        sweeper.sweepMissedRounds();
+
+        assertThat(task.getNextDueDate()).isEqualTo(today());
+    }
+
+    @Test
+    void sweepMissedRounds_oneOff_isWrittenOffAndStaysRecordableForGood() {
+        workListIs(TASK_UID);
+        Task task = onCadence(null, today().minusDays(30), member(7L));
+        locked(task);
+
+        sweeper.sweepMissedRounds();
+
+        // It has one round and no next, so the anchor never moves and the chore can still be done.
+        assertThat(savedCompletion().getOutcome()).isEqualTo(TaskOutcome.MISSED);
+        assertThat(task.getNextDueDate()).isEqualTo(today().minusDays(30));
+    }
+
+    @Test
+    void sweepMissedRounds_customRecurrence_isWrittenOffWithoutAskingForANextRound() {
+        workListIs(TASK_UID);
+        Task task = onCadence(RecurrenceType.CUSTOM, today().minusDays(1), member(7L));
+        locked(task);
+
+        sweeper.sweepMissedRounds();
+
+        // RecurrenceSchedule refuses CUSTOM, so asking it for a next round would throw and cost
+        // this chore its sweep on every run for ever.
+        assertThat(savedCompletion().getOutcome()).isEqualTo(TaskOutcome.MISSED);
+        assertThat(task.getNextDueDate()).isEqualTo(today().minusDays(1));
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     private void workListIs(String... uids) {
-        when(taskRepository.findUidsWithRoundPast(any(), any(), any())).thenReturn(List.of(uids));
+        when(taskRepository.findUidsWithRoundPast(any(), any(), any(), any())).thenReturn(List.of(uids));
         transactionsRunInline();
     }
 
@@ -235,11 +290,15 @@ class TaskMissSweeperTest {
     }
 
     private Task recurring(LocalDateTime nextDue, GroupMember assignee) {
+        return onCadence(RecurrenceType.DAILY, nextDue, assignee);
+    }
+
+    private Task onCadence(RecurrenceType type, LocalDateTime nextDue, GroupMember assignee) {
         return Task.builder()
                 .idTask(TASK_ID).uid(TASK_UID).name("Bins")
                 .status(TaskStatus.TODO)
                 .isActive(true)
-                .recurrenceType(RecurrenceType.DAILY)
+                .recurrenceType(type)
                 .nextDueDate(nextDue)
                 .assignedTo(assignee)
                 .group(Group.builder().idGroup(1L).uid("grp-1").build())

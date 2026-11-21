@@ -207,11 +207,14 @@ public class TaskCompletionService {
 
         LocalDateTime dueDate = task.getNextDueDate();
         requireRoundIsDue(dueDate);
-        // Not the double-tap guard - that is requireRoundIsDue, since the lock means a second
-        // caller reads an anchor the first already moved. This catches an anchor moved back onto
-        // a recorded round, and turns the unique index's 500 into a 409.
-        if (dueDate != null
-                && taskCompletionRepository.existsByTaskIdTaskAndDueDateAndIsActiveTrue(task.getIdTask(), dueDate)) {
+        // A round written off as missed is still the caller's to do, so its row is reused rather
+        // than refused - uq_tc_task_due allows one live row per round, and the work really did
+        // happen. Anything else already there is the double tap, and the 409 the index would be.
+        TaskCompletion existing = dueDate == null ? null
+                : taskCompletionRepository
+                        .findByTaskIdTaskAndDueDateAndIsActiveTrue(task.getIdTask(), dueDate)
+                        .orElse(null);
+        if (existing != null && existing.getOutcome() != TaskOutcome.MISSED) {
             throw new BusinessRuleException("This round of the chore is already recorded",
                     ErrorCodes.TASK_INSTANCE_ALREADY_RECORDED);
         }
@@ -227,28 +230,27 @@ public class TaskCompletionService {
             task.setAssignedTo(caller);
         }
 
-        TaskCompletion completion = taskCompletionRepository.save(TaskCompletion.builder()
-                .task(task)
-                .attributedTo(caller)
-                .dueDate(dueDate)
-                .outcome(outcome)
-                // The estimate is snapshotted when nothing better is reported, so a later edit to
-                // the estimate cannot rewrite what the share said last month. A skipped round gets
-                // none of it: nobody spent that time, and the share must not read as though they had.
-                .minutes(outcome == TaskOutcome.DONE
-                        ? (minutes != null ? minutes : task.getEstimatedTimeMinutes())
-                        : null)
-                .completionPhotoUid(
-                        uploadService.attachCompletionPhoto(photoUid, task, callerUserId))
-                .completionNote(note)
-                .dateCompleted(LocalDateTime.now(clock))
-                .build());
+        TaskCompletion completion = existing != null ? existing
+                : TaskCompletion.builder().task(task).dueDate(dueDate).build();
+        completion.setAttributedTo(caller);
+        completion.setOutcome(outcome);
+        // The estimate is snapshotted when nothing better is reported, so a later edit to the
+        // estimate cannot rewrite what the share said last month. A skipped round gets none of it:
+        // nobody spent that time, and the share must not read as though they had.
+        completion.setMinutes(outcome == TaskOutcome.DONE
+                ? (minutes != null ? minutes : task.getEstimatedTimeMinutes())
+                : null);
+        completion.setCompletionPhotoUid(
+                uploadService.attachCompletionPhoto(photoUid, task, callerUserId));
+        completion.setCompletionNote(note);
+        completion.setDateCompleted(LocalDateTime.now(clock));
+        taskCompletionRepository.save(completion);
 
         advanceSchedule(task, dueDate);
         Task saved = taskRepository.save(task);
 
-        log.info("Task instance recorded: id={} taskUid={} outcome={} claimed={}",
-                completion.getIdTaskCompletion(), saved.getUid(), outcome, claimed);
+        log.info("Task instance recorded: id={} taskUid={} outcome={} claimed={} wasMissed={}",
+                completion.getIdTaskCompletion(), saved.getUid(), outcome, claimed, existing != null);
         auditLogService.recordEvent(AuditEntityType.TASK_COMPLETION, completion.getIdTaskCompletion(),
                 outcome == TaskOutcome.DONE ? AuditAction.COMPLETE : AuditAction.TASK_SKIPPED,
                 "Task \"" + saved.getName() + "\" " + (outcome == TaskOutcome.DONE ? "done" : "skipped"),

@@ -97,25 +97,34 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
      * The uids of chores whose current round is already past, oldest first — the missed-round
      * sweep's work list.
      *
-     * <p>Only recurring chores: a one-off has no rounds to miss, it is simply overdue, which the
-     * board already says. Archived and soft-deleted ones are out, and {@link TaskStatus#OPEN} is
-     * what "still waiting to be done" means everywhere else too.
+     * <p>A chore on a rolling cadence is always a candidate, since its anchor may need moving on
+     * even once the round is written off. One that cannot roll - a one-off, or a custom rule -
+     * is a candidate only until its round has a row, or it would sit at the head of every run's
+     * work list for ever and starve the chores behind it. Archived and soft-deleted ones are out,
+     * and {@link TaskStatus#OPEN} is what "still waiting to be done" means everywhere else too.
      *
      * <p>Returns uids rather than rows because each one is then loaded and locked in its own
      * transaction; holding a lock across the whole batch would block the members doing the chores.
      *
-     * @param cutoff the first instant that is not yet written off
-     * @param limit  how many to return
+     * @param cutoff  the first instant that is not yet written off
+     * @param open    the statuses that still count as waiting
+     * @param rolling the cadences that can name a next round
+     * @param limit   how many to return
      * @return the uids, oldest round first
      */
     @Query("""
             select t.uid from Task t
             where t.isActive = true
-              and t.recurrenceType is not null
               and t.nextDueDate is not null
               and t.nextDueDate < :cutoff
               and t.status in :open
+              and (t.recurrenceType in :rolling
+                   or not exists (select 1 from TaskCompletion tc
+                                  where tc.task = t
+                                    and tc.dueDate = t.nextDueDate
+                                    and tc.isActive = true))
             order by t.nextDueDate, t.idTask
             """)
-    List<String> findUidsWithRoundPast(LocalDateTime cutoff, Collection<TaskStatus> open, Limit limit);
+    List<String> findUidsWithRoundPast(LocalDateTime cutoff, Collection<TaskStatus> open,
+                                       Collection<RecurrenceType> rolling, Limit limit);
 }

@@ -246,12 +246,56 @@ class TaskCompletionServiceTest {
         Task task = task();
         lockedWithoutSaving(task);
         callerIsMember();
-        when(taskCompletionRepository.existsByTaskIdTaskAndDueDateAndIsActiveTrue(TASK_ID, DUE))
-                .thenReturn(true);
+        roundHolds(task, TaskOutcome.DONE);
 
         assertThatThrownBy(() -> taskCompletionService.complete(TASK_UID, completeRequest(null), CALLER_USER_ID))
                 .isInstanceOf(BusinessRuleException.class);
         verify(taskCompletionRepository, never()).save(any());
+    }
+
+    @Test
+    void complete_roundWrittenOffAsMissed_reusesThatRowRatherThanRefusingIt() {
+        Task task = task();
+        locked(task);
+        callerIsMember();
+        completionSaves();
+        TaskCompletion miss = roundHolds(task, TaskOutcome.MISSED);
+
+        taskCompletionService.complete(TASK_UID, completeRequest(null), CALLER_USER_ID);
+
+        // uq_tc_task_due allows one live row per round, so a late completion overwrites the miss
+        // rather than inserting beside it - the work happened, and it happened on that round.
+        ArgumentCaptor<TaskCompletion> saved = ArgumentCaptor.forClass(TaskCompletion.class);
+        verify(taskCompletionRepository).save(saved.capture());
+        assertThat(saved.getValue()).isSameAs(miss);
+        assertThat(miss.getOutcome()).isEqualTo(TaskOutcome.DONE);
+        assertThat(miss.getDueDate()).isEqualTo(DUE);
+        assertThat(miss.getMinutes()).isEqualTo(15);
+        assertThat(miss.getAttributedTo().getIdGroupMember()).isEqualTo(CALLER_MEMBER_ID);
+    }
+
+    @Test
+    void skip_roundWrittenOffAsMissed_reusesThatRowToo() {
+        Task task = task();
+        locked(task);
+        callerIsMember();
+        completionSaves();
+        TaskCompletion miss = roundHolds(task, TaskOutcome.MISSED);
+
+        taskCompletionService.skip(TASK_UID, new SkipTaskRequest(), CALLER_USER_ID);
+
+        // "I am not doing yesterday's" is as valid an answer as doing it, and takes the same slot.
+        assertThat(miss.getOutcome()).isEqualTo(TaskOutcome.SKIPPED);
+        assertThat(miss.getMinutes()).isNull();
+    }
+
+    // The one live row standing against this round, as the sweep or an earlier caller left it.
+    private TaskCompletion roundHolds(Task task, TaskOutcome outcome) {
+        TaskCompletion existing = TaskCompletion.builder().task(task)
+                .idTaskCompletion(7L).dueDate(DUE).outcome(outcome).isActive(true).build();
+        when(taskCompletionRepository.findByTaskIdTaskAndDueDateAndIsActiveTrue(TASK_ID, DUE))
+                .thenReturn(Optional.of(existing));
+        return existing;
     }
 
     @Test

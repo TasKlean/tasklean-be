@@ -2,6 +2,7 @@ package com.tasklean.api.domain.taskcompletion;
 
 import com.tasklean.api.config.TaskSweepProperties;
 import com.tasklean.api.domain.task.RecurrenceSchedule;
+import com.tasklean.api.domain.task.RecurrenceType;
 import com.tasklean.api.domain.task.Task;
 import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.task.TaskStatus;
@@ -15,11 +16,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 /**
- * Writes off the rounds nobody did. Without it a neglected chore is simply absent from the share
- * rather than recorded as missed, so the totals flatter whoever ignored it.
+ * Writes off the rounds nobody did, as soon as each one's day has passed. The round stays
+ * recordable: the anchor is left parked on it until its successor comes due, so a chore done late
+ * reuses the row written here rather than being refused.
  *
  * <p>Its own component rather than a method on {@link TaskCompletionService} for the same reason as
  * {@code UploadSweeper}: the work is per-task and each task commits on its own, so one chore that
@@ -28,6 +32,11 @@ import java.util.List;
 @Slf4j
 @Component
 public class TaskMissSweeper {
+
+    // The cadences that can name a next round. A one-off has only the one, and a custom rule is
+    // not implemented, so neither ever rolls - they keep their anchor and stay recordable.
+    private static final Set<RecurrenceType> ROLLING =
+            EnumSet.of(RecurrenceType.DAILY, RecurrenceType.WEEKLY, RecurrenceType.MONTHLY);
 
     private final TaskRepository taskRepository;
     private final TaskCompletionRepository taskCompletionRepository;
@@ -57,7 +66,7 @@ public class TaskMissSweeper {
     @Scheduled(fixedRate = 60 * 60 * 1000) // hourly
     public void sweepMissedRounds() {
         List<String> uids = taskRepository.findUidsWithRoundPast(
-                cutoff(), TaskStatus.OPEN, Limit.of(properties.getBatch()));
+                cutoff(), TaskStatus.OPEN, ROLLING, Limit.of(properties.getBatch()));
         if (uids.isEmpty()) {
             return;
         }
@@ -85,25 +94,44 @@ public class TaskMissSweeper {
         }
 
         int written = 0;
-        while (written < properties.getMaxRoundsPerTask() && isPast(task.getNextDueDate())) {
+        int steps = 0;
+        boolean rolled = false;
+        while (steps++ < properties.getMaxRoundsPerTask() && isPast(task.getNextDueDate())) {
             LocalDateTime due = task.getNextDueDate();
-            // Normally false - the anchor only sits on a recorded round when an admin has moved it
-            // back - but writing anyway would breach uq_tc_task_due and lose the whole run's task.
+            // Already there when the round was recorded before the sweep reached it, or when an
+            // admin moved the anchor back onto one. Writing anyway would breach uq_tc_task_due.
             if (!taskCompletionRepository.existsByTaskIdTaskAndDueDateAndIsActiveTrue(
                     task.getIdTask(), due)) {
                 taskCompletionRepository.save(missFor(task, due));
                 written++;
             }
-            task.setNextDueDate(recurrenceSchedule.next(
-                    task.getRecurrenceType(), task.getRecurrencePattern(), due));
+
+            LocalDateTime next = nextRound(task, due);
+            // The anchor stays on the missed round until its successor comes due. That is what
+            // keeps it recordable: a chore done late lands on the round it was actually for,
+            // reusing the row written here rather than being refused as not yet due.
+            if (next == null || next.toLocalDate().isAfter(LocalDate.now(clock))) {
+                break;
+            }
+            task.setNextDueDate(next);
+            rolled = true;
         }
 
-        if (written > 0) {
+        if (written > 0 || rolled) {
             taskRepository.save(task);
             log.info("Rounds written off: taskUid={} rounds={} nextDue={}",
                     task.getUid(), written, task.getNextDueDate());
         }
         return written;
+    }
+
+    // Null when the chore has no next round to roll to, which leaves its anchor where it is and
+    // so leaves it recordable for good. A custom rule has no arithmetic yet, and calling for it
+    // would throw and cost the chore its whole sweep.
+    private LocalDateTime nextRound(Task task, LocalDateTime due) {
+        return ROLLING.contains(task.getRecurrenceType())
+                ? recurrenceSchedule.next(task.getRecurrenceType(), task.getRecurrencePattern(), due)
+                : null;
     }
 
     // Attributed to whoever was on the hook, and to nobody when the chore was unassigned - a miss
@@ -122,7 +150,6 @@ public class TaskMissSweeper {
     // Re-checked under the lock, since the work list was read without one.
     private boolean sweepable(Task task) {
         return Boolean.TRUE.equals(task.getIsActive())
-                && task.getRecurrenceType() != null
                 && TaskStatus.OPEN.contains(task.getStatus())
                 && isPast(task.getNextDueDate());
     }

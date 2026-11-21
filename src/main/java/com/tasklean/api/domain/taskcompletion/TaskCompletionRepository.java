@@ -127,6 +127,16 @@ public interface TaskCompletionRepository extends JpaRepository<TaskCompletion, 
      * @return {@code true} if that instance is already recorded
      */
     boolean existsByTaskIdTaskAndDueDateAndIsActiveTrue(Long taskId, LocalDateTime dueDate);
+
+    /**
+     * The one live row for a round, whatever became of it. A round written off as missed is still
+     * recordable, so the recording path needs the row itself rather than whether one exists.
+     *
+     * @param taskId  the chore
+     * @param dueDate which round
+     * @return that round's row, or empty if nothing has been recorded against it
+     */
+    Optional<TaskCompletion> findByTaskIdTaskAndDueDateAndIsActiveTrue(Long taskId, LocalDateTime dueDate);
     /**
      * Minutes and rounds each member completed in a household over a window, for the share.
      *
