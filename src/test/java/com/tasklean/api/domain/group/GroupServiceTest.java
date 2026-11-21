@@ -132,6 +132,7 @@ class GroupServiceTest {
     private GroupMember membership(Group group, GroupRole role) {
         return GroupMember.builder()
                 .idGroupMember(100L)
+                .uid("gm-100")
                 .group(group)
                 .user(User.builder().idUser(1L).build())
                 .role(role)
@@ -172,6 +173,26 @@ class GroupServiceTest {
                 .thenReturn(Optional.of(membership(g, GroupRole.GROUP_ADMIN)));
 
         assertThat(groupService.getGroupByUid("grp-1", 1L).getInviteCode()).isEqualTo("JOIN1234");
+    }
+
+    @Test
+    void getGroupByUid_asMember_carriesTheirOwnMembershipUid() {
+        Group g = group();
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(g));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L))
+                .thenReturn(Optional.of(membership(g, GroupRole.GROUP_MEMBER)));
+
+        // Without it a client cannot answer "mine" - the board filters and the assignee field
+        // both take a membership uid - and would have to read the whole roster to find itself.
+        assertThat(groupService.getGroupByUid("grp-1", 1L).getMyMemberUid()).isEqualTo("gm-100");
+    }
+
+    @Test
+    void getGroupByUid_asNonMember_carriesNoMembershipUid() {
+        when(groupRepository.findByUidAndIsActiveTrue("grp-1")).thenReturn(Optional.of(group()));
+        when(groupMemberRepository.findByUserIdUserAndGroupIdGroup(1L, 10L)).thenReturn(Optional.empty());
+
+        assertThat(groupService.getGroupByUid("grp-1", 1L).getMyMemberUid()).isNull();
     }
 
     @Test

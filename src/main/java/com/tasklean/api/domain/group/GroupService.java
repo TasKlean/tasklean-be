@@ -64,7 +64,7 @@ public class GroupService {
         Group group = requireActiveGroup(uid);
         long memberCount = memberCount(group);
         return activeMembership(callerUserId, group.getIdGroup())
-                .map(m -> GroupResponse.forMember(group, m.getRole(), memberCount))
+                .map(m -> GroupResponse.forMember(group, m, memberCount))
                 .orElseGet(() -> GroupResponse.from(group, memberCount));
     }
 
@@ -148,7 +148,7 @@ public class GroupService {
                 AuditAction.MEMBER_ADDED, "Creator added as group admin", saved);
 
         // The creator is the group's admin, so they get the invite code straight away to share.
-        return GroupResponse.forMember(saved, GroupRole.GROUP_ADMIN, 1);
+        return GroupResponse.forMember(saved, savedMember, 1);
     }
 
     /**

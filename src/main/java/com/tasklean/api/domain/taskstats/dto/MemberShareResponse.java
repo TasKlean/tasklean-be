@@ -1,6 +1,6 @@
 package com.tasklean.api.domain.taskstats.dto;
 
-import com.tasklean.api.domain.user.dto.UserSummaryResponse;
+import com.tasklean.api.domain.groupmember.dto.MemberSummaryResponse;
 import lombok.Builder;
 import lombok.Getter;
 
@@ -8,9 +8,8 @@ import lombok.Getter;
 @Builder
 public class MemberShareResponse {
 
-    private String memberUid;
-
-    private UserSummaryResponse user;
+    /** Who did the work, keyed by their membership - which is what the board's filter takes. */
+    private MemberSummaryResponse member;
 
     /** Minutes of work done in the window. Zero for a member who did none. */
     private long minutes;

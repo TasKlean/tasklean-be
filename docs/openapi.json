@@ -5342,6 +5342,10 @@
             "type" : "integer",
             "format" : "int32"
           },
+          "myMemberUid" : {
+            "type" : "string",
+            "description" : "The caller's own membership uid in this household, null when they are not a member - what\n the task board filters by and what an assignee is set to."
+          },
           "myRole" : {
             "type" : "string",
             "enum" : [ "GROUP_ADMIN", "GROUP_MEMBER" ]
@@ -5391,8 +5395,9 @@
             "type" : "boolean",
             "description" : "Whether the membership has ended. A former member appears only when they did work in the\n window, so the rows still sum to the total; they are never listed at zero."
           },
-          "memberUid" : {
-            "type" : "string"
+          "member" : {
+            "$ref" : "#/components/schemas/MemberSummaryResponse",
+            "description" : "Who did the work, keyed by their membership - which is what the board's filter takes."
           },
           "minutes" : {
             "type" : "integer",
@@ -5403,9 +5408,27 @@
             "type" : "integer",
             "format" : "int64",
             "description" : "How many rounds they completed in the window."
+          }
+        }
+      },
+      "MemberSummaryResponse" : {
+        "type" : "object",
+        "description" : "A person as seen inside a household, keyed by their membership — which is what every write in a\n group scope takes, so what a client reads off a task can be sent straight back.\n\n <p>Deliberately carries no user uid. A member cannot read another account\n (<code>GET /api/users/{uid</code>} is admin-or-self) and no group-scoped write accepts one, so\n publishing a globally stable id would only let anyone sharing a household correlate the same\n person across all of them.",
+        "properties" : {
+          "lastName" : {
+            "type" : "string"
           },
-          "user" : {
-            "$ref" : "#/components/schemas/UserSummaryResponse"
+          "memberUid" : {
+            "type" : "string"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "photoUid" : {
+            "type" : "string"
+          },
+          "photoUrl" : {
+            "type" : "string"
           }
         }
       },
@@ -5472,6 +5495,10 @@
           "memberCount" : {
             "type" : "integer",
             "format" : "int32"
+          },
+          "myMemberUid" : {
+            "type" : "string",
+            "description" : "The caller's own membership uid in this household - what the task board filters by and what\n an assignee is set to, so a client can answer \"mine\" without first reading the roster."
           },
           "myRole" : {
             "type" : "string",
@@ -5831,7 +5858,7 @@
         "type" : "object",
         "properties" : {
           "attributedTo" : {
-            "$ref" : "#/components/schemas/UserSummaryResponse"
+            "$ref" : "#/components/schemas/MemberSummaryResponse"
           },
           "completionNote" : {
             "type" : "string"
@@ -5980,14 +6007,14 @@
         "description" : "A task as returned by the API. Carries the people behind its author and assignee rather than\n ids, so a client can render it without a second call. Its tags are passed in rather than read\n off the task: they live in their own join table, which a task entity deliberately knows\n nothing about.",
         "properties" : {
           "assignedTo" : {
-            "$ref" : "#/components/schemas/UserSummaryResponse"
+            "$ref" : "#/components/schemas/MemberSummaryResponse"
           },
           "categoryId" : {
             "type" : "integer",
             "format" : "int64"
           },
           "createdBy" : {
-            "$ref" : "#/components/schemas/UserSummaryResponse"
+            "$ref" : "#/components/schemas/MemberSummaryResponse"
           },
           "dateCompleted" : {
             "type" : "string",

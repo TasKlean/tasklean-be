@@ -12,7 +12,7 @@ import com.tasklean.api.domain.taskcompletion.TaskCompletionRepository.MemberMin
 import com.tasklean.api.domain.taskstats.dto.MemberShareResponse;
 import com.tasklean.api.domain.taskstats.dto.TaskStatsQueryRequest;
 import com.tasklean.api.domain.taskstats.dto.TaskStatsResponse;
-import com.tasklean.api.domain.user.dto.UserSummaryResponse;
+import com.tasklean.api.domain.groupmember.dto.MemberSummaryResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -91,14 +91,13 @@ public class TaskStatsService {
             }
         }
         rows.sort(Comparator.comparingLong(MemberShareResponse::getMinutes).reversed()
-                .thenComparing(MemberShareResponse::getMemberUid));
+                .thenComparing(r -> r.getMember().getMemberUid()));
         return rows;
     }
 
     private MemberShareResponse row(GroupMember member, MemberMinutes totals, boolean former) {
         return MemberShareResponse.builder()
-                .memberUid(member.getUid())
-                .user(UserSummaryResponse.from(member.getUser()))
+                .member(MemberSummaryResponse.from(member))
                 .minutes(totals == null ? 0 : totals.getMinutes())
                 .roundsDone(totals == null ? 0 : totals.getRounds())
                 .former(former)

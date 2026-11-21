@@ -1,6 +1,7 @@
 package com.tasklean.api.domain.group.dto;
 
 import com.tasklean.api.domain.group.Group;
+import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupRole;
 import lombok.*;
 
@@ -23,6 +24,12 @@ public class GroupResponse {
     private String photoUid;
     private String inviteCode;
     private GroupRole myRole;
+
+    /**
+     * The caller's own membership uid in this household, null when they are not a member - what
+     * the task board filters by and what an assignee is set to.
+     */
+    private String myMemberUid;
     private Integer memberCount;
     private Boolean isActive;
     private LocalDateTime dateCreated;
@@ -37,8 +44,11 @@ public class GroupResponse {
      * As seen by one of the group's members: carries their own role so a client knows which
      * controls to show, and the invite code only when that role is {@code GROUP_ADMIN}.
      */
-    public static GroupResponse forMember(Group group, GroupRole myRole, long memberCount) {
-        GroupResponseBuilder builder = base(group, memberCount).myRole(myRole);
+    public static GroupResponse forMember(Group group, GroupMember membership, long memberCount) {
+        GroupRole myRole = membership.getRole();
+        GroupResponseBuilder builder = base(group, memberCount)
+                .myRole(myRole)
+                .myMemberUid(membership.getUid());
         // Inviting is a GROUP_ADMIN power, so only an admin is handed the code to share.
         return myRole == GroupRole.GROUP_ADMIN
                 ? builder.inviteCode(group.getInviteCode()).build()

@@ -1,10 +1,9 @@
 package com.tasklean.api.domain.taskcompletion.dto;
 
-import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.task.TaskStatus;
 import com.tasklean.api.domain.taskcompletion.TaskCompletion;
 import com.tasklean.api.domain.taskcompletion.TaskOutcome;
-import com.tasklean.api.domain.user.dto.UserSummaryResponse;
+import com.tasklean.api.domain.groupmember.dto.MemberSummaryResponse;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -32,7 +31,7 @@ public class TaskCompletionResponse {
     /** The task by its uid, never its row id - an instance is addressed by id, its task is not. */
     private String taskUid;
     private String taskName;
-    private UserSummaryResponse attributedTo;
+    private MemberSummaryResponse attributedTo;
 
     /**
      * Where the task stands now that this instance is recorded. Carried on the action's own answer
@@ -70,10 +69,7 @@ public class TaskCompletionResponse {
                 .dateCreated(completion.getDateCreated())
                 .taskUid(completion.getTask().getUid())
                 .taskName(completion.getTask().getName())
-                .attributedTo(person(completion.getAttributedTo()));
+                .attributedTo(MemberSummaryResponse.from(completion.getAttributedTo()));
     }
 
-    private static UserSummaryResponse person(GroupMember membership) {
-        return membership == null ? null : UserSummaryResponse.from(membership.getUser());
-    }
 }

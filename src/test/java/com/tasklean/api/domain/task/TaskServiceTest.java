@@ -22,6 +22,7 @@ import com.tasklean.api.domain.tag.TaskTagRepository;
 import com.tasklean.api.domain.task.dto.AssignTaskRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardFilterRequest;
 import com.tasklean.api.domain.task.dto.TaskBoardPage;
+import com.tasklean.api.domain.task.dto.TaskResponse;
 import com.tasklean.api.domain.task.dto.TaskCreateRequest;
 import com.tasklean.api.domain.task.dto.TaskUpdateRequest;
 import com.tasklean.api.domain.upload.UploadService;
@@ -254,6 +255,21 @@ class TaskServiceTest {
         when(taskRepository.findDetailedByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
 
         assertThat(taskService.getTaskByUid("tsk-1").getUid()).isEqualTo("tsk-1");
+    }
+
+    @Test
+    void getTaskByUid_always_namesPeopleByMembershipAndNotByAccount() {
+        Task task = task();
+        task.setAssignedTo(member(7L));
+        when(taskRepository.findDetailedByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task));
+
+        TaskResponse response = taskService.getTaskByUid("tsk-1");
+
+        // The membership uid is what every group-scoped write takes - the assignee field, the
+        // assignee PUT, the board's filter - so a client can send back what it just read. The
+        // account uid would round-trip into none of them, and a member cannot even read it.
+        assertThat(response.getAssignedTo().getMemberUid()).isEqualTo("gm-7");
+        assertThat(response.getCreatedBy().getMemberUid()).isEqualTo("gm-" + AUTHOR_ID);
     }
 
     @Test

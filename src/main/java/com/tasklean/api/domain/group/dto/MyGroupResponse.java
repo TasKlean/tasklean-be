@@ -24,6 +24,12 @@ public class MyGroupResponse {
     private String photoUid;
     private String inviteCode;
     private GroupRole myRole;
+
+    /**
+     * The caller's own membership uid in this household - what the task board filters by and what
+     * an assignee is set to, so a client can answer "mine" without first reading the roster.
+     */
+    private String myMemberUid;
     private Integer memberCount;
     private LocalDateTime dateJoined;
     private LocalDateTime dateCreated;
@@ -40,6 +46,7 @@ public class MyGroupResponse {
                 // Inviting is a GROUP_ADMIN power, so only an admin is handed the code to share.
                 .inviteCode(isAdmin ? group.getInviteCode() : null)
                 .myRole(membership.getRole())
+                .myMemberUid(membership.getUid())
                 .memberCount((int) memberCount)
                 .dateJoined(membership.getDateJoined())
                 .dateCreated(group.getDateCreated())

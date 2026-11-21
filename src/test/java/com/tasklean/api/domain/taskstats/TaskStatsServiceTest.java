@@ -68,7 +68,7 @@ class TaskStatsServiceTest {
         TaskStatsResponse stats = taskStatsService.getStats(GROUP_UID, new TaskStatsQueryRequest());
 
         // A quiet member vanishing would read as if they were not in the household at all.
-        assertThat(stats.getMembers()).extracting(MemberShareResponse::getMemberUid)
+        assertThat(stats.getMembers()).extracting(r -> r.getMember().getMemberUid())
                 .containsExactly("gm-bob", "gm-ann");
         assertThat(stats.getMembers().getLast().getMinutes()).isZero();
         assertThat(stats.getMembers().getLast().getRoundsDone()).isZero();
@@ -82,7 +82,7 @@ class TaskStatsServiceTest {
 
         TaskStatsResponse stats = taskStatsService.getStats(GROUP_UID, new TaskStatsQueryRequest());
 
-        assertThat(stats.getMembers()).extracting(MemberShareResponse::getMemberUid)
+        assertThat(stats.getMembers()).extracting(r -> r.getMember().getMemberUid())
                 .containsExactly("gm-ann", "gm-bob");
         assertThat(stats.getTotalMinutes()).isEqualTo(150);
         assertThat(stats.getTotalRounds()).isEqualTo(5);
@@ -98,7 +98,7 @@ class TaskStatsServiceTest {
         TaskStatsResponse stats = taskStatsService.getStats(GROUP_UID, new TaskStatsQueryRequest());
 
         // Their work happened. Dropping it would leave the total disagreeing with its own rows.
-        assertThat(stats.getMembers()).extracting(MemberShareResponse::getMemberUid)
+        assertThat(stats.getMembers()).extracting(r -> r.getMember().getMemberUid())
                 .containsExactly("gm-gone", "gm-bob");
         assertThat(stats.getMembers().getFirst().isFormer()).isTrue();
         assertThat(stats.getTotalMinutes()).isEqualTo(80);
