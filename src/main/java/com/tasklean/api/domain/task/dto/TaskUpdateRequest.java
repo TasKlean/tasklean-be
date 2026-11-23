@@ -6,7 +6,6 @@ import com.tasklean.api.domain.task.TaskPriority;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -31,7 +30,7 @@ public class TaskUpdateRequest {
     @Size(max = FieldLimits.DESCRIPTION)
     private String description;
 
-    @NotNull
+    /** How much it matters. Omitted, the chore is simply not prioritised. */
     private TaskPriority priority;
 
     /** How often the task recurs. Omitted, it happens once. */

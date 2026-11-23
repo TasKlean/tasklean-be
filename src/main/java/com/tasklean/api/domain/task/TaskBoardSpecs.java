@@ -226,10 +226,13 @@ final class TaskBoardSpecs {
         };
     }
 
+    // LOW is spelled out so otherwise() catches only an unset priority, which sorts last.
+    // Left implicit it would rank with LOW: a CASE comparing null matches no branch, silently.
     private static Expression<Integer> priorityRank(Root<Task> root, CriteriaBuilder cb) {
         return cb.<TaskPriority, Integer>selectCase(root.get(PRIORITY))
                 .when(TaskPriority.HIGH, 0)
                 .when(TaskPriority.MEDIUM, 1)
-                .otherwise(2);
+                .when(TaskPriority.LOW, 2)
+                .otherwise(3);
     }
 }

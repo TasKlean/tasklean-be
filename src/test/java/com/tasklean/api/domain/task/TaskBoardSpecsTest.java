@@ -160,6 +160,19 @@ class TaskBoardSpecsTest {
     }
 
     @Test
+    void ordered_byPriority_sortsAnUnsetPriorityAfterEveryNamedOne() {
+        CriteriaBuilder.SimpleCase<TaskPriority, Integer> start = cb.selectCase(root.get("priority"));
+        CriteriaBuilder.SimpleCase<TaskPriority, Integer> afterMedium =
+                start.when(TaskPriority.HIGH, 0).when(TaskPriority.MEDIUM, 1);
+
+        TaskBoardSpecs.ordered(TaskSort.PRIORITY_HIGH_FIRST).toPredicate(root, query, cb);
+
+        // LOW needs a branch of its own: left to otherwise(), an unset priority would rank with
+        // it, a CASE comparing null matching no branch at all.
+        verify(afterMedium).when(TaskPriority.LOW, 2);
+    }
+
+    @Test
     void ordered_noSortAsked_fallsBackToSoonestDue() {
         TaskBoardSpecs.ordered(null).toPredicate(root, query, cb);
 

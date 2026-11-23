@@ -368,6 +368,20 @@ class TaskServiceTest {
     }
 
     @Test
+    void createTask_noPriorityAsked_leavesItUnprioritised() {
+        callerIsAMember();
+        savesWhatItIsGiven();
+        TaskCreateRequest r = createRequest();
+        r.setPriority(null);
+
+        taskService.createTask(r, CALLER_USER_ID);
+
+        // Not every chore is triaged, and defaulting one to MEDIUM would record a decision
+        // nobody made - the board sorts the unset ones last instead.
+        assertThat(savedTask().getPriority()).isNull();
+    }
+
+    @Test
     void createTask_dueDate_isStoredAsUtc() {
         callerIsAMember();
         savesWhatItIsGiven();

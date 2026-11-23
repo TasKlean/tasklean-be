@@ -39,7 +39,7 @@ public class Task extends BaseEntity {
     private String photoUid;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "priority", nullable = false, length = 50)
+    @Column(name = "priority", length = 50)
     private TaskPriority priority;
 
     @Enumerated(EnumType.STRING)

@@ -5956,6 +5956,7 @@
           },
           "priority" : {
             "type" : "string",
+            "description" : "How much it matters. Omitted, the chore is simply not prioritised.",
             "enum" : [ "HIGH", "MEDIUM", "LOW" ]
           },
           "recurrenceType" : {
@@ -5978,7 +5979,7 @@
             "minItems" : 0
           }
         },
-        "required" : [ "groupUid", "name", "priority" ]
+        "required" : [ "groupUid", "name" ]
       },
       "TaskHistoryPage" : {
         "type" : "object",
@@ -6154,6 +6155,7 @@
           },
           "priority" : {
             "type" : "string",
+            "description" : "How much it matters. Omitted, the chore is simply not prioritised.",
             "enum" : [ "HIGH", "MEDIUM", "LOW" ]
           },
           "recurrenceType" : {
@@ -6176,7 +6178,7 @@
             "minItems" : 0
           }
         },
-        "required" : [ "name", "priority" ]
+        "required" : [ "name" ]
       },
       "TwoFactorConfirmRequest" : {
         "type" : "object",

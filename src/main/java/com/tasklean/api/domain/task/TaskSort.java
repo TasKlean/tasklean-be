@@ -9,7 +9,10 @@ public enum TaskSort {
     /** Latest due first, undated chores still last. */
     DUE_DESC,
 
-    /** HIGH, then MEDIUM, then LOW - an ordering the stored string cannot give alphabetically. */
+    /**
+     * HIGH, then MEDIUM, then LOW, then the chores nobody prioritised - an ordering the stored
+     * string cannot give alphabetically.
+     */
     PRIORITY_HIGH_FIRST,
 
     /** Newest chore first. */
