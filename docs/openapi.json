@@ -5922,6 +5922,12 @@
             "type" : "integer",
             "format" : "int64"
           },
+          "defaultAssigneeUid" : {
+            "type" : "string",
+            "description" : "The membership uid of whoever the chore normally belongs to. Every round hands it back to\n them; omitted, a finished round leaves the chore open to anybody again.",
+            "maxLength" : 100,
+            "minLength" : 0
+          },
           "description" : {
             "type" : "string",
             "maxLength" : 2000,
@@ -6029,6 +6035,10 @@
             "type" : "string",
             "format" : "date-time"
           },
+          "defaultAssignee" : {
+            "$ref" : "#/components/schemas/MemberSummaryResponse",
+            "description" : "Whose chore it normally is; who gets it back when a round ends."
+          },
           "description" : {
             "type" : "string"
           },
@@ -6125,6 +6135,12 @@
           "categoryId" : {
             "type" : "integer",
             "format" : "int64"
+          },
+          "defaultAssigneeUid" : {
+            "type" : "string",
+            "description" : "The membership uid of whoever the chore normally belongs to. Every round hands it back to\n them; omitted, a finished round leaves the chore open to anybody again.",
+            "maxLength" : 100,
+            "minLength" : 0
           },
           "description" : {
             "type" : "string",

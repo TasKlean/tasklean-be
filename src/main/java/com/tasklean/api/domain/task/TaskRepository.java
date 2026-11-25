@@ -40,7 +40,8 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
      * @param uid the task's public UID
      * @return the task, or empty if no active task has that UID
      */
-    @EntityGraph(attributePaths = {"group", "createdBy.user", "assignedTo.user"})
+    @EntityGraph(attributePaths = {"group", "createdBy.user", "assignedTo.user",
+            "defaultAssignee.user"})
     Optional<Task> findDetailedByUidAndIsActiveTrue(String uid);
 
     /**
@@ -93,6 +94,22 @@ public interface TaskRepository extends JpaRepository<Task, Long>, JpaSpecificat
               and t.isActive = true and t.status in :statuses
             """)
     List<Task> findOpenAssignedTo(Long membershipId, Collection<TaskStatus> statuses);
+
+    /**
+     * Every live chore the membership is the standing owner of, whatever its status. Unlike an
+     * assignee on a finished chore, a default assignee records nobody's work - only who acts next.
+     *
+     * @param membershipId the membership's primary key
+     * @return the matching tasks
+     */
+    @Query("""
+            select t
+            from Task t
+            where t.defaultAssignee.idGroupMember = :membershipId
+              and t.isActive = true
+            """)
+    List<Task> findOwnedBy(Long membershipId);
+
     /**
      * The uids of chores whose current round is already past, oldest first — the missed-round
      * sweep's work list.

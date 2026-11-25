@@ -54,6 +54,13 @@ public class TaskUpdateRequest {
     @Size(max = FieldLimits.UID)
     private String assignedToUid;
 
+    /**
+     * The membership uid of whoever the chore normally belongs to. Every round hands it back to
+     * them; omitted, a finished round leaves the chore open to anybody again.
+     */
+    @Size(max = FieldLimits.UID)
+    private String defaultAssigneeUid;
+
     private Long categoryId;
 
     /**

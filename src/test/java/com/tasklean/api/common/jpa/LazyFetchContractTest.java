@@ -41,8 +41,9 @@ class LazyFetchContractTest {
     @Test
     void taskFinder_fetchesTheHouseholdAndThePeople() throws Exception {
         // TaskResponse reads the group's uid and the names behind both memberships.
+        // defaultAssignee among them: TaskResponse publishes the owner's name, not just an id.
         assertThat(pathsOf(TaskRepository.class, "findDetailedByUidAndIsActiveTrue", String.class))
-                .contains("group", "createdBy.user", "assignedTo.user");
+                .contains("group", "createdBy.user", "assignedTo.user", "defaultAssignee.user");
     }
 
     @Test

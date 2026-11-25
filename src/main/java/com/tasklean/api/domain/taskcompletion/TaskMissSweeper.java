@@ -3,6 +3,7 @@ package com.tasklean.api.domain.taskcompletion;
 import com.tasklean.api.config.TaskSweepProperties;
 import com.tasklean.api.domain.task.RecurrenceSchedule;
 import com.tasklean.api.domain.task.RecurrenceType;
+import com.tasklean.api.domain.task.TaskAssignmentReset;
 import com.tasklean.api.domain.task.Task;
 import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.task.TaskStatus;
@@ -41,6 +42,7 @@ public class TaskMissSweeper {
     private final TaskRepository taskRepository;
     private final TaskCompletionRepository taskCompletionRepository;
     private final RecurrenceSchedule recurrenceSchedule;
+    private final TaskAssignmentReset assignmentReset;
     private final TaskSweepProperties properties;
     private final Clock clock;
 
@@ -51,12 +53,14 @@ public class TaskMissSweeper {
     public TaskMissSweeper(TaskRepository taskRepository,
                            TaskCompletionRepository taskCompletionRepository,
                            RecurrenceSchedule recurrenceSchedule,
+                           TaskAssignmentReset assignmentReset,
                            TaskSweepProperties properties,
                            Clock clock,
                            PlatformTransactionManager transactionManager) {
         this.taskRepository = taskRepository;
         this.taskCompletionRepository = taskCompletionRepository;
         this.recurrenceSchedule = recurrenceSchedule;
+        this.assignmentReset = assignmentReset;
         this.properties = properties;
         this.clock = clock;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -96,15 +100,21 @@ public class TaskMissSweeper {
         int written = 0;
         int steps = 0;
         boolean rolled = false;
+        boolean handedBack = false;
         while (steps++ < properties.getMaxRoundsPerTask() && isPast(task.getNextDueDate())) {
             LocalDateTime due = task.getNextDueDate();
             // Already there when the round was recorded before the sweep reached it, or when an
             // admin moved the anchor back onto one. Writing anyway would breach uq_tc_task_due.
             if (!taskCompletionRepository.existsByTaskIdTaskAndDueDateAndIsActiveTrue(
                     task.getIdTask(), due)) {
+                // Written before the hand-back below, which clears the field it reads:
+                // attributed after it, a miss would name whoever comes next, not who let it pass.
                 taskCompletionRepository.save(missFor(task, due));
                 written++;
             }
+            // A round ending hands the chore back however it ended, so a missed one goes to its
+            // owner too - a chore is not shed by being ignored, it returns to whose it is.
+            handedBack |= assignmentReset.toDefault(task);
 
             LocalDateTime next = nextRound(task, due);
             // The anchor stays on the missed round until its successor comes due. That is what
@@ -117,7 +127,7 @@ public class TaskMissSweeper {
             rolled = true;
         }
 
-        if (written > 0 || rolled) {
+        if (written > 0 || rolled || handedBack) {
             taskRepository.save(task);
             log.info("Rounds written off: taskUid={} rounds={} nextDue={}",
                     task.getUid(), written, task.getNextDueDate());

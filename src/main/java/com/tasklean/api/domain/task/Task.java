@@ -83,6 +83,11 @@ public class Task extends BaseEntity {
     @JoinColumn(name = "assigned_to")
     private GroupMember assignedTo;
 
+    /** Whose chore this normally is. A round ending hands {@link #assignedTo} back to it. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "default_assignee")
+    private GroupMember defaultAssignee;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id")
     private Category category;

@@ -13,6 +13,7 @@ import com.tasklean.api.domain.upload.UploadService;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.task.RecurrenceSchedule;
+import com.tasklean.api.domain.task.TaskAssignmentReset;
 import com.tasklean.api.domain.task.Task;
 import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.task.TaskStatus;
@@ -48,6 +49,7 @@ public class TaskCompletionService {
     private final TaskRepository taskRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final RecurrenceSchedule recurrenceSchedule;
+    private final TaskAssignmentReset assignmentReset;
     private final KeysetCursor keysetCursor;
     private final AuditLogService auditLogService;
     private final UploadService uploadService;
@@ -172,6 +174,11 @@ public class TaskCompletionService {
         // completion behind it.
         task.setNextDueDate(completion.getDueDate());
         task.setStatus(TaskStatus.TODO);
+        // Undo restores the schedule, not the assignment. The record cannot tell a round that was
+        // somebody's from one they picked up, so a repeating chore goes back to its owner.
+        if (task.getRecurrenceType() != null) {
+            assignmentReset.toDefault(task);
+        }
         Task saved = taskRepository.save(task);
 
         log.info("Task instance undone: id={} taskUid={}", id, saved.getUid());
@@ -225,10 +232,9 @@ public class TaskCompletionService {
                     ErrorCodes.TASK_INSTANCE_ALREADY_RECORDED);
         }
 
-        boolean claimed = assignee == null;
-        if (claimed) {
-            task.setAssignedTo(caller);
-        }
+        // A one-off is finished by this, so whoever did it keeps it: there is no next round for
+        // an owner to take back. A repeating chore is handed back below instead.
+        boolean claimed = assignee == null && task.getRecurrenceType() == null;
 
         TaskCompletion completion = existing != null ? existing
                 : TaskCompletion.builder().task(task).dueDate(dueDate).build();
@@ -247,6 +253,12 @@ public class TaskCompletionService {
         taskCompletionRepository.save(completion);
 
         advanceSchedule(task, dueDate);
+        if (claimed) {
+            task.setAssignedTo(caller);
+        }
+        // Recording a round credits a person, it does not hand them the chore: a repeating one
+        // goes back to its owner, or to nobody, so the next round is open to whoever it was.
+        boolean handedBack = task.getRecurrenceType() != null && assignmentReset.toDefault(task);
         Task saved = taskRepository.save(task);
 
         log.info("Task instance recorded: id={} taskUid={} outcome={} claimed={} wasMissed={}",
@@ -261,6 +273,14 @@ public class TaskCompletionService {
             auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.TASK_CLAIMED,
                     "Task \"" + saved.getName() + "\" claimed", saved.getGroup(),
                     AuditChanges.create().track("assignedToUid", null, caller.getIdGroupMember()));
+        }
+        if (handedBack) {
+            // Only when it really changes hands: a chore that comes back to the same owner every
+            // round would otherwise file an entry saying so, for ever, on an append-only trail.
+            auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.TASK_ASSIGNED,
+                    "Task \"" + saved.getName() + "\" handed back", saved.getGroup(),
+                    AuditChanges.create().track("assignedToUid", caller.getIdGroupMember(),
+                            idOf(saved.getDefaultAssignee())));
         }
         return TaskCompletionResponse.withTaskState(completion, saved.getStatus(), saved.getNextDueDate());
     }
@@ -278,6 +298,10 @@ public class TaskCompletionService {
             throw new BusinessRuleException("This chore is not due yet",
                     ErrorCodes.TASK_ROUND_NOT_DUE);
         }
+    }
+
+    private Long idOf(GroupMember member) {
+        return member != null ? member.getIdGroupMember() : null;
     }
 
     // A recurring chore comes round again; a one-off is finished. The roll counts periods from the

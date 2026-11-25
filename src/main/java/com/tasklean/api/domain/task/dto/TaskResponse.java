@@ -42,6 +42,9 @@ public class TaskResponse {
     private String groupUid;
     private MemberSummaryResponse createdBy;
     private MemberSummaryResponse assignedTo;
+
+    /** Whose chore it normally is; who gets it back when a round ends. */
+    private MemberSummaryResponse defaultAssignee;
     private Long categoryId;
     private List<TagResponse> tags;
 
@@ -66,6 +69,7 @@ public class TaskResponse {
                 .groupUid(task.getGroup().getUid())
                 .createdBy(MemberSummaryResponse.from(task.getCreatedBy()))
                 .assignedTo(MemberSummaryResponse.from(task.getAssignedTo()))
+                .defaultAssignee(MemberSummaryResponse.from(task.getDefaultAssignee()))
                 .categoryId(task.getCategory() != null ? task.getCategory().getIdCategory() : null)
                 .tags(tags.stream().map(TagResponse::from).toList())
                 .overdue(overdue(task, now))

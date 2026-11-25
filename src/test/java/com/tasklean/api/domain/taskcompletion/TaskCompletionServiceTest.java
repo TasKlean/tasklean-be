@@ -12,6 +12,7 @@ import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.groupmember.GroupMemberRepository;
 import com.tasklean.api.domain.task.RecurrenceSchedule;
 import com.tasklean.api.domain.task.RecurrenceType;
+import com.tasklean.api.domain.task.TaskAssignmentReset;
 import com.tasklean.api.domain.task.Task;
 import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.task.TaskStatus;
@@ -62,6 +63,11 @@ class TaskCompletionServiceTest {
     private GroupMemberRepository groupMemberRepository;
     @Mock
     private RecurrenceSchedule recurrenceSchedule;
+
+    // The real one, like the clock: it is pure logic over the task, and mocking it would leave
+    // every assertion about who holds the chore after a round proving nothing.
+    @Spy
+    private TaskAssignmentReset assignmentReset = new TaskAssignmentReset();
     @Mock
     private KeysetCursor keysetCursor;
     @Mock
@@ -78,6 +84,7 @@ class TaskCompletionServiceTest {
     private static final Long GROUP_ID = 10L;
     private static final Long CALLER_USER_ID = 7L;
     private static final Long CALLER_MEMBER_ID = 5L;
+    private static final Long OWNER_MEMBER_ID = 8L;
     private static final LocalDateTime DUE = LocalDateTime.of(2026, 11, 16, 9, 0);
 
     private GroupMember member(Long id) {
@@ -92,6 +99,14 @@ class TaskCompletionServiceTest {
                 .nextDueDate(DUE).estimatedTimeMinutes(15)
                 .group(Group.builder().idGroup(GROUP_ID).uid("grp-1").build())
                 .build();
+    }
+
+    // A repeating chore, which is the only kind a round rolls on - and so the only kind handed
+    // back when one ends.
+    private Task repeating() {
+        Task task = task();
+        task.setRecurrenceType(RecurrenceType.WEEKLY);
+        return task;
     }
 
     private void locked(Task task) {
@@ -158,7 +173,7 @@ class TaskCompletionServiceTest {
     }
 
     @Test
-    void complete_unassignedChore_isClaimedInTheSameCall() {
+    void complete_unassignedOneOff_isClaimedInTheSameCall() {
         Task task = task();
 
         complete(task);
@@ -490,6 +505,53 @@ class TaskCompletionServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
+    // ---------------------------------------------------------------- who holds it next
+
+    @Test
+    void complete_unassignedRepeatingChore_isNotClaimedByTheDoer() {
+        Task task = repeating();
+
+        complete(task);
+
+        // Recording a round credits a person, it does not hand them the chore. Claimed here, a
+        // shared chore would quietly become whoever got to it first.
+        assertThat(savedTask().getAssignedTo()).isNull();
+        assertThat(saved().getAttributedTo().getIdGroupMember()).isEqualTo(CALLER_MEMBER_ID);
+        verify(auditLogService, never()).recordEvent(any(), any(), eq(AuditAction.TASK_CLAIMED),
+                any(), any(), any());
+    }
+
+    @Test
+    void complete_repeatingChoreCoveredForTheOwner_handsItBackToThem() {
+        Task task = repeating();
+        task.setDefaultAssignee(member(OWNER_MEMBER_ID));
+        task.setAssignedTo(member(CALLER_MEMBER_ID));
+
+        complete(task);
+
+        // Cover for one round, not a handover: the owner has it again for the next.
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(OWNER_MEMBER_ID);
+        ArgumentCaptor<AuditChanges> changes = ArgumentCaptor.forClass(AuditChanges.class);
+        verify(auditLogService).recordEvent(eq(AuditEntityType.TASK), eq(TASK_ID),
+                eq(AuditAction.TASK_ASSIGNED), any(), any(), changes.capture());
+        assertThat(changes.getValue().fields()).containsExactly("assignedToUid");
+    }
+
+    @Test
+    void complete_repeatingChoreTheOwnerDidThemselves_recordsNoHandBack() {
+        Task task = repeating();
+        task.setDefaultAssignee(member(CALLER_MEMBER_ID));
+        task.setAssignedTo(member(CALLER_MEMBER_ID));
+
+        complete(task);
+
+        // It never changed hands, so nothing happened to record. An entry per round would file
+        // the same sentence for ever on a trail that is never pruned.
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(CALLER_MEMBER_ID);
+        verify(auditLogService, never()).recordEvent(any(), any(), eq(AuditAction.TASK_ASSIGNED),
+                any(), any(), any());
+    }
+
     // ---------------------------------------------------------------- undo
 
     @Test
@@ -512,6 +574,24 @@ class TaskCompletionServiceTest {
         assertThat(response.getTaskStatus()).isEqualTo(TaskStatus.TODO);
         verify(auditLogService).recordEvent(eq(AuditEntityType.TASK_COMPLETION), eq(99L),
                 eq(AuditAction.COMPLETION_UNDONE), any(), any());
+    }
+
+    @Test
+    void undo_repeatingChore_handsItBackToTheOwnerNotTheDoer() {
+        TaskCompletion entry = entry(99L, DUE);
+        Task task = repeating();
+        task.setDefaultAssignee(member(OWNER_MEMBER_ID));
+        task.setAssignedTo(member(CALLER_MEMBER_ID));
+        when(taskCompletionRepository.findDetailedByIdTaskCompletion(99L)).thenReturn(Optional.of(entry));
+        locked(task);
+        when(taskCompletionRepository.findLatestByTask(TASK_ID)).thenReturn(Optional.of(entry));
+        when(taskCompletionRepository.save(entry)).thenReturn(entry);
+
+        taskCompletionService.undo(99L);
+
+        // Undo restores the schedule, not the assignment: the record cannot tell a round somebody
+        // was given from one they picked up, so the chore goes back to whose it is.
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(OWNER_MEMBER_ID);
     }
 
     @Test

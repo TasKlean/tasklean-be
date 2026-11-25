@@ -28,6 +28,9 @@ public class TaskAssignmentRelease {
      * pool for anybody to claim. Finished and archived tasks keep their assignee, because there it
      * records who did the work rather than who owes it.
      *
+     * <p>Their standing ownership goes with them, on every task rather than only the open ones:
+     * a default assignee is who will act next, never a record of who acted.
+     *
      * @param membership the membership that has ended
      * @return how many tasks were handed back
      */
@@ -37,6 +40,10 @@ public class TaskAssignmentRelease {
                 taskRepository.findOpenAssignedTo(membership.getIdGroupMember(), TaskStatus.OPEN);
         for (Task task : assigned) {
             task.setAssignedTo(null);
+            taskRepository.save(task);
+        }
+        for (Task task : taskRepository.findOwnedBy(membership.getIdGroupMember())) {
+            task.setDefaultAssignee(null);
             taskRepository.save(task);
         }
         if (!assigned.isEmpty()) {

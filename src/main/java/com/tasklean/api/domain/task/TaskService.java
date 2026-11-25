@@ -132,6 +132,8 @@ public class TaskService {
         LocalDateTime nextDueDate = utc(request.getNextDueDate());
         requireDueDateForRecurrence(request.getRecurrenceType(), nextDueDate);
         List<Tag> tags = tagResolver.resolve(group, request.getTagNames());
+        GroupMember assignee = assigneeIn(group, request.getAssignedToUid());
+        GroupMember owner = ownerIn(group, request.getDefaultAssigneeUid());
 
         Task task = Task.builder()
                 .uid(UUID.randomUUID().toString())
@@ -148,7 +150,8 @@ public class TaskService {
                 .isActive(true)
                 .group(group)
                 .createdBy(author)
-                .assignedTo(assigneeIn(group, request.getAssignedToUid()))
+                .assignedTo(firstRoundFor(assignee, owner))
+                .defaultAssignee(owner)
                 .category(categoryIn(group, request.getCategoryId()))
                 .build();
 
@@ -189,7 +192,12 @@ public class TaskService {
         // Both resolved before the tracked sets below, so a reference into another household is
         // refused before any of this task's own fields have moved.
         GroupMember assignee = assigneeIn(group, request.getAssignedToUid());
+        GroupMember owner = ownerIn(group, request.getDefaultAssigneeUid());
         Category category = categoryIn(group, request.getCategoryId());
+        // Naming an owner fills an open round, but only as the owner arrives. Doing it on every
+        // save would make "John owns this, yet this round is open" impossible to ask for.
+        boolean ownerArrived = task.getDefaultAssignee() == null && owner != null;
+        GroupMember holder = ownerArrived && assignee == null ? owner : assignee;
         // Resolved before the task's own tags are read, because resolving may revive a deleted
         // tag that is already on this task - read first, its join row would look missing and be
         // inserted a second time.
@@ -211,7 +219,8 @@ public class TaskService {
                         task::setEstimatedTimeMinutes, request.getEstimatedTimeMinutes())
                 // Compared by id: two loads of one row are not the same object, so comparing the
                 // entities would call every reassignment a change.
-                .track("assignedToUid", idOf(task.getAssignedTo()), idOf(assignee))
+                .track("assignedToUid", idOf(task.getAssignedTo()), idOf(holder))
+                .track("defaultAssigneeUid", idOf(task.getDefaultAssignee()), idOf(owner))
                 .track("categoryId", idOf(task.getCategory()), request.getCategoryId())
                 // Names only: a tag is text a member wrote, and a group's trail is kept for
                 // good and read by every one of them.
@@ -221,7 +230,8 @@ public class TaskService {
                 .set("photoUid", task::getPhotoUid, task::setPhotoUid,
                         uploadService.attachTaskPhoto(request.getPhotoUid(), task, callerUserId));
 
-        task.setAssignedTo(assignee);
+        task.setAssignedTo(holder);
+        task.setDefaultAssignee(owner);
         task.setCategory(category);
         // Re-derived rather than tracked: the anchor is a restatement of the due date, so an entry
         // naming it would say the same thing twice.
@@ -423,14 +433,30 @@ public class TaskService {
                 .orElseThrow(() -> new AccessDeniedException(ErrorMessages.ACCESS_DENIED));
     }
 
+    // An owner named on a chore nobody holds takes the first round too, so naming one does not
+    // read as having changed nothing.
+    private GroupMember firstRoundFor(GroupMember assignee, GroupMember owner) {
+        return assignee != null ? assignee : owner;
+    }
+
     private GroupMember assigneeIn(Group group, String memberUid) {
+        return memberIn(group, memberUid, ErrorMessages.ASSIGNED_MEMBER_NOT_FOUND);
+    }
+
+    // Its own message rather than the assignee's: a form sends both pickers, so one shared
+    // "not found" cannot say which of them the caller got wrong.
+    private GroupMember ownerIn(Group group, String memberUid) {
+        return memberIn(group, memberUid, ErrorMessages.DEFAULT_ASSIGNEE_NOT_FOUND);
+    }
+
+    private GroupMember memberIn(Group group, String memberUid, String notFound) {
         if (memberUid == null) {
             return null;
         }
         return groupMemberRepository.findByUid(memberUid)
                 .filter(member -> Boolean.TRUE.equals(member.getIsActive()))
                 .filter(member -> member.getGroup().getIdGroup().equals(group.getIdGroup()))
-                .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.ASSIGNED_MEMBER_NOT_FOUND));
+                .orElseThrow(() -> new ResourceNotFoundException(notFound));
     }
 
     // Categories are scoped to a household too, so one from another household is as absent as one

@@ -45,8 +45,8 @@ class AuditTrackedFieldsTest {
                 // Free text, two associations whose values are a membership uid and a category id
                 // - neither says anything on its own - the tags, which are text as well, and the
                 // photo, a pointer that says nothing about what it points at.
-                Set.of("name", "description", "assignedToUid", "categoryId", "tagNames",
-                        "photoUid"),
+                Set.of("name", "description", "assignedToUid", "defaultAssigneeUid", "categoryId",
+                        "tagNames", "photoUid"),
                 Set.of());
     }
 

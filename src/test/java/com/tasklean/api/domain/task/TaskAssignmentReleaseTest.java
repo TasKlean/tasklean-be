@@ -68,6 +68,20 @@ class TaskAssignmentReleaseTest {
     }
 
     @Test
+    void releaseFor_standingOwnership_isClearedOnEveryTaskNotOnlyTheOpenOnes() {
+        Task archived = Task.builder().idTask(4L).uid("tsk-4").status(TaskStatus.ARCHIVED)
+                .defaultAssignee(departing()).build();
+        when(taskRepository.findOwnedBy(6L)).thenReturn(List.of(archived));
+        when(taskRepository.save(any(Task.class))).thenAnswer(i -> i.getArgument(0));
+
+        taskAssignmentRelease.releaseFor(departing());
+
+        // Unlike an assignee on a finished chore, an owner records nobody's work - only who acts
+        // next, which is nobody once the membership has ended.
+        assertThat(archived.getDefaultAssignee()).isNull();
+    }
+
+    @Test
     void releaseFor_severalTasks_releasesEveryOne() {
         when(taskRepository.findOpenAssignedTo(eq(6L), any()))
                 .thenReturn(List.of(assignedTask(1L), assignedTask(2L), assignedTask(3L)));

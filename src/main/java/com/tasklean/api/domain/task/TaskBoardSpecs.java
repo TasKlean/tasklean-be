@@ -26,6 +26,7 @@ final class TaskBoardSpecs {
     private static final String ASSIGNED_TO = "assignedTo";
     private static final String CATEGORY = "category";
     private static final String CREATED_BY = "createdBy";
+    private static final String DEFAULT_ASSIGNEE = "defaultAssignee";
     private static final String DATE_CREATED = "dateCreated";
     private static final String GROUP = "group";
     private static final String ID_CATEGORY = "idCategory";
@@ -179,6 +180,7 @@ final class TaskBoardSpecs {
                 root.fetch(GROUP, JoinType.LEFT);
                 root.fetch(CREATED_BY, JoinType.LEFT).fetch(USER, JoinType.LEFT);
                 root.fetch(ASSIGNED_TO, JoinType.LEFT).fetch(USER, JoinType.LEFT);
+                root.fetch(DEFAULT_ASSIGNEE, JoinType.LEFT).fetch(USER, JoinType.LEFT);
             }
             return null;
         };

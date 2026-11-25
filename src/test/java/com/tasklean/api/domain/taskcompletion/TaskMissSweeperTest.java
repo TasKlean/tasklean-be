@@ -5,6 +5,7 @@ import com.tasklean.api.domain.group.Group;
 import com.tasklean.api.domain.groupmember.GroupMember;
 import com.tasklean.api.domain.task.RecurrenceSchedule;
 import com.tasklean.api.domain.task.RecurrenceType;
+import com.tasklean.api.domain.task.TaskAssignmentReset;
 import com.tasklean.api.domain.task.Task;
 import com.tasklean.api.domain.task.TaskRepository;
 import com.tasklean.api.domain.task.TaskStatus;
@@ -54,6 +55,7 @@ class TaskMissSweeperTest {
     private Clock clock = Clock.systemUTC();
 
     private final RecurrenceSchedule recurrenceSchedule = new RecurrenceSchedule();
+    private final TaskAssignmentReset assignmentReset = new TaskAssignmentReset();
     private final TaskSweepProperties properties = new TaskSweepProperties();
 
     private TaskMissSweeper sweeper;
@@ -63,7 +65,7 @@ class TaskMissSweeperTest {
     @BeforeEach
     void setUp() {
         sweeper = new TaskMissSweeper(taskRepository, taskCompletionRepository, recurrenceSchedule,
-                properties, clock, transactionManager);
+                assignmentReset, properties, clock, transactionManager);
     }
 
     // ------------------------------------------------------------------ what gets written off
@@ -311,6 +313,37 @@ class TaskMissSweeperTest {
 
     private LocalDateTime today() {
         return LocalDate.now(ZoneOffset.UTC).atStartOfDay();
+    }
+
+    @Test
+    void sweepMissedRounds_choreWithAnOwner_attributesTheMissBeforeHandingItBack() {
+        LocalDateTime due = today().minusDays(1);
+        Task task = recurring(due, member(7L));
+        task.setDefaultAssignee(member(9L));
+        workListIs(TASK_UID);
+        locked(task);
+
+        sweeper.sweepMissedRounds();
+
+        // The miss names whoever let the round pass, not whoever comes next: the hand-back clears
+        // the very field the row is attributed from, so order is the whole of this.
+        assertThat(savedCompletion().getAttributedTo().getIdGroupMember()).isEqualTo(7L);
+        assertThat(task.getAssignedTo().getIdGroupMember()).isEqualTo(9L);
+    }
+
+    @Test
+    void sweepMissedRounds_unownedChore_leavesTheMissedRoundOpenToAnybody() {
+        LocalDateTime due = today().minusDays(1);
+        Task task = recurring(due, member(7L));
+        workListIs(TASK_UID);
+        locked(task);
+
+        sweeper.sweepMissedRounds();
+
+        // A round ending hands the chore back however it ended. Somebody assigned one can shed it
+        // by letting it pass, which is the cost of a missed round being a round like any other.
+        assertThat(savedCompletion().getAttributedTo().getIdGroupMember()).isEqualTo(7L);
+        assertThat(task.getAssignedTo()).isNull();
     }
 
     private TaskCompletion savedCompletion() {

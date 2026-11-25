@@ -1,5 +1,6 @@
 package com.tasklean.api.domain.task;
 
+import com.tasklean.api.common.ErrorMessages;
 import com.tasklean.api.common.exception.InvalidRequestException;
 import com.tasklean.api.common.exception.BusinessRuleException;
 import com.tasklean.api.common.exception.ResourceNotFoundException;
@@ -443,6 +444,90 @@ class TaskServiceTest {
     }
 
     @Test
+    void createTask_ownerNamedAndNobodyHolding_givesThemTheFirstRound() {
+        callerIsAMember();
+        savesWhatItIsGiven();
+        when(groupMemberRepository.findByUid("gm-9")).thenReturn(Optional.of(member(9L)));
+        TaskCreateRequest r = createRequest();
+        r.setDefaultAssigneeUid("gm-9");
+
+        taskService.createTask(r, CALLER_USER_ID);
+
+        // Naming an owner and leaving the chore in the pool would read as having done nothing.
+        assertThat(savedTask().getDefaultAssignee().getIdGroupMember()).isEqualTo(9L);
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(9L);
+    }
+
+    @Test
+    void createTask_ownerNamedAndSomebodyElseHolding_leavesThemWithTheFirstRound() {
+        callerIsAMember();
+        savesWhatItIsGiven();
+        when(groupMemberRepository.findByUid("gm-9")).thenReturn(Optional.of(member(9L)));
+        when(groupMemberRepository.findByUid("gm-6")).thenReturn(Optional.of(member(6L)));
+        TaskCreateRequest r = createRequest();
+        r.setDefaultAssigneeUid("gm-9");
+        r.setAssignedToUid("gm-6");
+
+        taskService.createTask(r, CALLER_USER_ID);
+
+        // Cover from the very first round: the owner takes it back once this one ends.
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(6L);
+        assertThat(savedTask().getDefaultAssignee().getIdGroupMember()).isEqualTo(9L);
+    }
+
+    @Test
+    void updateTask_ownerArrivesOnAnOpenRound_fillsItToo() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        when(groupMemberRepository.findByUid("gm-9")).thenReturn(Optional.of(member(9L)));
+        savesWhatItIsGiven();
+        TaskUpdateRequest r = updateRequest();
+        r.setDefaultAssigneeUid("gm-9");
+
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
+
+        assertThat(savedTask().getAssignedTo().getIdGroupMember()).isEqualTo(9L);
+    }
+
+    @Test
+    void updateTask_ownerUnchanged_leavesAnOpenRoundOpen() {
+        Task existing = task();
+        existing.setDefaultAssignee(member(9L));
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(existing));
+        when(groupMemberRepository.findByUid("gm-9")).thenReturn(Optional.of(member(9L)));
+        savesWhatItIsGiven();
+        TaskUpdateRequest r = updateRequest();
+        r.setDefaultAssigneeUid("gm-9");
+
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
+
+        // A PUT sends both pickers every time, so filling the round whenever an owner exists would
+        // make "John owns this, but this round is open" impossible to ask for.
+        assertThat(savedTask().getAssignedTo()).isNull();
+        assertThat(savedTask().getDefaultAssignee().getIdGroupMember()).isEqualTo(9L);
+    }
+
+    @Test
+    void updateTask_ownerFromAnotherHousehold_changesNothingAtAll() {
+        Task existing = task();
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(existing));
+        when(groupMemberRepository.findByUid("gm-9")).thenReturn(Optional.of(
+                member(9L, Group.builder().idGroup(99L).uid("grp-9").build())));
+        TaskUpdateRequest r = updateRequest();
+        r.setName("Scrub");
+        r.setDefaultAssigneeUid("gm-9");
+
+        assertThatThrownBy(() -> taskService.updateTask("tsk-1", r, CALLER_USER_ID))
+                .isInstanceOf(ResourceNotFoundException.class)
+                // Its own message: a form sends both pickers, so the assignee's would not say
+                // which of the two the caller got wrong.
+                .hasMessage(ErrorMessages.DEFAULT_ASSIGNEE_NOT_FOUND);
+
+        // Resolved before any tracked field moves, so a refused request leaves it untouched.
+        assertThat(existing.getName()).isEqualTo("Clean");
+        verify(taskRepository, never()).save(any());
+    }
+
+    @Test
     void updateTask_everyTrackedField_namesThemAll() {
         TaskUpdateRequest r = updateRequest();
         r.setName("Scrub");
@@ -453,10 +538,12 @@ class TaskServiceTest {
         r.setRequiresPhotoProof(true);
         r.setEstimatedTimeMinutes(20);
         r.setAssignedToUid("gm-6");
+        r.setDefaultAssigneeUid("gm-9");
         r.setCategoryId(3L);
         r.setTagNames(List.of("Kitchen"));
         when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
         when(groupMemberRepository.findByUid("gm-6")).thenReturn(Optional.of(member(6L)));
+        when(groupMemberRepository.findByUid("gm-9")).thenReturn(Optional.of(member(9L)));
         resolvesTo(tag(7L, "Kitchen"));
         when(categoryRepository.findById(3L)).thenReturn(Optional.of(
                 Category.builder().idCategory(3L).isActive(true).group(group()).build()));
@@ -469,8 +556,8 @@ class TaskServiceTest {
         // recurrence pattern because it is re-derived rather than tracked.
         assertThat(capturedChanges().fields()).containsExactly(
                 "name", "description", "priority", "recurrenceType", "nextDueDate",
-                "requiresPhotoProof", "estimatedTimeMinutes", "assignedToUid", "categoryId",
-                "tagNames");
+                "requiresPhotoProof", "estimatedTimeMinutes", "assignedToUid",
+                "defaultAssigneeUid", "categoryId", "tagNames");
     }
 
     @Test
@@ -480,19 +567,22 @@ class TaskServiceTest {
         r.setPriority(TaskPriority.HIGH);
         r.setEstimatedTimeMinutes(20);
         r.setAssignedToUid("gm-6");
+        r.setDefaultAssigneeUid("gm-9");
         when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
         when(groupMemberRepository.findByUid("gm-6")).thenReturn(Optional.of(member(6L)));
+        when(groupMemberRepository.findByUid("gm-9")).thenReturn(Optional.of(member(9L)));
         savesWhatItIsGiven();
 
         taskService.updateTask("tsk-1", r, CALLER_USER_ID);
 
-        // The tokens and the number carry their values; the text a person typed and the
+        // The tokens and the number carry their values; the text a person typed and either
         // membership's internal id do not.
         assertThat(capturedChanges().entries()).containsExactly(
                 AuditFieldChange.withheld("description"),
                 new AuditFieldChange("priority", "LOW", "HIGH"),
                 new AuditFieldChange("estimatedTimeMinutes", null, "20"),
-                AuditFieldChange.withheld("assignedToUid"));
+                AuditFieldChange.withheld("assignedToUid"),
+                AuditFieldChange.withheld("defaultAssigneeUid"));
     }
 
     @Test
