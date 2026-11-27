@@ -42,6 +42,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -77,6 +78,9 @@ class TaskServiceTest {
     // The real one: the anchor it derives is part of what these tests are checking.
     @Spy
     private RecurrenceSchedule recurrenceSchedule = new RecurrenceSchedule();
+    // Real too, so a refused due date is proven at the service rather than at a mock.
+    @Spy
+    private DueDateRule dueDateRule = new DueDateRule(Clock.systemUTC());
     @Mock
     private AuditLogService auditLogService;
     @Mock
@@ -327,11 +331,15 @@ class TaskServiceTest {
         savesWhatItIsGiven();
         TaskCreateRequest r = createRequest();
         r.setRecurrenceType(RecurrenceType.MONTHLY);
-        r.setNextDueDate(OffsetDateTime.parse("2026-11-29T09:00Z"));
+        // Relative to today: a literal date would start failing the due-date rule the day it
+        // slipped into the past.
+        OffsetDateTime due = OffsetDateTime.now(ZoneOffset.UTC).plusDays(4);
+        r.setNextDueDate(due);
 
         taskService.createTask(r, CALLER_USER_ID);
 
-        assertThat(savedTask().getRecurrencePattern()).containsExactly(Map.entry("dayOfMonth", 29));
+        assertThat(savedTask().getRecurrencePattern())
+                .containsExactly(Map.entry("dayOfMonth", due.getDayOfMonth()));
     }
 
     @Test
@@ -340,12 +348,93 @@ class TaskServiceTest {
         savesWhatItIsGiven();
         TaskCreateRequest r = createRequest();
         r.setRecurrenceType(RecurrenceType.DAILY);
-        r.setNextDueDate(OffsetDateTime.parse("2026-11-20T09:00Z"));
+        r.setNextDueDate(OffsetDateTime.now(ZoneOffset.UTC).plusDays(1));
 
         taskService.createTask(r, CALLER_USER_ID);
 
         // Nothing to anchor: a daily task recurs on the day after whatever it is due.
         assertThat(savedTask().getRecurrencePattern()).isNull();
+    }
+
+    @Test
+    void createTask_dueDateAlreadyGoneBy_isRefused() {
+        callerIsAMember();
+        TaskCreateRequest r = createRequest();
+        r.setNextDueDate(OffsetDateTime.now(ZoneOffset.UTC).minusDays(1));
+
+        assertThatThrownBy(() -> taskService.createTask(r, CALLER_USER_ID))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("cannot be in the past");
+
+        verify(taskRepository, never()).save(any());
+    }
+
+    @Test
+    void updateTask_finishedOneOffGivenACadence_comesBackToTodo() {
+        Task done = task();
+        done.setStatus(TaskStatus.COMPLETED);
+        done.setDateCompleted(LocalDateTime.now(ZoneOffset.UTC).minusDays(2));
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(done));
+        savesWhatItIsGiven();
+        TaskUpdateRequest r = updateRequest();
+        r.setRecurrenceType(RecurrenceType.WEEKLY);
+        r.setNextDueDate(OffsetDateTime.now(ZoneOffset.UTC).plusDays(5));
+
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
+
+        // Left COMPLETED it would be a repeating chore the board hides, the sweeper skips and the
+        // card still calls done - reachable only by filtering for finished chores.
+        assertThat(savedTask().getStatus()).isEqualTo(TaskStatus.TODO);
+        assertThat(savedTask().getDateCompleted()).isNull();
+        assertThat(capturedChanges().entries())
+                .contains(new AuditFieldChange("status", "COMPLETED", "TODO"));
+    }
+
+    @Test
+    void updateTask_finishedOneOffEditedAndStillAOneOff_staysDone() {
+        Task done = task();
+        done.setStatus(TaskStatus.COMPLETED);
+        LocalDateTime finished = LocalDateTime.now(ZoneOffset.UTC).minusDays(2);
+        done.setDateCompleted(finished);
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(done));
+        savesWhatItIsGiven();
+        TaskUpdateRequest r = updateRequest();
+        r.setName("Scrub");
+
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
+
+        // Only a cadence reopens a chore. Renaming one that is done does not undo it.
+        assertThat(savedTask().getStatus()).isEqualTo(TaskStatus.COMPLETED);
+        assertThat(savedTask().getDateCompleted()).isEqualTo(finished);
+    }
+
+    @Test
+    void updateTask_dueDateMovedIntoThePast_isRefused() {
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
+        TaskUpdateRequest r = updateRequest();
+        r.setNextDueDate(OffsetDateTime.now(ZoneOffset.UTC).minusDays(1));
+
+        assertThatThrownBy(() -> taskService.updateTask("tsk-1", r, CALLER_USER_ID))
+                .isInstanceOf(InvalidRequestException.class);
+
+        verify(taskRepository, never()).save(any());
+    }
+
+    @Test
+    void updateTask_anOverdueChoreKeepingItsDueDate_isAllowed() {
+        Task overdue = task();
+        overdue.setNextDueDate(LocalDateTime.now(ZoneOffset.UTC).minusDays(3));
+        when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(overdue));
+        savesWhatItIsGiven();
+        TaskUpdateRequest r = updateRequest();
+        r.setName("Scrub");
+        r.setNextDueDate(overdue.getNextDueDate().atOffset(ZoneOffset.UTC));
+
+        taskService.updateTask("tsk-1", r, CALLER_USER_ID);
+
+        // A PUT carries the whole task, so refusing every past date would leave an overdue chore
+        // unable to be renamed or reassigned without rescheduling it first.
+        assertThat(savedTask().getName()).isEqualTo("Scrub");
     }
 
     @Test
@@ -387,11 +476,12 @@ class TaskServiceTest {
         callerIsAMember();
         savesWhatItIsGiven();
         TaskCreateRequest r = createRequest();
-        r.setNextDueDate(OffsetDateTime.parse("2026-11-23T09:00+02:00"));
+        LocalDate day = LocalDate.now(ZoneOffset.UTC).plusDays(2);
+        r.setNextDueDate(day.atTime(9, 0).atOffset(ZoneOffset.ofHours(2)));
 
         taskService.createTask(r, CALLER_USER_ID);
 
-        assertThat(savedTask().getNextDueDate()).isEqualTo(LocalDateTime.parse("2026-11-23T07:00"));
+        assertThat(savedTask().getNextDueDate()).isEqualTo(day.atTime(7, 0));
     }
 
     @Test
@@ -534,7 +624,7 @@ class TaskServiceTest {
         r.setDescription("the floor");
         r.setPriority(TaskPriority.HIGH);
         r.setRecurrenceType(RecurrenceType.WEEKLY);
-        r.setNextDueDate(OffsetDateTime.parse("2026-11-23T09:00Z"));
+        r.setNextDueDate(OffsetDateTime.now(ZoneOffset.UTC).plusDays(3));
         r.setRequiresPhotoProof(true);
         r.setEstimatedTimeMinutes(20);
         r.setAssignedToUid("gm-6");
@@ -608,13 +698,15 @@ class TaskServiceTest {
     void updateTask_recurrenceChanged_reDerivesTheAnchor() {
         TaskUpdateRequest r = updateRequest();
         r.setRecurrenceType(RecurrenceType.MONTHLY);
-        r.setNextDueDate(OffsetDateTime.parse("2026-12-31T09:00Z"));
+        OffsetDateTime due = OffsetDateTime.now(ZoneOffset.UTC).plusDays(10);
+        r.setNextDueDate(due);
         when(taskRepository.findByUidAndIsActiveTrue("tsk-1")).thenReturn(Optional.of(task()));
         savesWhatItIsGiven();
 
         taskService.updateTask("tsk-1", r, CALLER_USER_ID);
 
-        assertThat(savedTask().getRecurrencePattern()).containsExactly(Map.entry("dayOfMonth", 31));
+        assertThat(savedTask().getRecurrencePattern())
+                .containsExactly(Map.entry("dayOfMonth", due.getDayOfMonth()));
     }
 
     @Test

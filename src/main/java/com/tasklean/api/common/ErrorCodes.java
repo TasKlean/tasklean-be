@@ -38,6 +38,12 @@ public final class ErrorCodes {
     /** The round is not due yet; nothing to record until it comes round. */
     public static final String TASK_ROUND_NOT_DUE = "TASK_ROUND_NOT_DUE";
 
+    /** A round was already done ahead of schedule; wait for this one to come due. */
+    public static final String TASK_ROUND_ALREADY_AHEAD = "TASK_ROUND_ALREADY_AHEAD";
+
+    /** The due date has already gone by; a chore is scheduled forwards. */
+    public static final String TASK_DUE_DATE_PAST = "TASK_DUE_DATE_PAST";
+
     /** Somebody already has the chore; hand it on instead of claiming it. */
     public static final String TASK_ALREADY_ASSIGNED = "TASK_ALREADY_ASSIGNED";
 

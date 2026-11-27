@@ -66,7 +66,8 @@ public class TaskCompletionService {
      * @return the instance recorded, and the state the task was left in
      * @throws ResourceNotFoundException if no active task has that UID
      * @throws AccessDeniedException     if the caller is not a member of the task's household
-     * @throws BusinessRuleException     if the chore is archived, or this instance is already recorded
+     * @throws BusinessRuleException     if the chore is archived, this instance is already
+     *                                   recorded, or a round was already done ahead of schedule
      */
     @Transactional
     public TaskCompletionResponse complete(String taskUid, CompleteTaskRequest request, Long callerUserId) {
@@ -84,7 +85,8 @@ public class TaskCompletionService {
      * @return the instance recorded, and the state the task was left in
      * @throws ResourceNotFoundException if no active task has that UID
      * @throws AccessDeniedException     if the caller is not a member of the task's household
-     * @throws BusinessRuleException     if the chore is archived, or this instance is already recorded
+     * @throws BusinessRuleException     if the chore is archived, this instance is already
+     *                                   recorded, or the round has not come round yet
      */
     @Transactional
     public TaskCompletionResponse skip(String taskUid, SkipTaskRequest request, Long callerUserId) {
@@ -213,7 +215,7 @@ public class TaskCompletionService {
         }
 
         LocalDateTime dueDate = task.getNextDueDate();
-        requireRoundIsDue(dueDate);
+        requireRecordable(task, outcome, dueDate);
         // A round written off as missed is still the caller's to do, so its row is reused rather
         // than refused - uq_tc_task_due allows one live row per round, and the work really did
         // happen. Anything else already there is the double tap, and the 409 the index would be.
@@ -286,17 +288,38 @@ public class TaskCompletionService {
     }
 
     /**
-     * Refuses a round that has not come round yet. This is also what stops a double tap recording
-     * two rounds: the first one rolls the schedule into the future, so the second has nothing due.
+     * Refuses a round that cannot be recorded yet. A chore may be done <em>before</em> its due
+     * date, because the work really did happen - but only one round ahead, and a skip needs the
+     * round to have come round at all, since it asserts that one went by and nobody did it.
+     *
+     * <p>The cap is also what closes a double tap. The first request rolls the anchor into the
+     * future, and the round it recorded is then the newest entry and not yet passed, so a second
+     * request has nothing left it may record.
      *
      * <p>Compared by date rather than by instant. A due date carries the time of day the chore was
      * created at, which is an artefact rather than a deadline - comparing instants would leave a
      * chore due Saturday unrecordable until Saturday evening.
      */
-    private void requireRoundIsDue(LocalDateTime dueDate) {
-        if (dueDate != null && dueDate.toLocalDate().isAfter(LocalDate.now(clock))) {
+    private void requireRecordable(Task task, TaskOutcome outcome, LocalDateTime dueDate) {
+        LocalDate today = LocalDate.now(clock);
+        if (dueDate == null || !dueDate.toLocalDate().isAfter(today)) {
+            return;
+        }
+        if (outcome != TaskOutcome.DONE) {
+            // Doing a chore early is work that happened; skipping one early is a statement about a
+            // round that has not come round, which would need an endpoint saying so.
             throw new BusinessRuleException("This chore is not due yet",
                     ErrorCodes.TASK_ROUND_NOT_DUE);
+        }
+        // An entry for a round still ahead means this chore is already running early. Read after
+        // the lock, so the round a concurrent caller recorded is one this one can see.
+        boolean alreadyAhead = taskCompletionRepository.findLatestByTask(task.getIdTask())
+                .map(TaskCompletion::getDueDate)
+                .map(round -> !round.toLocalDate().isBefore(today))
+                .orElse(false);
+        if (alreadyAhead) {
+            throw new BusinessRuleException("This chore has already been done ahead of schedule",
+                    ErrorCodes.TASK_ROUND_ALREADY_AHEAD);
         }
     }
 

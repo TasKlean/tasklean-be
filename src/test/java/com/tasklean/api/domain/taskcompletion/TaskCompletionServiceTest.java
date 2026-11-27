@@ -668,20 +668,61 @@ class TaskCompletionServiceTest {
         q.setLimit(limit);
         return q;
     }
+
     @Test
-    void complete_roundNotDueYet_isRefused() {
-        Task ahead = task();
-        ahead.setNextDueDate(LocalDateTime.now(ZoneOffset.UTC).plusDays(3));
+    void complete_roundNotDueYet_isRecordedAgainstThatRound() {
+        Task ahead = repeating();
+        LocalDateTime due = LocalDateTime.now(ZoneOffset.UTC).plusDays(3);
+        ahead.setNextDueDate(due);
+        locked(ahead);
+        callerIsMember();
+        completionSaves();
+        when(recurrenceSchedule.rollForward(any(), any(), any(), any())).thenReturn(due.plusWeeks(1));
+
+        taskCompletionService.complete(TASK_UID, new CompleteTaskRequest(), CALLER_USER_ID);
+
+        // Doing a chore before it is due is still work that happened, and it is recorded against
+        // the round it was for - the roll counts from there, so the schedule does not slide.
+        assertThat(saved().getDueDate()).isEqualTo(due);
+        verify(recurrenceSchedule).rollForward(any(), any(), eq(due), any());
+    }
+
+    @Test
+    void complete_whenARoundWasAlreadyDoneAhead_isRefused() {
+        Task ahead = repeating();
+        ahead.setNextDueDate(LocalDateTime.now(ZoneOffset.UTC).plusDays(10));
         lockedWithoutSaving(ahead);
         callerIsMember();
+        // The round the tap before this one recorded, still ahead of today.
+        when(taskCompletionRepository.findLatestByTask(TASK_ID))
+                .thenReturn(Optional.of(entry(99L, LocalDateTime.now(ZoneOffset.UTC).plusDays(3))));
 
         assertThatThrownBy(() -> taskCompletionService.complete(TASK_UID, new CompleteTaskRequest(), CALLER_USER_ID))
                 .isInstanceOf(BusinessRuleException.class)
-                .hasMessageContaining("not due yet");
+                .hasMessageContaining("ahead of schedule");
 
-        // This is also what stops a double tap recording two rounds: the first one rolls the
-        // schedule into the future, so the second finds nothing due.
+        // One round ahead is the cap, and it is what closes the double tap now that a round can be
+        // recorded early at all: the first tap leaves an entry for a round nobody has reached.
         verify(taskCompletionRepository, never()).save(any(TaskCompletion.class));
+    }
+
+    @Test
+    void complete_whenTheRoundDoneAheadHasItselfPassed_isAllowedEarlyAgain() {
+        Task ahead = repeating();
+        LocalDateTime due = LocalDateTime.now(ZoneOffset.UTC).plusDays(3);
+        ahead.setNextDueDate(due);
+        locked(ahead);
+        callerIsMember();
+        completionSaves();
+        when(taskCompletionRepository.findLatestByTask(TASK_ID))
+                .thenReturn(Optional.of(entry(99L, LocalDateTime.now(ZoneOffset.UTC).minusDays(4))));
+        when(recurrenceSchedule.rollForward(any(), any(), any(), any())).thenReturn(due.plusWeeks(1));
+
+        taskCompletionService.complete(TASK_UID, new CompleteTaskRequest(), CALLER_USER_ID);
+
+        // The cap lifts as soon as the round it allowed has come and gone, so a chore done early
+        // every week is not stuck after the first one.
+        assertThat(saved().getOutcome()).isEqualTo(TaskOutcome.DONE);
     }
 
     @Test
@@ -709,7 +750,8 @@ class TaskCompletionServiceTest {
         lockedWithoutSaving(ahead);
         callerIsMember();
 
-        // Skipping says a round went by and nobody did it, which cannot be true of one still ahead.
+        // Skipping says a round went by and nobody did it, which cannot be true of one still
+        // ahead - so unlike a completion, a skip is not allowed early.
         assertThatThrownBy(() -> taskCompletionService.skip(TASK_UID, new SkipTaskRequest(), CALLER_USER_ID))
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("not due yet");

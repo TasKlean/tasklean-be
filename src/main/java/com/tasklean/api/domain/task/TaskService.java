@@ -62,6 +62,7 @@ public class TaskService {
     private final TagResolver tagResolver;
     private final TaskBoardFilter taskBoardFilter;
     private final RecurrenceSchedule recurrenceSchedule;
+    private final DueDateRule dueDateRule;
     private final AuditLogService auditLogService;
     private final UploadService uploadService;
     private final Clock clock;
@@ -116,8 +117,9 @@ public class TaskService {
      * @return the created task
      * @throws ResourceNotFoundException if the group, the assignee or the category is not part of
      *                                   the caller's household
-     * @throws InvalidRequestException   if a recurring task arrives without a due date, or declares
-     *                                   a recurrence that cannot be scheduled
+     * @throws InvalidRequestException   if the due date has already gone by, a recurring task
+     *                                   arrives without one, or it declares a recurrence that
+     *                                   cannot be scheduled
      */
     @Transactional
     public TaskResponse createTask(TaskCreateRequest request, Long callerUserId) {
@@ -129,6 +131,7 @@ public class TaskService {
                 .filter(member -> Boolean.TRUE.equals(member.getIsActive()))
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.GROUP_MEMBER_NOT_FOUND));
 
+        dueDateRule.requireNotPast(request.getNextDueDate());
         LocalDateTime nextDueDate = utc(request.getNextDueDate());
         requireDueDateForRecurrence(request.getRecurrenceType(), nextDueDate);
         List<Tag> tags = tagResolver.resolve(group, request.getTagNames());
@@ -169,7 +172,8 @@ public class TaskService {
 
     /**
      * Updates a task's details. Its household and its author are not editable, and neither is its
-     * status.
+     * status - with one exception: a finished chore given a recurrence is reopened, because the
+     * cadence is a statement that it comes round again.
      *
      * @param uid          the task's public UID
      * @param request      the new details
@@ -177,9 +181,10 @@ public class TaskService {
      * @return the updated task
      * @throws ResourceNotFoundException if no active task has that UID, or the assignee or category
      *                                   is not part of its household
-     * @throws InvalidRequestException   if a recurring task arrives without a due date, declares
-     *                                   a recurrence that cannot be scheduled, or names a photo
-     *                                   that is not this caller's pending upload for its household
+     * @throws InvalidRequestException   if the due date is moved into the past, a recurring task
+     *                                   arrives without one, it declares a recurrence that cannot
+     *                                   be scheduled, or it names a photo that is not this
+     *                                   caller's pending upload for its household
      */
     @Transactional
     public TaskResponse updateTask(String uid, TaskUpdateRequest request, Long callerUserId) {
@@ -187,17 +192,28 @@ public class TaskService {
                 .orElseThrow(() -> new ResourceNotFoundException(ErrorMessages.TASK_NOT_FOUND));
         Group group = task.getGroup();
 
+        // Against the date the chore already has, not against today alone: an overdue chore must
+        // stay editable, and a missed round keeps its anchor parked in the past by design.
+        dueDateRule.requireNotMovedIntoPast(request.getNextDueDate(), task.getNextDueDate());
         LocalDateTime nextDueDate = utc(request.getNextDueDate());
         requireDueDateForRecurrence(request.getRecurrenceType(), nextDueDate);
+
         // Both resolved before the tracked sets below, so a reference into another household is
         // refused before any of this task's own fields have moved.
         GroupMember assignee = assigneeIn(group, request.getAssignedToUid());
         GroupMember owner = ownerIn(group, request.getDefaultAssigneeUid());
         Category category = categoryIn(group, request.getCategoryId());
+
         // Naming an owner fills an open round, but only as the owner arrives. Doing it on every
         // save would make "John owns this, yet this round is open" impossible to ask for.
         boolean ownerArrived = task.getDefaultAssignee() == null && owner != null;
         GroupMember holder = ownerArrived && assignee == null ? owner : assignee;
+
+        // A finished chore given a cadence comes back: the point of making it repeat is that it
+        // comes round again, and no other path would ever reopen it.
+        boolean reopens = task.getStatus() == TaskStatus.COMPLETED
+                && request.getRecurrenceType() != null;
+
         // Resolved before the task's own tags are read, because resolving may revive a deleted
         // tag that is already on this task - read first, its join row would look missing and be
         // inserted a second time.
@@ -230,17 +246,29 @@ public class TaskService {
                 .set("photoUid", task::getPhotoUid, task::setPhotoUid,
                         uploadService.attachTaskPhoto(request.getPhotoUid(), task, callerUserId));
 
+        if (reopens) {
+            // Recorded, not silent: a trail reader has to be able to see why a chore that was done
+            // is waiting again.
+            changes.setVisible("status", task::getStatus, task::setStatus, TaskStatus.TODO);
+            // The timestamp belongs to the round that was done, and TaskResponse publishes it - so
+            // a reopened chore would otherwise still read as done on the card.
+            task.setDateCompleted(null);
+        }
+
         task.setAssignedTo(holder);
         task.setDefaultAssignee(owner);
         task.setCategory(category);
+
         // Re-derived rather than tracked: the anchor is a restatement of the due date, so an entry
         // naming it would say the same thing twice.
         task.setRecurrencePattern(anchorFor(task.getRecurrenceType(), task.getNextDueDate()));
 
         Task saved = taskRepository.save(task);
         syncTags(saved, current, tags);
+
         auditLogService.recordEvent(AuditEntityType.TASK, saved.getIdTask(), AuditAction.UPDATE,
                 auditMessage(saved.getName(), "updated"), group, changes);
+
         return TaskResponse.from(saved, tags, LocalDateTime.now(clock));
     }
 
